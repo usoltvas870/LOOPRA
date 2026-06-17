@@ -1,7 +1,17 @@
+﻿.env
+__pycache__/
+*.pyc
 node_modules/
-dist/
-*.mp4
-*.webm
-.env
-frame_*.png
 renders/
+.DS_Store
+
+# Binary test/render artifacts in hyperframes
+hyperframes/test-render.mp4
+hyperframes/frame_*.png
+
+# Data dirs in trend-radar
+trend-radar/data/
+
+# Generated outputs in video-assembler
+video-assembler/jobs/
+video-assembler/videos/output/

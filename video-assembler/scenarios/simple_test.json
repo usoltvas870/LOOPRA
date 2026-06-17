@@ -1,0 +1,24 @@
+{
+  "name": "simple_test",
+  "nura_video": "videos/media/test.mp4",
+  "subtitles": { "enabled": false },
+  "scenes": [
+    {
+      "start": 0,
+      "duration": 5,
+      "nura_text": "Сцена 1.",
+      "overlays": [
+        { "type": "text", "text": "СЦЕНА 1", "start": 0, "end": 3, "x": 0, "y": -0.3, "font_size": 48, "color": "#FF6B00" }
+      ]
+    },
+    {
+      "start": 5,
+      "duration": 5,
+      "transition": { "type": "fade", "duration": 0.5 },
+      "nura_text": "Сцена 2.",
+      "overlays": [
+        { "type": "text", "text": "СЦЕНА 2", "start": 0, "end": 5, "x": 0, "y": -0.35, "font_size": 28, "color": "#FF6B00" }
+      ]
+    }
+  ]
+}
