@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Content Plant — HyperFrame</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+</head>
+<body style="margin:0; background:#0a0a0a;">
+
+<div data-composition-id="root" data-start="0" data-width="1080" data-height="1920" data-duration="34" style="position:relative; width:1080px; height:1920px; overflow:hidden; background:#EFEEE9; font-family:'Manrope','Helvetica Neue',Arial,sans-serif;">
+
+  <div class="clip" data-start="0" data-duration="4" data-track-index="0" id="opener-layer" style="position:absolute; inset:0; background:linear-gradient(135deg,#0a0a0a 0%,#1a0a2e 50%,#0a0a0a 100%); display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:60px;">
+    <div style="position:absolute; width:600px; height:600px; border-radius:50%; background:radial-gradient(circle,rgba(168,85,247,0.15) 0%,transparent 70%); top:10%; right:-20%;"></div>
+    <div style="position:absolute; width:400px; height:400px; border-radius:50%; background:radial-gradient(circle,rgba(59,130,246,0.1) 0%,transparent 70%); bottom:15%; left:-15%;"></div>
+    <h1 id="opener-title" style="font-size:72px; font-weight:800; color:#fff; letter-spacing:-2px; margin-bottom:24px;">Content Plant</h1>
+    <p id="opener-subtitle" style="font-size:28px; color:#a855f7; font-weight:500; letter-spacing:4px; text-transform:uppercase;">HyperFrame Studio</p>
+  </div>
+
+  <svg id="lens-svg" viewBox="0 0 1080 1920" width="1080" height="1920" style="position:absolute; top:0; left:0;">
+    <defs>
+      <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#C2A476" stop-opacity="0.55"/>
+        <stop offset="60%" stop-color="#B8743F" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#B8743F" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#C2A476"/>
+        <stop offset="100%" stop-color="#B8743F"/>
+      </linearGradient>
+    </defs>
+    <circle id="ambient-glow" cx="540" cy="860" r="420" fill="url(#glowGrad)"></circle>
+    <circle id="lens-ring-outer" cx="540" cy="860" r="300" fill="none" stroke="#B8743F" stroke-width="2" stroke-opacity="0.35"></circle>
+    <circle id="lens-ring-mid" cx="540" cy="860" r="230" fill="none" stroke="#C2A476" stroke-width="1.5" stroke-opacity="0.45"></circle>
+    <circle id="lens-ring-inner" cx="540" cy="860" r="150" fill="none" stroke="#B8743F" stroke-width="1.5" stroke-opacity="0.6"></circle>
+    <g id="connector-lines" stroke="#B8743F" stroke-width="1" stroke-opacity="0.3" fill="none"></g>
+    <g id="node-field"></g>
+    <circle id="core-node" cx="540" cy="860" r="14" fill="url(#nodeGrad)"></circle>
+    <circle id="core-node-halo" cx="540" cy="860" r="34" fill="#C2A476" fill-opacity="0.25"></circle>
+  </svg>
+
+  <div id="logo-mark" style="position:absolute; top:110px; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:14px;">
+    <div style="width:20px; height:20px; background:#B8743F; transform:rotate(45deg); position:relative; border-radius:2px;">
+      <div style="position:absolute; inset:4px; background:#EFEEE9; border-radius:1px;"></div>
+    </div>
+    <span style="font-size:22px; font-weight:700; letter-spacing:0.22em; color:#1A1A1A; text-transform:uppercase;">NURA</span>
+  </div>
+
+  <script>
+  (function () {
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        var t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    var seed = 42;
+    var rng = mulberry32(seed);
+
+    const NODE_COUNT = 42;
+    const CENTER_X = 540;
+    const CENTER_Y = 860;
+    const LENS_START = 4;
+    const TOTAL_DURATION = 34;
+    const nodes = [];
+
+    const nodeField = document.getElementById('node-field');
+    const connectorLines = document.getElementById('connector-lines');
+
+    const rand = (min, max) => rng() * (max - min) + min;
+
+    for (let i = 0; i < NODE_COUNT; i++) {
+      const angle = (i / NODE_COUNT) * Math.PI * 2 + rand(-0.12, 0.12);
+      const ringChoice = rng();
+      const radius = ringChoice < 0.34 ? rand(120, 165)
+                   : ringChoice < 0.67 ? rand(200, 245)
+                   : rand(280, 330);
+      const x = CENTER_X + Math.cos(angle) * radius;
+      const y = CENTER_Y + Math.sin(angle) * radius;
+      const size = rand(3, 7);
+      const isDiamond = rng() < 0.4;
+
+      let el;
+      if (isDiamond) {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        el.setAttribute('x', x - size / 2);
+        el.setAttribute('y', y - size / 2);
+        el.setAttribute('width', size);
+        el.setAttribute('height', size);
+        el.setAttribute('transform', 'rotate(45 ' + x + ' ' + y + ')');
+        el.setAttribute('rx', 1);
+      } else {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        el.setAttribute('cx', x);
+        el.setAttribute('cy', y);
+        el.setAttribute('r', size / 2);
+      }
+      el.setAttribute('fill', 'url(#nodeGrad)');
+      el.setAttribute('fill-opacity', rand(0.5, 0.95));
+      el.classList.add('lens-node');
+      nodeField.appendChild(el);
+      nodes.push({ el, x, y, baseSize: size, baseOpacity: parseFloat(el.getAttribute('fill-opacity')) });
+    }
+
+    for (let j = 0; j < nodes.length; j++) {
+      if (rng() < 0.5) {
+        const a = nodes[j];
+        const b = nodes[(j + Math.floor(rand(2, 6))) % nodes.length];
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', a.x);
+        line.setAttribute('y1', a.y);
+        line.setAttribute('x2', b.x);
+        line.setAttribute('y2', b.y);
+        connectorLines.appendChild(line);
+      }
+    }
+
+    const rotationStart = LENS_START + 1.6;
+    const outerCycle = 9;
+    const midCycle = 7;
+    const outerRepeats = Math.max(0, Math.floor((TOTAL_DURATION - rotationStart) / outerCycle) - 1);
+    const midRepeats = Math.max(0, Math.floor((TOTAL_DURATION - rotationStart) / midCycle) - 1);
+
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    tl.from('#logo-mark', { opacity: 0, y: -20, duration: 0.8, ease: 'power2.out' }, LENS_START);
+    tl.from('#lens-ring-outer', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, LENS_START + 0.2);
+    tl.from('#lens-ring-mid', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, LENS_START + 0.35);
+    tl.from('#lens-ring-inner', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, LENS_START + 0.5);
+    tl.from('.lens-node', { opacity: 0, scale: 0, duration: 0.6, stagger: 0.012, ease: 'back.out(1.7)', transformOrigin: 'center' }, LENS_START + 0.6);
+    tl.from('#connector-lines line', { opacity: 0, duration: 0.8, stagger: 0.01 }, LENS_START + 1.0);
+    tl.from('#core-node, #core-node-halo', { opacity: 0, scale: 0, duration: 0.5, ease: 'back.out(2)', transformOrigin: '540px 860px' }, LENS_START + 1.4);
+    tl.to('#lens-ring-outer', { rotation: 360, duration: outerCycle, ease: 'none', transformOrigin: '540px 860px', repeat: outerRepeats }, rotationStart);
+    tl.to('#lens-ring-mid', { rotation: -360, duration: midCycle, ease: 'none', transformOrigin: '540px 860px', repeat: midRepeats }, rotationStart);
+
+    window.__timelines['root'] = tl;
+
+    window.__nuraPulse = function (amplitude) {
+      const amp = Math.max(0, Math.min(1, amplitude));
+      gsap.to('#core-node', { scale: 1 + amp * 0.6, duration: 0.12, overwrite: 'auto', transformOrigin: '540px 860px' });
+      gsap.to('#core-node-halo', { scale: 1 + amp * 1.1, opacity: 0.15 + amp * 0.35, duration: 0.12, overwrite: 'auto', transformOrigin: '540px 860px' });
+      gsap.to('#ambient-glow', { opacity: 0.6 + amp * 0.4, duration: 0.15, overwrite: 'auto' });
+      nodes.forEach(function (n, idx) {
+        if (idx % 3 === 0) {
+          gsap.to(n.el, {
+            attr: { 'fill-opacity': Math.min(1, n.baseOpacity + amp * 0.4) },
+            duration: 0.15,
+            overwrite: 'auto'
+          });
+        }
+      });
+    };
+
+    window.__nuraApplyAudioTrack = function (amplitudeArray, fps, offset) {
+      offset = offset || 0;
+      amplitudeArray.forEach(function (amp, frameIdx) {
+        const t = offset + frameIdx / fps;
+        tl.call(window.__nuraPulse, [amp], t);
+      });
+    };
+
+    var ampData = {
+      "fps": 30,
+      "amplitudes": [0.6001593470573425,0.7618077993392944,0.9082549214363098,0.9878940582275391,0.9857450723648071,0.9427401423454285,0.8223919868469238,0.6507107615470886,0.47613874077796936,0.29367533326148987,0.14133231341838837,0.043657802045345306,0.00405149208381772,0.036739714443683624,0.0071532707661390305,0.014760836027562618,0.023405790328979492,0.03296184539794922,0.04118434339761734,0.0464436300098896,0.5282170176506042,0.9874681234359741,0.8959667682647705,0.7737410664558411,0.5984750986099243,0.4071749448776245,0.24066056311130524,0.10322548449039459,0.0227055586874485,0.010020122863352299,0.07054980844259262,0.18614956736564636,0.35179781913757324,0.5382315516471863,0.7078142762184143,0.8683485388755798,0.948717474937439,0.0494798980653286,0.04846182093024254,0.043397676199674606,0.035399533808231354,0.026930736377835274,0.017584094777703285,0.06010082736611366,0.07064691185951233,0.010016737505793571,0.02265317365527153,0.1032390296459198,0.2404462844133377,0.40698567032814026,0.5986909866333008,0.7732694745063782,0.8958536982536316,0.9879404902458191,0.9992719292640686,0.9289671778678894,0.8242018222808838,0.6589727997779846,0.4683043658733368,0.2954763174057007,0.0519697442650795,0.002116252202540636,0.0002072928473353386,0.002178325317800045,0.007059143856167793,0.014688788913190365,0.20158547163009644,0.6505277156829834,0.8227358460426331,0.9422211647033691,0.9857210516929626,0.9884132146835327,0.907852828502655,0.7619701623916626,0.6005603671073914,0.41215085983276367,0.23617741465568542,0.10436560213565826,0.023114856332540512,0.009741143323481083,0.06971892714500427,0.18984149396419525,0.3473069667816162,0.16519369184970856,0.03592977672815323,0.04282822087407112,0.04842708259820938,0.05016441270709038,0.04775901511311531,0.20909450948238373,0.7170602679252625,0.5299164652824402,0.35361018776893616,0.18851633369922638,0.06882045418024063,0.010335564613342285,0.02357722446322441,0.1018618494272232,0.23905013501644135,0.4138377904891968,0.5908508896827698,0.7721330523490906,0.9088603258132935,0.9741653800010681,1.0,0.9413954019546509,0.4032162129878998,0.03305237367749214,0.02370327152311802,0.014509692788124084,0.007218383252620697,0.00214561028406024,0.0001922649098560214,0.04289804399013519,0.14420504868030548,0.2900162637233734,0.47423824667930603,0.6606040596961975,0.8116563558578491,0.9418236017227173]
+    };
+
+    window.__nuraApplyAudioTrack(ampData.amplitudes, ampData.fps, LENS_START);
+  })();
+  </script>
+</div>
+</body>
+</html>

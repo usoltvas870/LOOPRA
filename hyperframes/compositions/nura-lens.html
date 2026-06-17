@@ -1,0 +1,160 @@
+<template id="nura-lens-template">
+  <div data-composition-id="nura-lens" data-start="0" data-width="1080" data-height="1920" data-duration="30" style="background:#EFEEE9; position:absolute; inset:0; width:1080px; height:1920px; overflow:hidden; font-family:'Manrope','Helvetica Neue',Arial,sans-serif;">
+
+    <svg id="lens-svg" viewBox="0 0 1080 1920" width="1080" height="1920" style="position:absolute; top:0; left:0;">
+      <defs>
+        <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#C2A476" stop-opacity="0.55"/>
+          <stop offset="60%" stop-color="#B8743F" stop-opacity="0.18"/>
+          <stop offset="100%" stop-color="#B8743F" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#C2A476"/>
+          <stop offset="100%" stop-color="#B8743F"/>
+        </linearGradient>
+      </defs>
+
+      <circle id="ambient-glow" cx="540" cy="860" r="420" fill="url(#glowGrad)"></circle>
+
+      <circle id="lens-ring-outer" cx="540" cy="860" r="300" fill="none" stroke="#B8743F" stroke-width="2" stroke-opacity="0.35"></circle>
+      <circle id="lens-ring-mid" cx="540" cy="860" r="230" fill="none" stroke="#C2A476" stroke-width="1.5" stroke-opacity="0.45"></circle>
+      <circle id="lens-ring-inner" cx="540" cy="860" r="150" fill="none" stroke="#B8743F" stroke-width="1.5" stroke-opacity="0.6"></circle>
+
+      <g id="connector-lines" stroke="#B8743F" stroke-width="1" stroke-opacity="0.3" fill="none"></g>
+      <g id="node-field"></g>
+
+      <circle id="core-node" cx="540" cy="860" r="14" fill="url(#nodeGrad)"></circle>
+      <circle id="core-node-halo" cx="540" cy="860" r="34" fill="#C2A476" fill-opacity="0.25"></circle>
+    </svg>
+
+    <div id="logo-mark" style="position:absolute; top:110px; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:14px;">
+      <div style="width:20px; height:20px; background:#B8743F; transform:rotate(45deg); position:relative; border-radius:2px;">
+        <div style="position:absolute; inset:4px; background:#EFEEE9; border-radius:1px;"></div>
+      </div>
+      <span style="font-size:22px; font-weight:700; letter-spacing:0.22em; color:#1A1A1A; text-transform:uppercase;">NURA</span>
+    </div>
+
+    <script>
+    (function () {
+      function mulberry32(a) {
+        return function () {
+          a |= 0; a = a + 0x6D2B79F5 | 0;
+          var t = Math.imul(a ^ a >>> 15, 1 | a);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      var seed = 42;
+      var rng = mulberry32(seed);
+
+      const NODE_COUNT = 42;
+      const CENTER_X = 540;
+      const CENTER_Y = 860;
+      const TOTAL_DURATION = 30;
+      const nodes = [];
+
+      const nodeField = document.getElementById('node-field');
+      const connectorLines = document.getElementById('connector-lines');
+
+      const rand = (min, max) => rng() * (max - min) + min;
+
+      for (let i = 0; i < NODE_COUNT; i++) {
+        const angle = (i / NODE_COUNT) * Math.PI * 2 + rand(-0.12, 0.12);
+        const ringChoice = rng();
+        const radius = ringChoice < 0.34 ? rand(120, 165)
+                     : ringChoice < 0.67 ? rand(200, 245)
+                     : rand(280, 330);
+
+        const x = CENTER_X + Math.cos(angle) * radius;
+        const y = CENTER_Y + Math.sin(angle) * radius;
+        const size = rand(3, 7);
+        const isDiamond = rng() < 0.4;
+
+        let el;
+        if (isDiamond) {
+          el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          el.setAttribute('x', x - size / 2);
+          el.setAttribute('y', y - size / 2);
+          el.setAttribute('width', size);
+          el.setAttribute('height', size);
+          el.setAttribute('transform', 'rotate(45 ' + x + ' ' + y + ')');
+          el.setAttribute('rx', 1);
+        } else {
+          el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          el.setAttribute('cx', x);
+          el.setAttribute('cy', y);
+          el.setAttribute('r', size / 2);
+        }
+
+        el.setAttribute('fill', 'url(#nodeGrad)');
+        el.setAttribute('fill-opacity', rand(0.5, 0.95));
+        el.classList.add('lens-node');
+        nodeField.appendChild(el);
+
+        nodes.push({ el, x, y, baseSize: size, baseOpacity: parseFloat(el.getAttribute('fill-opacity')) });
+      }
+
+      for (let j = 0; j < nodes.length; j++) {
+        if (rng() < 0.5) {
+          const a = nodes[j];
+          const b = nodes[(j + Math.floor(rand(2, 6))) % nodes.length];
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', a.x);
+          line.setAttribute('y1', a.y);
+          line.setAttribute('x2', b.x);
+          line.setAttribute('y2', b.y);
+          connectorLines.appendChild(line);
+        }
+      }
+
+      const rotationStart = 1.6;
+      const outerCycle = 9;
+      const midCycle = 7;
+      const outerRepeats = Math.max(0, Math.floor((TOTAL_DURATION - rotationStart) / outerCycle) - 1);
+      const midRepeats = Math.max(0, Math.floor((TOTAL_DURATION - rotationStart) / midCycle) - 1);
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.from('#logo-mark', { opacity: 0, y: -20, duration: 0.8, ease: 'power2.out' }, 0);
+      tl.from('#lens-ring-outer', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, 0.2);
+      tl.from('#lens-ring-mid', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, 0.35);
+      tl.from('#lens-ring-inner', { opacity: 0, scale: 0.85, duration: 1.2, ease: 'power2.out', transformOrigin: '540px 860px' }, 0.5);
+      tl.from('.lens-node', { opacity: 0, scale: 0, duration: 0.6, stagger: 0.012, ease: 'back.out(1.7)', transformOrigin: 'center' }, 0.6);
+      tl.from('#connector-lines line', { opacity: 0, duration: 0.8, stagger: 0.01 }, 1.0);
+      tl.from('#core-node, #core-node-halo', { opacity: 0, scale: 0, duration: 0.5, ease: 'back.out(2)', transformOrigin: '540px 860px' }, 1.4);
+      tl.to('#lens-ring-outer', { rotation: 360, duration: outerCycle, ease: 'none', transformOrigin: '540px 860px', repeat: outerRepeats }, rotationStart);
+      tl.to('#lens-ring-mid', { rotation: -360, duration: midCycle, ease: 'none', transformOrigin: '540px 860px', repeat: midRepeats }, rotationStart);
+
+      window.__timelines['nura-lens'] = tl;
+
+      window.__nuraPulse = function (amplitude) {
+        const amp = Math.max(0, Math.min(1, amplitude));
+
+        gsap.to('#core-node', { scale: 1 + amp * 0.6, duration: 0.12, overwrite: 'auto', transformOrigin: '540px 860px' });
+        gsap.to('#core-node-halo', { scale: 1 + amp * 1.1, opacity: 0.15 + amp * 0.35, duration: 0.12, overwrite: 'auto', transformOrigin: '540px 860px' });
+        gsap.to('#ambient-glow', { opacity: 0.6 + amp * 0.4, duration: 0.15, overwrite: 'auto' });
+
+        nodes.forEach(function (n, idx) {
+          if (idx % 3 === 0) {
+            gsap.to(n.el, {
+              attr: { 'fill-opacity': Math.min(1, n.baseOpacity + amp * 0.4) },
+              duration: 0.15,
+              overwrite: 'auto'
+            });
+          }
+        });
+      };
+
+      window.__nuraApplyAudioTrack = function (amplitudeArray, fps) {
+        fps = fps || 30;
+        amplitudeArray.forEach(function (amp, frameIdx) {
+          const t = frameIdx / fps;
+          tl.call(window.__nuraPulse, [amp], t);
+        });
+      };
+    })();
+    </script>
+  </div>
+</template>
