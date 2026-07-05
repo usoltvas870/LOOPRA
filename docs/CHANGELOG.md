@@ -10,6 +10,15 @@ This changelog follows a simple human-readable format.
 
 ### Added
 
+- Added `core/domain/` as the first canonical platform domain layer for implementation.
+  - Introduces minimal Pydantic models for `Workspace`, `Project`, `BrandProfile`, `Idea`, `Scenario`, `RenderJob`, `OutputFile`, `ContentItem`, `ExportPackage`, `Publication` and `MetricSnapshot`.
+  - Fixes `ExportPackage` ownership in code under `Publishing Hub` and keeps `RenderJob` / `OutputFile` / `ContentItem` under `Production Engine`.
+  - Locks the first implementation loop to `text_social_post`.
+  - Adds canonical status enums and status-transition validation for the first MVP loop.
+
+- Added `tests/domain/`.
+  - Covers model creation, mandatory `project_id`, status transitions, `ContentItem` vs `Publication` lifecycle separation and `ExportPackage` ownership boundary.
+
 - Added `docs/02_platform_architecture/DATA_MODEL.md`.
   - Defines core platform entities.
   - Separates project-level and platform-level data.
