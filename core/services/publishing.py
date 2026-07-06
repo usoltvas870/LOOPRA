@@ -130,25 +130,27 @@ class PublishingService:
                 f"ContentItem '{content_item.content_item_id}' must be approved or exported before export preparation"
             )
 
+        scenario = self._scenario_repository.load_scenario(project_id, content_item.scenario_id)
         export_dir = resolve_project_dir(project_id, self._projects_root) / "exports" / export_package.export_package_id
         export_dir.mkdir(parents=True, exist_ok=True)
 
-        caption_text = export_package.caption_variants.get(export_package.target_platform.value, content_item.body).strip()
-        platform_file = export_dir / f"{export_package.target_platform.value}.txt"
-        platform_file.write_text(caption_text, encoding="utf-8")
+        title_path = export_dir / "title.txt"
+        title_path.write_text(content_item.title or "", encoding="utf-8")
+
+        body_path = export_dir / "body.txt"
+        body_path.write_text(content_item.body or "", encoding="utf-8")
+
+        caption_text = self._resolve_caption_text(export_package, scenario, content_item)
+        caption_path = export_dir / f"caption_{export_package.target_platform.value}.txt"
+        caption_path.write_text(caption_text, encoding="utf-8")
+
+        checklist_path = export_dir / "manual_publication_checklist.txt"
+        checklist_path.write_text(self._build_manual_publication_checklist(export_package.target_platform), encoding="utf-8")
 
         metadata_path = export_dir / "metadata.json"
         metadata_path.write_text(
             json.dumps(
-                {
-                    "project_id": content_item.project_id,
-                    "content_item_id": content_item.content_item_id,
-                    "scenario_id": content_item.scenario_id,
-                    "content_format": content_item.content_format.value,
-                    "target_platform": export_package.target_platform.value,
-                    "manual_publication_only": True,
-                    "prepared_at": utc_now().isoformat(),
-                },
+                self._build_export_metadata(export_package, content_item, scenario),
                 indent=2,
                 ensure_ascii=False,
             ),
@@ -157,7 +159,13 @@ class PublishingService:
 
         export_package = validated_model_copy(
             export_package,
-            package_files=[str(platform_file), str(metadata_path)],
+            package_files=[
+                str(title_path),
+                str(body_path),
+                str(caption_path),
+                str(checklist_path),
+                str(metadata_path),
+            ],
             updated_at=utc_now(),
         )
         export_package = export_package.transition_to(ExportPackageStatus.READY)
@@ -168,6 +176,48 @@ class PublishingService:
             self._content_repository.save_content_item(content_item)
 
         return export_package
+
+    def _resolve_caption_text(self, export_package: ExportPackage, scenario, content_item: ContentItem) -> str:
+        platform_key = export_package.target_platform.value
+        if platform_key in scenario.caption_drafts:
+            return scenario.caption_drafts[platform_key].strip()
+        if platform_key in export_package.caption_variants:
+            return export_package.caption_variants[platform_key].strip()
+        return content_item.body.strip()
+
+    def _build_manual_publication_checklist(self, target_platform: PublishingPlatform) -> str:
+        return "\n".join(
+            [
+                "Manual publication checklist",
+                "",
+                "This package is prepared for manual publication only.",
+                f"Target platform: {target_platform.value}",
+                "",
+                "[ ] Review title.txt",
+                "[ ] Review body.txt",
+                f"[ ] Review caption_{target_platform.value}.txt",
+                "[ ] Confirm metadata.json matches the intended publication context",
+                "[ ] Publish manually in the target channel",
+                "[ ] Record the final publication URL in Content Plant",
+            ]
+        )
+
+    def _build_export_metadata(self, export_package: ExportPackage, content_item: ContentItem, scenario) -> dict[str, object]:
+        return {
+            "project_id": content_item.project_id,
+            "content_item_id": content_item.content_item_id,
+            "scenario_id": content_item.scenario_id,
+            "content_format": content_item.content_format.value,
+            "target_platform": export_package.target_platform.value,
+            "manual_publication_only": True,
+            "prepared_at": utc_now().isoformat(),
+            "brand_profile_id": content_item.brand_profile_id or scenario.brand_profile_id,
+            "funnel_stage": scenario.funnel_stage,
+            "title": content_item.title,
+            "content_item_status": content_item.status.value,
+            "target_platforms": [platform.value for platform in scenario.target_platforms],
+            "scenario_qa_warnings": list(scenario.qa_warnings),
+        }
 
     def create_publication(self, project_id: str, content_item_id: str, export_package_id: str) -> Publication:
         project = self._project_service.get_project(project_id)

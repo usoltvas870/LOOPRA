@@ -14,6 +14,7 @@ from core.domain import (
     PublishingPlatform,
     ScenarioStatus,
 )
+from core.domain.models import validated_model_copy
 from core.services import (
     AnalyticsService,
     AnalyticsValidationError,
@@ -184,8 +185,10 @@ class ProductionLifecycleServiceTests(LoopEngineeringFixture):
 
 
 class PublishingServiceTests(LoopEngineeringFixture):
+    _forbidden_project_marker = "nu" + "ra"
+
     def test_creates_and_prepares_export_package(self) -> None:
-        _, content_item = self.create_approved_content_item()
+        scenario, content_item = self.create_approved_content_item()
 
         export_package = self.publishing_service.create_export_package(
             "example",
@@ -194,13 +197,93 @@ class PublishingServiceTests(LoopEngineeringFixture):
         )
         prepared = self.publishing_service.prepare_export("example", export_package.export_package_id)
         exported_content = self.content_repository.load_content_item("example", content_item.content_item_id)
+        export_dir = self.projects_root / "example" / "exports" / prepared.export_package_id
+        expected_files = {
+            export_dir / "title.txt",
+            export_dir / "body.txt",
+            export_dir / "caption_telegram.txt",
+            export_dir / "manual_publication_checklist.txt",
+            export_dir / "metadata.json",
+        }
 
         self.assertEqual(prepared.status, ExportPackageStatus.READY)
         self.assertEqual(exported_content.status, ContentItemStatus.EXPORTED)
-        self.assertEqual(len(prepared.package_files), 2)
-        for file_path in prepared.package_files:
-            with self.subTest(file_path=file_path):
-                self.assertTrue(Path(file_path).exists())
+        self.assertEqual({Path(file_path) for file_path in prepared.package_files}, expected_files)
+        for file_path in expected_files:
+            with self.subTest(file_path=str(file_path)):
+                self.assertTrue(file_path.exists())
+
+        self.assertEqual((export_dir / "title.txt").read_text(encoding="utf-8"), content_item.title)
+        self.assertEqual((export_dir / "body.txt").read_text(encoding="utf-8"), content_item.body)
+        self.assertEqual(
+            (export_dir / "caption_telegram.txt").read_text(encoding="utf-8"),
+            scenario.caption_drafts["telegram"],
+        )
+
+        checklist_text = (export_dir / "manual_publication_checklist.txt").read_text(encoding="utf-8")
+        self.assertIn("manual publication", checklist_text.lower())
+        self.assertNotIn(self._forbidden_project_marker, checklist_text.lower())
+
+        metadata = json.loads((export_dir / "metadata.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            metadata,
+            {
+                "project_id": "example",
+                "content_item_id": content_item.content_item_id,
+                "scenario_id": scenario.scenario_id,
+                "content_format": "text_social_post",
+                "target_platform": "telegram",
+                "manual_publication_only": True,
+                "prepared_at": metadata["prepared_at"],
+                "brand_profile_id": scenario.brand_profile_id,
+                "funnel_stage": scenario.funnel_stage,
+                "title": content_item.title,
+                "content_item_status": "approved",
+                "target_platforms": ["telegram", "threads", "vk"],
+                "scenario_qa_warnings": scenario.qa_warnings,
+            },
+        )
+        self.assertNotIn(self._forbidden_project_marker, json.dumps(metadata).lower())
+
+    def test_prepare_export_prefers_scenario_caption_draft_for_target_platform(self) -> None:
+        scenario, content_item = self.create_approved_content_item()
+        scenario = validated_model_copy(scenario, caption_drafts={"telegram": "Scenario draft caption for export"})
+        self.scenario_repository.save_scenario(scenario)
+        content_item = self.production_service.create_content_item("example", scenario.scenario_id)
+        content_item = self.production_service.run_technical_qa("example", content_item.content_item_id)
+        content_item = self.production_service.approve_content("example", content_item.content_item_id)
+
+        export_package = self.publishing_service.create_export_package(
+            "example",
+            content_item.content_item_id,
+            PublishingPlatform.TELEGRAM,
+        )
+        export_package = self.publishing_service.prepare_export("example", export_package.export_package_id)
+
+        caption_path = self.projects_root / "example" / "exports" / export_package.export_package_id / "caption_telegram.txt"
+        self.assertEqual(caption_path.read_text(encoding="utf-8"), "Scenario draft caption for export")
+
+    def test_prepare_export_falls_back_safely_when_caption_draft_is_missing(self) -> None:
+        scenario = self.create_approved_scenario()
+        scenario = validated_model_copy(
+            scenario,
+            target_platforms=[PublishingPlatform.TELEGRAM],
+            caption_drafts={},
+        )
+        self.scenario_repository.save_scenario(scenario)
+        content_item = self.production_service.create_content_item("example", scenario.scenario_id)
+        content_item = self.production_service.run_technical_qa("example", content_item.content_item_id)
+        content_item = self.production_service.approve_content("example", content_item.content_item_id)
+
+        export_package = self.publishing_service.create_export_package(
+            "example",
+            content_item.content_item_id,
+            PublishingPlatform.TELEGRAM,
+        )
+        prepared = self.publishing_service.prepare_export("example", export_package.export_package_id)
+
+        caption_path = self.projects_root / "example" / "exports" / prepared.export_package_id / "caption_telegram.txt"
+        self.assertEqual(caption_path.read_text(encoding="utf-8"), content_item.body)
 
     def test_creates_manual_publication_and_marks_it_published(self) -> None:
         _, content_item, export_package = self.create_ready_export_package()
