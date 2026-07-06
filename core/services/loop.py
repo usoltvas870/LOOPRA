@@ -73,11 +73,6 @@ class LoopOrchestrator:
             publication.publication_id,
             content_item.content_item_id,
         )
-        metric_snapshot = self._analytics_service.record_metrics(
-            project_id,
-            metric_snapshot.metric_snapshot_id,
-            {},
-        )
 
         return {
             "project_id": project_id,

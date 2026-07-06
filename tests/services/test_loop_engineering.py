@@ -390,6 +390,8 @@ class PublishingServiceTests(LoopEngineeringFixture):
 
 
 class AnalyticsServiceTests(LoopEngineeringFixture):
+    _forbidden_project_marker = "nu" + "ra"
+
     def test_creates_metric_snapshot_and_records_metrics(self) -> None:
         content_item, _, publication = self.create_published_publication()
 
@@ -401,13 +403,34 @@ class AnalyticsServiceTests(LoopEngineeringFixture):
         recorded = self.analytics_service.record_metrics(
             "example",
             metric_snapshot.metric_snapshot_id,
-            {"views": 120, "likes": 15, "shares": 3},
+            {
+                "views": 120,
+                "likes": 15,
+                "comments": 4,
+                "shares": 3,
+                "saves": 7,
+                "clicks": 9,
+                "published_url": "https://example.invalid/example/published/updated-post",
+            },
         )
+        updated_publication = self.publication_repository.load_publication("example", publication.publication_id)
 
         self.assertEqual(metric_snapshot.status, MetricSnapshotStatus.DRAFT)
+        self.assertEqual(metric_snapshot.project_id, "example")
+        self.assertEqual(metric_snapshot.publication_id, publication.publication_id)
+        self.assertEqual(metric_snapshot.content_item_id, content_item.content_item_id)
+        self.assertEqual(metric_snapshot.source_type.value, "manual")
+        self.assertIsInstance(metric_snapshot.created_at, type(metric_snapshot.captured_at))
         self.assertEqual(recorded.status, MetricSnapshotStatus.RECORDED)
         self.assertEqual(recorded.content_metrics.views, 120)
         self.assertEqual(recorded.content_metrics.likes, 15)
+        self.assertEqual(recorded.content_metrics.comments, 4)
+        self.assertEqual(recorded.content_metrics.shares, 3)
+        self.assertEqual(recorded.content_metrics.saves, 7)
+        self.assertEqual(recorded.content_metrics.link_clicks, 9)
+        self.assertIsInstance(recorded.captured_at, type(metric_snapshot.captured_at))
+        self.assertEqual(updated_publication.published_url, "https://example.invalid/example/published/updated-post")
+        self.assertNotIn(self._forbidden_project_marker, updated_publication.published_url.lower())
 
     def test_future_facing_analytics_stubs_return_empty_lists(self) -> None:
         self.assertEqual(self.analytics_service.get_insights("example"), [])
@@ -433,6 +456,92 @@ class AnalyticsServiceTests(LoopEngineeringFixture):
                 {"views": 2},
             )
 
+    def test_rejects_empty_metrics_dict(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics("example", metric_snapshot.metric_snapshot_id, {})
+
+    def test_rejects_unknown_metric_keys(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics(
+                "example",
+                metric_snapshot.metric_snapshot_id,
+                {"bookmarks": 3},
+            )
+
+    def test_rejects_follows_until_model_has_storage_field(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics(
+                "example",
+                metric_snapshot.metric_snapshot_id,
+                {"follows": 1},
+            )
+
+    def test_rejects_negative_numeric_metrics(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics(
+                "example",
+                metric_snapshot.metric_snapshot_id,
+                {"views": -1},
+            )
+
+    def test_rejects_non_integer_numeric_metrics(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics(
+                "example",
+                metric_snapshot.metric_snapshot_id,
+                {"clicks": 1.5},
+            )
+
+    def test_rejects_empty_published_url_in_metrics(self) -> None:
+        content_item, _, publication = self.create_published_publication()
+        metric_snapshot = self.analytics_service.create_metric_snapshot(
+            "example",
+            publication.publication_id,
+            content_item.content_item_id,
+        )
+
+        with self.assertRaises(AnalyticsValidationError):
+            self.analytics_service.record_metrics(
+                "example",
+                metric_snapshot.metric_snapshot_id,
+                {"published_url": "   "},
+            )
+
 
 class LoopOrchestratorTests(LoopEngineeringFixture):
     def test_runs_minimal_end_to_end_loop_for_generic_project(self) -> None:
@@ -452,9 +561,9 @@ class LoopOrchestratorTests(LoopEngineeringFixture):
         self.assertEqual(result["idea_id"], idea.idea_id)
         self.assertEqual(result["status"], "completed")
         self.assertEqual(publication.status, PublicationStatus.PUBLISHED)
-        self.assertEqual(metric_snapshot.status, MetricSnapshotStatus.RECORDED)
+        self.assertEqual(metric_snapshot.status, MetricSnapshotStatus.DRAFT)
         self.assertEqual(loop_status["publications"], {"published": 1})
-        self.assertEqual(loop_status["metric_snapshots"], {"recorded": 1})
+        self.assertEqual(loop_status["metric_snapshots"], {"draft": 1})
         self.assertEqual(publication.platform, PublishingPlatform.TELEGRAM)
 
         export_dir = self.projects_root / "second" / "exports" / result["export_package_id"]
