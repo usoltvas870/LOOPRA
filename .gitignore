@@ -52,3 +52,6 @@ hyperframes/assets/source_videos/
 # Local one-off outputs
 story-test-output/
 skills-lock.json
+
+# Generated graphify output
+graphify-out/
