@@ -1,3 +1,15 @@
-from .loader import PROJECTS_ROOT, ProjectConfig, load_project
+from .loader import (
+    InvalidProjectIdError,
+    PROJECTS_ROOT,
+    ProjectConfig,
+    load_project,
+    validate_project_id,
+)
 
-__all__ = ["PROJECTS_ROOT", "ProjectConfig", "load_project"]
+__all__ = [
+    "InvalidProjectIdError",
+    "PROJECTS_ROOT",
+    "ProjectConfig",
+    "load_project",
+    "validate_project_id",
+]

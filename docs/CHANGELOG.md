@@ -6,6 +6,29 @@ This changelog follows a simple human-readable format.
 
 ---
 
+## 2026-07-06
+
+### Added
+
+- Added `core/services/` with a minimal Workspace / Project / BrandProfile service layer for Task 2.
+  - Introduces `FileSystemProjectRepository` for listing and loading project configs from `projects/{project_id}/project.yaml`.
+  - Introduces `WorkspaceService`, `ProjectService` and `BrandProfileService`.
+  - Maps project config data into canonical domain `Workspace`, `Project` and `BrandProfile` models from `core/domain`.
+
+- Added `projects/example/project.yaml`.
+  - Provides a neutral demo fixture for service-layer tests.
+  - Keeps the platform project-agnostic and avoids brand-specific hardcode.
+
+- Added `tests/services/test_projects.py`.
+  - Covers project listing, project loading, BrandProfile building, required-field validation, invalid `project_id` rejection and absence of NURA-specific hardcode in Task 2 files.
+
+### Changed
+
+- Extended `core/projects/loader.py`.
+  - Adds `project_id` validation to prevent invalid IDs and path traversal.
+  - Supports project config aliases such as `project_id`, `project_name`, `project_slug` and `default_language`.
+  - Supports richer brand config fields needed for canonical domain mapping while preserving the existing loader role.
+
 ## 2026-07-05
 
 ### Added

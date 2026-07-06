@@ -1,0 +1,30 @@
+{
+  "workspace_id": "internal",
+  "project_id": "example",
+  "project_name": "Example Project",
+  "project_slug": "example_project",
+  "description": "Neutral demo project fixture for Content Plant service tests.",
+  "default_language": "en",
+  "status": "active",
+  "primary_url": "https://example.com",
+  "target_platforms": ["telegram", "threads", "vk"],
+  "brand": {
+    "brand_name": "Example Brand",
+    "positioning": "A clear and practical demo brand for multi-project content workflows.",
+    "audience_summary": "People exploring structured content production systems.",
+    "language": "en",
+    "brand_values": ["clarity", "consistency"],
+    "tone_of_voice": {
+      "tone_summary": "Clear, warm and practical.",
+      "style_keywords": ["clear", "warm", "practical"],
+      "allowed_phrases": [],
+      "forbidden_phrases": ["guaranteed results"]
+    },
+    "content_rules": {
+      "allowed_topics": ["content workflows"],
+      "forbidden_topics": ["medical claims"],
+      "writing_rules": ["Use plain language."],
+      "claim_restrictions": ["Do not promise guaranteed outcomes."]
+    }
+  }
+}
