@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "QuoteMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "speaker": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "enum": [
+                "calm",
+                "intense",
+                "uplifting",
+                "reflective"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mood"
+        }
+      },
+      "title": "QuoteMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Editorial quote video for short-form social platforms.",
+  "examples": [
+    {
+      "body": "The right people feel your truth before you finish defending it.",
+      "brand_id": "nura",
+      "content_type": "quote",
+      "cta": "Get your reading in Telegram",
+      "cta_handle": "@ai_nura_bot",
+      "hook": "Read this when you feel misunderstood.",
+      "meta": {
+        "mood": "reflective",
+        "speaker": "NURA"
+      },
+      "title": "You do not need to explain yourself to be worthy."
+    }
+  ],
+  "properties": {
+    "content_type": {
+      "const": "quote",
+      "title": "Content Type",
+      "type": "string"
+    },
+    "brand_id": {
+      "maxLength": 32,
+      "minLength": 2,
+      "pattern": "^[a-z0-9_-]+$",
+      "title": "Brand Id",
+      "type": "string"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "maxLength": 48,
+          "minLength": 2,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display override.",
+      "title": "Brand"
+    },
+    "hook": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Hook",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 180,
+      "minLength": 12,
+      "title": "Title",
+      "type": "string"
+    },
+    "body": {
+      "maxLength": 260,
+      "minLength": 12,
+      "title": "Body",
+      "type": "string"
+    },
+    "cta": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Cta",
+      "type": "string"
+    },
+    "voiceover": {
+      "anyOf": [
+        {
+          "maxLength": 700,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiceover"
+    },
+    "cta_handle": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 2,
+          "pattern": "^@?[A-Za-z0-9_]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Handle"
+    },
+    "cta_subtitle": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Subtitle"
+    },
+    "cta_hint": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Hint"
+    },
+    "theme": {
+      "const": "brand_default",
+      "default": "brand_default",
+      "title": "Theme",
+      "type": "string"
+    },
+    "typing_mode": {
+      "default": "word",
+      "enum": [
+        "word",
+        "char"
+      ],
+      "title": "Typing Mode",
+      "type": "string"
+    },
+    "panel_style": {
+      "default": "soft",
+      "enum": [
+        "soft",
+        "clean",
+        "strong",
+        "premium"
+      ],
+      "title": "Panel Style",
+      "type": "string"
+    },
+    "scenes": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 220,
+            "minLength": 4,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explicit scene copy. When omitted, renderer builds scenes from hook/title/body/cta.",
+      "title": "Scenes"
+    },
+    "meta": {
+      "$ref": "#/$defs/QuoteMeta"
+    }
+  },
+  "required": [
+    "content_type",
+    "brand_id",
+    "hook",
+    "title",
+    "body",
+    "cta"
+  ],
+  "title": "QuoteBrief",
+  "type": "object",
+  "x-content-plant": {
+    "failure_behavior": "Fail fast. Do not render. Print a human-readable validation error.",
+    "scene_structure": [
+      "hook",
+      "quote",
+      "reflection",
+      "cta"
+    ],
+    "timing_expectations_sec": {
+      "cta": [
+        22,
+        30
+      ],
+      "hook": [
+        0,
+        3
+      ],
+      "quote": [
+        3,
+        11
+      ],
+      "reflection": [
+        11,
+        22
+      ]
+    }
+  }
+}

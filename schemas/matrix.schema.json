@@ -1,0 +1,268 @@
+{
+  "$defs": {
+    "MatrixMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "matrix_number": {
+          "maxLength": 16,
+          "minLength": 1,
+          "title": "Matrix Number",
+          "type": "string"
+        },
+        "matrix_label": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matrix Label"
+        },
+        "focus_area": {
+          "anyOf": [
+            {
+              "enum": [
+                "love",
+                "money",
+                "energy",
+                "purpose",
+                "relationships"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus Area"
+        }
+      },
+      "required": [
+        "matrix_number"
+      ],
+      "title": "MatrixMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Analytical matrix-style short focused on one code or numerical pattern.",
+  "examples": [
+    {
+      "body": "This code usually appears when your intuition is stronger than your current structure.",
+      "brand_id": "nura",
+      "content_type": "matrix",
+      "cta": "Get your reading in Telegram",
+      "cta_handle": "@ai_nura_bot",
+      "hook": "If 11 keeps showing up for you, stop ignoring it.",
+      "meta": {
+        "focus_area": "purpose",
+        "matrix_number": "11"
+      },
+      "title": "11 is not random."
+    }
+  ],
+  "properties": {
+    "content_type": {
+      "const": "matrix",
+      "title": "Content Type",
+      "type": "string"
+    },
+    "brand_id": {
+      "maxLength": 32,
+      "minLength": 2,
+      "pattern": "^[a-z0-9_-]+$",
+      "title": "Brand Id",
+      "type": "string"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "maxLength": 48,
+          "minLength": 2,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display override.",
+      "title": "Brand"
+    },
+    "hook": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Hook",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 100,
+      "minLength": 6,
+      "title": "Title",
+      "type": "string"
+    },
+    "body": {
+      "maxLength": 260,
+      "minLength": 18,
+      "title": "Body",
+      "type": "string"
+    },
+    "cta": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Cta",
+      "type": "string"
+    },
+    "voiceover": {
+      "anyOf": [
+        {
+          "maxLength": 900,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiceover"
+    },
+    "cta_handle": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 2,
+          "pattern": "^@?[A-Za-z0-9_]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Handle"
+    },
+    "cta_subtitle": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Subtitle"
+    },
+    "cta_hint": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Hint"
+    },
+    "theme": {
+      "const": "brand_default",
+      "default": "brand_default",
+      "title": "Theme",
+      "type": "string"
+    },
+    "typing_mode": {
+      "default": "word",
+      "enum": [
+        "word",
+        "char"
+      ],
+      "title": "Typing Mode",
+      "type": "string"
+    },
+    "panel_style": {
+      "default": "soft",
+      "enum": [
+        "soft",
+        "clean",
+        "strong",
+        "premium"
+      ],
+      "title": "Panel Style",
+      "type": "string"
+    },
+    "scenes": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 220,
+            "minLength": 4,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explicit scene copy. When omitted, renderer builds scenes from hook/title/body/cta.",
+      "title": "Scenes"
+    },
+    "meta": {
+      "$ref": "#/$defs/MatrixMeta"
+    }
+  },
+  "required": [
+    "content_type",
+    "brand_id",
+    "hook",
+    "title",
+    "body",
+    "cta",
+    "meta"
+  ],
+  "title": "MatrixBrief",
+  "type": "object",
+  "x-content-plant": {
+    "failure_behavior": "Fail fast. Do not render. Print a human-readable validation error.",
+    "scene_structure": [
+      "signal",
+      "code",
+      "pattern",
+      "insight",
+      "cta"
+    ],
+    "timing_expectations_sec": {
+      "code": [
+        3,
+        9
+      ],
+      "cta": [
+        23,
+        30.5
+      ],
+      "insight": [
+        16,
+        23
+      ],
+      "pattern": [
+        9,
+        16
+      ],
+      "signal": [
+        0,
+        3
+      ]
+    }
+  }
+}

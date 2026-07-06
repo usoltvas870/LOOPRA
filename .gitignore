@@ -15,3 +15,40 @@ trend-radar/data/
 # Generated outputs in video-assembler
 video-assembler/jobs/
 video-assembler/videos/output/
+
+# Audio input for hyperframes pipeline
+hyperframes/audio_input/*
+!hyperframes/audio_input/.gitkeep
+
+# Generated outputs for hyperframes pipeline
+hyperframes/output/
+
+# Local agent/service state
+.agents/
+
+# Project-specific work that should not enter project-agnostic foundation commits
+brands/
+projects/nura/
+
+# Runtime job artifacts
+jobs/*/input/
+jobs/*/work/
+jobs/*/output/
+!jobs/.gitkeep
+
+# Local caches and reusable runtime storage
+output/
+storage/*
+!storage/.gitkeep
+
+# Generated HyperFrames artifacts
+hyperframes/publish/
+hyperframes/frame_check/
+hyperframes/work-*/
+hyperframes/debug.log
+hyperframes/*.bak
+hyperframes/assets/source_videos/
+
+# Local one-off outputs
+story-test-output/
+skills-lock.json

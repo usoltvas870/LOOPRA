@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "ProductMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "product_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "digital",
+                "physical",
+                "service",
+                "app",
+                "course"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Type"
+        },
+        "offer": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offer"
+        },
+        "price_anchor": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Price Anchor"
+        },
+        "benefits": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 80,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Benefits"
+        }
+      },
+      "title": "ProductMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Short-form product video with problem, product framing, benefits, and offer.",
+  "examples": [
+    {
+      "body": "Pick a template, pick a brand, pass a JSON brief, and ship content faster.",
+      "brand": "Content Plant",
+      "brand_id": "default",
+      "content_type": "product",
+      "cta": "Book a demo",
+      "hook": "Still building every short manually?",
+      "meta": {
+        "offer": "Template setup for your brand",
+        "product_type": "service"
+      },
+      "title": "Content Plant turns briefs into repeatable video output."
+    }
+  ],
+  "properties": {
+    "content_type": {
+      "const": "product",
+      "title": "Content Type",
+      "type": "string"
+    },
+    "brand_id": {
+      "maxLength": 32,
+      "minLength": 2,
+      "pattern": "^[a-z0-9_-]+$",
+      "title": "Brand Id",
+      "type": "string"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "maxLength": 48,
+          "minLength": 2,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display override.",
+      "title": "Brand"
+    },
+    "hook": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Hook",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 12,
+      "title": "Title",
+      "type": "string"
+    },
+    "body": {
+      "maxLength": 260,
+      "minLength": 18,
+      "title": "Body",
+      "type": "string"
+    },
+    "cta": {
+      "maxLength": 90,
+      "minLength": 4,
+      "title": "Cta",
+      "type": "string"
+    },
+    "voiceover": {
+      "anyOf": [
+        {
+          "maxLength": 900,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiceover"
+    },
+    "cta_handle": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 2,
+          "pattern": "^@?[A-Za-z0-9_]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Handle"
+    },
+    "cta_subtitle": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Subtitle"
+    },
+    "cta_hint": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Hint"
+    },
+    "theme": {
+      "const": "brand_default",
+      "default": "brand_default",
+      "title": "Theme",
+      "type": "string"
+    },
+    "typing_mode": {
+      "default": "word",
+      "enum": [
+        "word",
+        "char"
+      ],
+      "title": "Typing Mode",
+      "type": "string"
+    },
+    "panel_style": {
+      "default": "soft",
+      "enum": [
+        "soft",
+        "clean",
+        "strong",
+        "premium"
+      ],
+      "title": "Panel Style",
+      "type": "string"
+    },
+    "scenes": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 220,
+            "minLength": 4,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explicit scene copy. When omitted, renderer builds scenes from hook/title/body/cta.",
+      "title": "Scenes"
+    },
+    "meta": {
+      "$ref": "#/$defs/ProductMeta"
+    }
+  },
+  "required": [
+    "content_type",
+    "brand_id",
+    "hook",
+    "title",
+    "body",
+    "cta"
+  ],
+  "title": "ProductBrief",
+  "type": "object",
+  "x-content-plant": {
+    "failure_behavior": "Fail fast. Do not render. Print a human-readable validation error.",
+    "scene_structure": [
+      "problem",
+      "product",
+      "benefit1",
+      "benefit2",
+      "cta"
+    ],
+    "timing_expectations_sec": {
+      "benefit1": [
+        9.5,
+        16
+      ],
+      "benefit2": [
+        16,
+        23
+      ],
+      "cta": [
+        23,
+        31
+      ],
+      "problem": [
+        0,
+        3.2
+      ],
+      "product": [
+        3.2,
+        9.5
+      ]
+    }
+  }
+}

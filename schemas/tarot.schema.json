@@ -1,0 +1,269 @@
+{
+  "$defs": {
+    "TarotMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "card_name": {
+          "maxLength": 60,
+          "minLength": 2,
+          "title": "Card Name",
+          "type": "string"
+        },
+        "arcana": {
+          "anyOf": [
+            {
+              "enum": [
+                "major",
+                "minor"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arcana"
+        },
+        "orientation": {
+          "anyOf": [
+            {
+              "enum": [
+                "upright",
+                "reversed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Orientation"
+        }
+      },
+      "required": [
+        "card_name"
+      ],
+      "title": "TarotMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Mystical card-reading style short focused on a single tarot insight.",
+  "examples": [
+    {
+      "body": "You already sense more than you admit. Trust the signal before you seek more proof.",
+      "brand_id": "nura",
+      "content_type": "tarot",
+      "cta": "Get your reading in Telegram",
+      "cta_handle": "@ai_nura_bot",
+      "hook": "This card appears when your energy is asking for truth.",
+      "meta": {
+        "arcana": "major",
+        "card_name": "The High Priestess",
+        "orientation": "upright"
+      },
+      "title": "The High Priestess"
+    }
+  ],
+  "properties": {
+    "content_type": {
+      "const": "tarot",
+      "title": "Content Type",
+      "type": "string"
+    },
+    "brand_id": {
+      "maxLength": 32,
+      "minLength": 2,
+      "pattern": "^[a-z0-9_-]+$",
+      "title": "Brand Id",
+      "type": "string"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "maxLength": 48,
+          "minLength": 2,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display override.",
+      "title": "Brand"
+    },
+    "hook": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Hook",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 80,
+      "minLength": 2,
+      "title": "Title",
+      "type": "string"
+    },
+    "body": {
+      "maxLength": 300,
+      "minLength": 18,
+      "title": "Body",
+      "type": "string"
+    },
+    "cta": {
+      "maxLength": 90,
+      "minLength": 6,
+      "title": "Cta",
+      "type": "string"
+    },
+    "voiceover": {
+      "anyOf": [
+        {
+          "maxLength": 900,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiceover"
+    },
+    "cta_handle": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 2,
+          "pattern": "^@?[A-Za-z0-9_]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Handle"
+    },
+    "cta_subtitle": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Subtitle"
+    },
+    "cta_hint": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Hint"
+    },
+    "theme": {
+      "const": "brand_default",
+      "default": "brand_default",
+      "title": "Theme",
+      "type": "string"
+    },
+    "typing_mode": {
+      "default": "word",
+      "enum": [
+        "word",
+        "char"
+      ],
+      "title": "Typing Mode",
+      "type": "string"
+    },
+    "panel_style": {
+      "default": "soft",
+      "enum": [
+        "soft",
+        "clean",
+        "strong",
+        "premium"
+      ],
+      "title": "Panel Style",
+      "type": "string"
+    },
+    "scenes": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 220,
+            "minLength": 4,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explicit scene copy. When omitted, renderer builds scenes from hook/title/body/cta.",
+      "title": "Scenes"
+    },
+    "meta": {
+      "$ref": "#/$defs/TarotMeta"
+    }
+  },
+  "required": [
+    "content_type",
+    "brand_id",
+    "hook",
+    "title",
+    "body",
+    "cta",
+    "meta"
+  ],
+  "title": "TarotBrief",
+  "type": "object",
+  "x-content-plant": {
+    "failure_behavior": "Fail fast. Do not render. Print a human-readable validation error.",
+    "scene_structure": [
+      "omen",
+      "card",
+      "energy",
+      "guidance",
+      "cta"
+    ],
+    "timing_expectations_sec": {
+      "card": [
+        3,
+        8
+      ],
+      "cta": [
+        23,
+        31
+      ],
+      "energy": [
+        8,
+        15
+      ],
+      "guidance": [
+        15,
+        23
+      ],
+      "omen": [
+        0,
+        3
+      ]
+    }
+  }
+}

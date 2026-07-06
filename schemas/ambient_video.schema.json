@@ -1,0 +1,317 @@
+{
+  "$defs": {
+    "AmbientVideoMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "color_grade": {
+          "const": "nura_ivory_gold",
+          "default": "nura_ivory_gold",
+          "title": "Color Grade",
+          "type": "string"
+        },
+        "motion_style": {
+          "const": "soft_editorial",
+          "default": "soft_editorial",
+          "title": "Motion Style",
+          "type": "string"
+        }
+      },
+      "title": "AmbientVideoMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Branding workflow for manually provided vertical source videos.",
+  "examples": [
+    {
+      "brand_id": "nura",
+      "caption": "Если отозвалось — полный разбор по дате рождения в профиле.",
+      "content_type": "ambient_video",
+      "cta_mode": "signature",
+      "hashtags": [
+        "#нура",
+        "#самопознание",
+        "#матрицасудьбы",
+        "#психология"
+      ],
+      "headline": "Ты не запуталась. Ты просто слишком долго выбирала не себя.",
+      "id": "ambient_001",
+      "platforms": [
+        "tiktok",
+        "reels",
+        "shorts"
+      ],
+      "source_video": "hyperframes/assets/source_videos/nura/ambient_001.mp4",
+      "subline": "Иногда возвращение начинается с одной честной фразы."
+    }
+  ],
+  "properties": {
+    "id": {
+      "maxLength": 80,
+      "minLength": 2,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Id",
+      "type": "string"
+    },
+    "content_type": {
+      "const": "ambient_video",
+      "title": "Content Type",
+      "type": "string"
+    },
+    "brand_id": {
+      "maxLength": 32,
+      "minLength": 2,
+      "pattern": "^[a-z0-9_-]+$",
+      "title": "Brand Id",
+      "type": "string"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "maxLength": 48,
+          "minLength": 2,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional display override.",
+      "title": "Brand"
+    },
+    "platforms": {
+      "items": {
+        "enum": [
+          "tiktok",
+          "reels",
+          "shorts",
+          "instagram_reels",
+          "youtube_shorts"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Platforms",
+      "type": "array"
+    },
+    "source_video": {
+      "maxLength": 260,
+      "minLength": 4,
+      "title": "Source Video",
+      "type": "string"
+    },
+    "headline": {
+      "maxLength": 180,
+      "minLength": 8,
+      "title": "Headline",
+      "type": "string"
+    },
+    "subline": {
+      "anyOf": [
+        {
+          "maxLength": 180,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subline"
+    },
+    "cta_mode": {
+      "default": "signature",
+      "enum": [
+        "none",
+        "signature",
+        "profile_soft",
+        "site_soft",
+        "offer"
+      ],
+      "title": "Cta Mode",
+      "type": "string"
+    },
+    "cta_text": {
+      "anyOf": [
+        {
+          "maxLength": 90,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Text"
+    },
+    "website": {
+      "default": "nura-ai.ru",
+      "maxLength": 80,
+      "minLength": 4,
+      "title": "Website",
+      "type": "string"
+    },
+    "caption": {
+      "maxLength": 1800,
+      "minLength": 20,
+      "title": "Caption",
+      "type": "string"
+    },
+    "hashtags": {
+      "items": {
+        "maxLength": 40,
+        "minLength": 2,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "title": "Hashtags",
+      "type": "array"
+    },
+    "hook": {
+      "default": "",
+      "title": "Hook",
+      "type": "string"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    },
+    "body": {
+      "default": "",
+      "title": "Body",
+      "type": "string"
+    },
+    "cta": {
+      "default": "",
+      "title": "Cta",
+      "type": "string"
+    },
+    "voiceover": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiceover"
+    },
+    "cta_handle": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Handle"
+    },
+    "cta_subtitle": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Subtitle"
+    },
+    "cta_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cta Hint"
+    },
+    "theme": {
+      "const": "brand_default",
+      "default": "brand_default",
+      "title": "Theme",
+      "type": "string"
+    },
+    "typing_mode": {
+      "const": "fade",
+      "default": "fade",
+      "title": "Typing Mode",
+      "type": "string"
+    },
+    "panel_style": {
+      "const": "premium",
+      "default": "premium",
+      "title": "Panel Style",
+      "type": "string"
+    },
+    "scenes": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 220,
+            "minLength": 4,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenes"
+    },
+    "meta": {
+      "$ref": "#/$defs/AmbientVideoMeta"
+    }
+  },
+  "required": [
+    "id",
+    "content_type",
+    "brand_id",
+    "source_video",
+    "headline",
+    "caption",
+    "hashtags"
+  ],
+  "title": "AmbientVideoBrief",
+  "type": "object",
+  "x-content-plant": {
+    "failure_behavior": "Fail fast when source_video is missing with a human-readable path hint.",
+    "scene_structure": [
+      "source_video",
+      "color_grade",
+      "logo_site",
+      "headline_subline",
+      "cta"
+    ],
+    "timing_expectations_sec": {
+      "brand": [
+        0,
+        2
+      ],
+      "cta": [
+        10,
+        15
+      ],
+      "headline": [
+        1,
+        12
+      ]
+    }
+  }
+}
