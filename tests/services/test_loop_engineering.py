@@ -134,6 +134,10 @@ class LoopEngineeringFixture(unittest.TestCase):
         )
         return content_item, export_package, publication
 
+    @staticmethod
+    def read_publication_notes(publication) -> dict[str, object]:
+        return json.loads(publication.notes)
+
     def _write_project_fixture(self, project_id: str, *, project_name: str | None = None) -> None:
         payload = json.loads(Path("projects/example/project.yaml").read_text(encoding="utf-8"))
         payload["project_id"] = project_id
@@ -298,10 +302,39 @@ class PublishingServiceTests(LoopEngineeringFixture):
             publication.publication_id,
             "https://example.invalid/example/published/post",
         )
+        created_metadata = self.read_publication_notes(publication)
+        published_metadata = self.read_publication_notes(published)
 
         self.assertEqual(publication.status, PublicationStatus.PLANNED)
+        self.assertEqual(publication.project_id, "example")
+        self.assertEqual(publication.content_item_id, content_item.content_item_id)
+        self.assertEqual(publication.export_package_id, export_package.export_package_id)
+        self.assertEqual(created_metadata["project_id"], "example")
+        self.assertEqual(created_metadata["content_item_id"], content_item.content_item_id)
+        self.assertEqual(created_metadata["export_package_id"], export_package.export_package_id)
+        self.assertTrue(created_metadata["manual_publication_only"])
+        self.assertEqual(created_metadata["publication_method"], "manual")
+        self.assertEqual(created_metadata["source"], "publishing_hub")
+        self.assertEqual(created_metadata["target_platform"], "telegram")
+        self.assertIsInstance(created_metadata["created_at"], str)
         self.assertEqual(published.status, PublicationStatus.PUBLISHED)
         self.assertEqual(published.published_url, "https://example.invalid/example/published/post")
+        self.assertIsNotNone(published.published_at)
+        self.assertEqual(published_metadata["published_url"], "https://example.invalid/example/published/post")
+        self.assertIsInstance(published_metadata["published_at"], str)
+        self.assertNotIn(self._forbidden_project_marker, publication.notes.lower())
+        self.assertNotIn(self._forbidden_project_marker, published.notes.lower())
+
+    def test_rejects_empty_published_url(self) -> None:
+        _, content_item, export_package = self.create_ready_export_package()
+        publication = self.publishing_service.create_publication(
+            "example",
+            content_item.content_item_id,
+            export_package.export_package_id,
+        )
+
+        with self.assertRaises(PublishingValidationError):
+            self.publishing_service.publish_content("example", publication.publication_id, "   ")
 
     def test_marks_publication_as_failed(self) -> None:
         _, content_item, export_package = self.create_ready_export_package()
@@ -316,9 +349,13 @@ class PublishingServiceTests(LoopEngineeringFixture):
             publication.publication_id,
             "Manual publishing failed in external channel.",
         )
+        failed_metadata = self.read_publication_notes(failed)
 
         self.assertEqual(failed.status, PublicationStatus.FAILED)
-        self.assertIn("failed", failed.notes.lower())
+        self.assertEqual(failed_metadata["failure_reason"], "Manual publishing failed in external channel.")
+        self.assertEqual(failed_metadata["publication_method"], "manual")
+        self.assertTrue(failed_metadata["manual_publication_only"])
+        self.assertNotIn(self._forbidden_project_marker, failed.notes.lower())
 
     def test_rejects_invalid_publication_transition(self) -> None:
         _, content_item, export_package, = self.create_ready_export_package()

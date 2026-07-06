@@ -219,6 +219,45 @@ class PublishingService:
             "scenario_qa_warnings": list(scenario.qa_warnings),
         }
 
+    def _build_publication_notes(
+        self,
+        publication: Publication,
+        *,
+        published_url: str | None = None,
+        failure_reason: str | None = None,
+    ) -> str:
+        existing_metadata = self._load_publication_notes_metadata(publication.notes)
+        metadata: dict[str, object] = {
+            **existing_metadata,
+            "project_id": publication.project_id,
+            "content_item_id": publication.content_item_id,
+            "export_package_id": publication.export_package_id,
+            "manual_publication_only": True,
+            "target_platform": publication.platform.value,
+            "publication_method": publication.publication_method.value,
+            "created_at": publication.created_at.isoformat(),
+            "source": "publishing_hub",
+        }
+        if publication.published_at is not None:
+            metadata["published_at"] = publication.published_at.isoformat()
+        if publication.published_url:
+            metadata["published_url"] = publication.published_url
+        if published_url:
+            metadata["published_url"] = published_url
+        if failure_reason:
+            metadata["failure_reason"] = failure_reason
+        return json.dumps(metadata, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def _load_publication_notes_metadata(notes: str) -> dict[str, object]:
+        if not notes.strip():
+            return {}
+        try:
+            payload = json.loads(notes)
+        except json.JSONDecodeError:
+            return {"note": notes.strip()}
+        return payload if isinstance(payload, dict) else {"note": notes.strip()}
+
     def create_publication(self, project_id: str, content_item_id: str, export_package_id: str) -> Publication:
         project = self._project_service.get_project(project_id)
         content_item = self._content_repository.load_content_item(project_id, content_item_id)
@@ -243,28 +282,31 @@ class PublishingService:
             export_package_id=export_package.export_package_id,
             platform=export_package.target_platform,
             status=PublicationStatus.PLANNED,
-            notes="Created for manual publication flow.",
+            notes="",
         )
+        publication = validated_model_copy(publication, notes=self._build_publication_notes(publication))
         return self._publication_repository.save_publication(publication)
 
     def publish_content(self, project_id: str, publication_id: str, published_url: str) -> Publication:
         publication = self.get_publication(project_id, publication_id)
-        if not published_url.strip():
+        normalized_url = published_url.strip()
+        if not normalized_url:
             raise PublishingValidationError("published_url must not be empty")
         published = publication.transition_to(
             PublicationStatus.PUBLISHED,
-            published_url=published_url.strip(),
+            published_url=normalized_url,
         )
+        published = validated_model_copy(published, notes=self._build_publication_notes(published, published_url=normalized_url))
         return self._publication_repository.save_publication(published)
 
     def fail_publication(self, project_id: str, publication_id: str, error: str) -> Publication:
         publication = self.get_publication(project_id, publication_id)
-        publication = validated_model_copy(
-            publication,
-            notes=error.strip() or publication.notes,
-            updated_at=utc_now(),
-        )
+        failure_reason = error.strip()
         failed = publication.transition_to(PublicationStatus.FAILED)
+        failed = validated_model_copy(
+            failed,
+            notes=self._build_publication_notes(failed, failure_reason=failure_reason or None),
+        )
         return self._publication_repository.save_publication(failed)
 
 
