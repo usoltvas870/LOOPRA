@@ -6,6 +6,41 @@ Content Plant is a standalone multi-project platform for systematic content prod
 
 Platform code and platform docs must stay project-agnostic. Do not hardcode any specific brand, product, URL, price, persona or project into the platform layer.
 
+## Current Baseline
+
+- Foundation baseline is committed and pushed to `main`.
+- Current foundation is project-agnostic.
+- NURA is not part of the platform foundation and may only be used later as a validation project in the project layer.
+- No NURA-specific logic, assets, config, templates, prompts or packages are part of the foundation baseline.
+- `graphify-out/` is generated local output, ignored by Git and must not be committed.
+- The current foundation includes:
+  - canonical domain layer in `core/domain`
+  - project services and project config binding
+  - `IdeaService`
+  - `ScenarioService`
+  - minimal production lifecycle service
+  - `PublishingService`
+  - `AnalyticsService` placeholder
+  - thin `LoopOrchestrator`
+  - filesystem-based persistence
+  - minimal loop `Idea -> Scenario -> ContentItem -> ExportPackage -> Publication -> MetricSnapshot`
+
+## Operating Model
+
+- Default mode: Fast Loop.
+- Operating model:
+  - `Chat defines task contract -> Codex implements -> user brings report back to Chat -> Chat reviews and chooses next step`
+- CLI review is not needed for small docs, config or test tasks.
+- Use CLI copilot-agent only for guarded or high-risk tasks such as:
+  - domain model changes
+  - storage or persistence changes
+  - large diffs
+  - new service layers
+  - project config format changes
+  - external integrations
+  - API, UI, DB, render or autoposting work
+  - validation-project introduction
+
 ## Read First
 
 Before any task, read in this order:
@@ -23,18 +58,31 @@ Before any task, read in this order:
 - `ExportPackage` belongs to `Publishing Hub`.
 - `Production Engine` owns `RenderJob`, `OutputFile`, `ContentItem`, technical QA result and render output metadata.
 - `Publishing Hub` owns `ExportPackage`, platform-ready package, caption variants, publication preparation, manual publication record and `Publication` status.
+- MVP is export-first.
+- MVP is manual-publication-first.
 - The first safest MVP content format is `text_social_post`.
+- The minimal `text_social_post` foundation loop does not require real render.
+- `RenderJob` and `OutputFile` are not mandatory for the current minimal foundation loop unless a future task explicitly introduces them.
 - Project-specific source of truth uses a hybrid model:
   - human-readable project docs: `docs/07_projects/{project_slug}/`
   - machine-readable config: `projects/{project_id}/project.yaml`
 
 ## Boundaries
 
+- Do not add API or UI work unless explicitly requested.
+- Do not add database persistence layers or migrations unless explicitly requested.
 - Do not add SaaS, billing, marketplace, users, roles, public onboarding, autoposting or external APIs unless explicitly requested.
 - Do not touch `trend-radar/`, `hyperframes/`, FFmpeg flows, `video-assembler/` or render scripts unless explicitly requested.
 - Do not add project-specific hardcode to platform-level code or docs.
+- Do not add NURA-specific assets, templates, prompts or packages to the foundation layer.
+- Do not treat NURA as a platform default, platform example set or platform dependency.
 - Do not mix `ContentItem` status and `Publication` status.
 - Do not mix Content Analytics and Product Analytics.
+
+Project-specific logic may live only in:
+
+- `docs/07_projects/{project_slug}/`
+- `projects/{project_id}/project.yaml`
 
 ## Git Rules
 
@@ -61,6 +109,9 @@ Before any task, read in this order:
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+`graphify-out/` is generated local output. It is a local artifact, not source code, and must not be committed.
+Post-commit `graphify-out/` rebuilds must not be treated as source changes.
 
 When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
 
