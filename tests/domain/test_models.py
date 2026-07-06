@@ -21,6 +21,7 @@ from core.domain import (
     PublishingPlatform,
     RenderJob,
     Scenario,
+    ScenarioTextBlock,
     Workspace,
 )
 
@@ -47,6 +48,7 @@ class DomainModelTests(unittest.TestCase):
             workspace_id=workspace.workspace_id,
             project_id=project.project_id,
             title="Hook around one pain point",
+            funnel_stage="trust",
         )
         scenario = Scenario(
             scenario_id="scenario_001",
@@ -55,6 +57,17 @@ class DomainModelTests(unittest.TestCase):
             idea_id=idea.idea_id,
             brand_profile_id=brand_profile.brand_profile_id,
             title="Draft social post",
+            funnel_stage=idea.funnel_stage,
+            target_platforms=[PublishingPlatform.TELEGRAM],
+            blocks=[
+                ScenarioTextBlock(
+                    block_id="block_001",
+                    order=1,
+                    role="post_body",
+                    platform=PublishingPlatform.TELEGRAM,
+                    text="Short structured post body.",
+                )
+            ],
         )
         render_job = RenderJob(
             render_job_id="render_001",
@@ -109,6 +122,8 @@ class DomainModelTests(unittest.TestCase):
 
         self.assertEqual(idea.content_format, ContentFormat.TEXT_SOCIAL_POST)
         self.assertEqual(scenario.content_format, ContentFormat.TEXT_SOCIAL_POST)
+        self.assertEqual(idea.funnel_stage, "trust")
+        self.assertEqual(scenario.blocks[0].platform, PublishingPlatform.TELEGRAM)
         self.assertEqual(content_item.content_format, ContentFormat.TEXT_SOCIAL_POST)
         self.assertEqual(export_package.content_format, ContentFormat.TEXT_SOCIAL_POST)
         self.assertEqual(output_file.owner_module, DomainModule.PRODUCTION_ENGINE)

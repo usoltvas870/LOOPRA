@@ -101,13 +101,27 @@ class BrandProfile(ProjectScopedModel):
     status: BrandProfileStatus = BrandProfileStatus.DRAFT
 
 
+class ScenarioTextBlock(DomainModel):
+    block_id: str = Field(min_length=1)
+    order: int = Field(ge=1)
+    role: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    platform: PublishingPlatform | None = None
+    status: str = "draft"
+
+
 class Idea(ProjectScopedModel):
     idea_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     description: str = ""
+    topic: str = ""
+    funnel_stage: str = "attention"
     content_format: ContentFormat = ContentFormat.TEXT_SOCIAL_POST
     source_type: str = "manual"
-    status: IdeaStatus = IdeaStatus.DRAFT
+    source_id: str = ""
+    priority: str = "medium"
+    tags: list[str] = Field(default_factory=list)
+    status: IdeaStatus = IdeaStatus.RAW
 
     def transition_to(self, next_status: IdeaStatus) -> "Idea":
         validate_status_transition(
@@ -123,9 +137,16 @@ class Scenario(ProjectScopedModel):
     scenario_id: str = Field(min_length=1)
     idea_id: str = Field(min_length=1)
     brand_profile_id: str = Field(min_length=1)
+    source_type: str = "idea"
+    source_id: str = ""
     title: str = Field(min_length=1)
     draft_text: str = ""
+    funnel_stage: str = "attention"
     content_format: ContentFormat = ContentFormat.TEXT_SOCIAL_POST
+    target_platforms: list[PublishingPlatform] = Field(default_factory=list)
+    blocks: list[ScenarioTextBlock] = Field(default_factory=list)
+    caption_drafts: dict[str, str] = Field(default_factory=dict)
+    qa_warnings: list[str] = Field(default_factory=list)
     status: ScenarioStatus = ScenarioStatus.DRAFT
     metadata: dict[str, Any] = Field(default_factory=dict)
 

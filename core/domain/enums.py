@@ -31,6 +31,7 @@ class BrandProfileStatus(StrEnum):
 
 class ContentFormat(StrEnum):
     TEXT_SOCIAL_POST = "text_social_post"
+    DIALOG_MINISERIES = "dialog_miniseries"
 
 
 class PublishingPlatform(StrEnum):
@@ -73,9 +74,10 @@ class RenderJobStatus(StrEnum):
 
 
 class IdeaStatus(StrEnum):
-    DRAFT = "draft"
+    RAW = "raw"
     APPROVED = "approved"
-    IN_SCENARIO = "in_scenario"
+    REJECTED = "rejected"
+    SCRIPTED = "scripted"
     ARCHIVED = "archived"
 
 

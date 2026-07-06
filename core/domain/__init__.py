@@ -30,6 +30,7 @@ from .models import (
     Publication,
     RenderJob,
     Scenario,
+    ScenarioTextBlock,
     Workspace,
 )
 from .transitions import (
@@ -80,6 +81,7 @@ __all__ = [
     "SCENARIO_STATUS_TRANSITIONS",
     "Scenario",
     "ScenarioStatus",
+    "ScenarioTextBlock",
     "Workspace",
     "WorkspaceStatus",
     "CONTENT_ITEM_STATUS_TRANSITIONS",

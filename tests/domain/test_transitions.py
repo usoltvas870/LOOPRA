@@ -26,8 +26,8 @@ from core.domain import (
 class StatusTransitionTests(unittest.TestCase):
     def test_idea_valid_transitions(self) -> None:
         cases = [
-            (IdeaStatus.DRAFT, IdeaStatus.APPROVED),
-            (IdeaStatus.APPROVED, IdeaStatus.IN_SCENARIO),
+            (IdeaStatus.RAW, IdeaStatus.APPROVED),
+            (IdeaStatus.APPROVED, IdeaStatus.SCRIPTED),
         ]
 
         for current_status, next_status in cases:
@@ -48,11 +48,11 @@ class StatusTransitionTests(unittest.TestCase):
             workspace_id="workspace_001",
             project_id="project_001",
             title="Idea",
-            status=IdeaStatus.DRAFT,
+            status=IdeaStatus.RAW,
         )
 
         with self.assertRaises(InvalidStatusTransitionError):
-            idea.transition_to(IdeaStatus.IN_SCENARIO)
+            idea.transition_to(IdeaStatus.SCRIPTED)
 
     def test_scenario_invalid_transition_is_rejected(self) -> None:
         scenario = Scenario(

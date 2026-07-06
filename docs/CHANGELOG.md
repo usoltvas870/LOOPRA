@@ -10,6 +10,24 @@ This changelog follows a simple human-readable format.
 
 ### Added
 
+- Added minimal loop engineering foundation services for the safest project-agnostic MVP lifecycle.
+  - Introduces `core/services/production.py` with `ProductionLifecycleService` and `FileSystemContentItemRepository` for deterministic `Scenario -> ContentItem` derivation, minimal technical QA and approval transitions.
+  - Introduces `core/services/publishing.py` with `PublishingService`, `FileSystemExportPackageRepository` and `FileSystemPublicationRepository` for manual export preparation, package artifact creation and manual publication records.
+  - Introduces `core/services/analytics.py` with `AnalyticsService` and `FileSystemMetricSnapshotRepository` for manual metric snapshot creation and recording.
+  - Introduces `core/services/loop.py` with a thin `LoopOrchestrator` proving the end-to-end deterministic loop `Idea -> Scenario -> ContentItem -> ExportPackage -> Publication -> MetricSnapshot`.
+  - Introduces `core/services/_storage.py` as a small internal helper for project-scoped JSON persistence across the new service layer.
+
+- Added `tests/services/test_loop_engineering.py`.
+  - Covers production lifecycle transitions, publishing/export preparation, manual publication, analytics snapshot recording and end-to-end loop orchestration for a generic second project fixture.
+
+- Added `core/services/ideas.py` with a minimal Task 3 service/repository layer for `Idea Bank` and basic `Scenario Studio`.
+  - Introduces `FileSystemIdeaRepository` and `FileSystemScenarioRepository` storing project-scoped records under `projects/{project_id}/data/ideas/` and `projects/{project_id}/data/scenarios/`.
+  - Introduces `IdeaService` for manual idea creation, listing, loading, approval, rejection, archiving and next-action mapping.
+  - Introduces `ScenarioService` for scenario listing, manual draft creation, generation from approved ideas, basic review transitions and project-scoped text social post QA warnings.
+
+- Added `tests/services/test_ideas.py`.
+  - Covers project-scoped idea persistence, funnel-stage validation, scenario generation from approved ideas, rejection of raw-idea generation and absence of project-specific hardcode in Task 3 implementation files.
+
 - Added `core/services/` with a minimal Workspace / Project / BrandProfile service layer for Task 2.
   - Introduces `FileSystemProjectRepository` for listing and loading project configs from `projects/{project_id}/project.yaml`.
   - Introduces `WorkspaceService`, `ProjectService` and `BrandProfileService`.
@@ -20,9 +38,15 @@ This changelog follows a simple human-readable format.
   - Keeps the platform project-agnostic and avoids brand-specific hardcode.
 
 - Added `tests/services/test_projects.py`.
-  - Covers project listing, project loading, BrandProfile building, required-field validation, invalid `project_id` rejection and absence of NURA-specific hardcode in Task 2 files.
+  - Covers project listing, project loading, BrandProfile building, required-field validation, invalid `project_id` rejection and absence of project-specific hardcode in Task 2 files.
 
 ### Changed
+
+- Extended `core/domain/`.
+  - Adds `dialog_miniseries` to `ContentFormat` for Scenario Studio MVP coverage.
+  - Expands `Idea` with `topic`, `funnel_stage`, `source_id`, `priority` and `tags`.
+  - Expands `Scenario` with source linkage, `target_platforms`, structured `ScenarioTextBlock` items, `caption_drafts` and `qa_warnings`.
+  - Aligns `IdeaStatus` transitions with the documented MVP lifecycle: `raw -> approved -> scripted`, with `rejected` and `archived` branches.
 
 - Extended `core/projects/loader.py`.
   - Adds `project_id` validation to prevent invalid IDs and path traversal.

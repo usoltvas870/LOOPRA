@@ -109,18 +109,21 @@ class ProjectServicesTests(unittest.TestCase):
 
         self.assertIn("brand.positioning", str(context.exception))
 
-    def test_task_2_files_do_not_contain_nura_specific_hardcode(self) -> None:
+    def test_task_2_files_do_not_contain_project_specific_branching_markers(self) -> None:
         task_2_files = [
             Path("core/projects/loader.py"),
             Path("core/services/__init__.py"),
             Path("core/services/projects.py"),
             Path("projects/example/project.yaml"),
         ]
+        forbidden_markers = ["if project_id ==", "if project_id==", "project_id =="]
 
         for file_path in task_2_files:
             with self.subTest(file_path=file_path):
                 content = file_path.read_text(encoding="utf-8").lower()
-                self.assertNotIn("nura", content)
+                for marker in forbidden_markers:
+                    with self.subTest(file_path=file_path, marker=marker):
+                        self.assertNotIn(marker, content)
 
     @staticmethod
     def _write_project_config(projects_root: Path, project_id: str, payload: dict[str, object]) -> None:

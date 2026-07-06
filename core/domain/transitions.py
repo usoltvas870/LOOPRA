@@ -22,9 +22,14 @@ TransitionMap = Mapping[Enum, Set[Enum]]
 
 
 IDEA_STATUS_TRANSITIONS: dict[IdeaStatus, set[IdeaStatus]] = {
-    IdeaStatus.DRAFT: {IdeaStatus.APPROVED, IdeaStatus.ARCHIVED},
-    IdeaStatus.APPROVED: {IdeaStatus.IN_SCENARIO, IdeaStatus.ARCHIVED},
-    IdeaStatus.IN_SCENARIO: {IdeaStatus.ARCHIVED},
+    IdeaStatus.RAW: {
+        IdeaStatus.APPROVED,
+        IdeaStatus.REJECTED,
+        IdeaStatus.ARCHIVED,
+    },
+    IdeaStatus.APPROVED: {IdeaStatus.SCRIPTED, IdeaStatus.ARCHIVED},
+    IdeaStatus.REJECTED: {IdeaStatus.ARCHIVED},
+    IdeaStatus.SCRIPTED: {IdeaStatus.ARCHIVED},
     IdeaStatus.ARCHIVED: set(),
 }
 
