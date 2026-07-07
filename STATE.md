@@ -5,8 +5,9 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the smoke loop checkpoint should be clean.
+- Working tree at the export package manifest checkpoint should be clean.
 - Latest relevant commits:
+  - `8b53b67` Add export package manifest
   - `2640366` Add end-to-end loop smoke script
   - `3e799ec` Enhance manual metric snapshots
   - `d2a7d7e` Enhance manual publication records
@@ -47,7 +48,24 @@ Idea → Scenario → ContentItem → ExportPackage v1 → Manual Publication Re
   - `caption_{platform}.txt`
   - `manual_publication_checklist.txt`
   - `metadata.json`
+  - `manifest.json`
 - Export preparation is owned by `Publishing Hub`.
+- `manifest.json` is a neutral package inspection layer written by `Publishing Hub` during `prepare_export()`.
+- `manifest.json` is derived only from existing package, content item and scenario data.
+- `manifest.json` is intended to make prepared export packages easier to inspect manually and easier to support in future tooling, UI, CLI or API layers.
+- `manifest.json` is not itself a UI, API, autoposting feature or external platform integration.
+- `manifest.json` currently includes neutral fields such as:
+  - `package_id`
+  - `project_id`
+  - `content_item_id`
+  - `scenario_id`
+  - `content_format`
+  - `target_platform`
+  - `manual_publication_only`
+  - `prepared_at`
+  - `status`
+  - `files`
+- `manifest.json.files` uses relative file names and roles only; it does not include absolute local machine paths.
 - No autoposting is included in this checkpoint.
 
 ## Manual Publication Record v1
@@ -94,6 +112,13 @@ python scripts/smoke_loop.py
 ```
 
 - The script runs a generic project through the current MVP loop and prints the created entity ids, export directory path, generated export files and final statuses.
+- Current generated export files for the smoke loop include:
+  - `title.txt`
+  - `body.txt`
+  - `caption_{platform}.txt`
+  - `manual_publication_checklist.txt`
+  - `metadata.json`
+  - `manifest.json`
 - Runtime smoke artifacts are written under `storage/smoke_projects/...`.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
@@ -113,7 +138,9 @@ python scripts/smoke_loop.py
 
 ## Validation Snapshot
 
-- Smoke loop checkpoint is committed and pushed to `main`.
+- Export package manifest checkpoint is committed and pushed to `main`.
+- Latest relevant manifest checkpoint:
+  - `8b53b67` Add export package manifest
 - Working tree should be clean at checkpoint handoff.
 - The minimal loop is now runnable end-to-end through `python scripts/smoke_loop.py`.
 
