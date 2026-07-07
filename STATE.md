@@ -4,9 +4,12 @@ Last updated: 2026-07-07
 
 ## Current Status
 
-- Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the manual metrics workflow smoke checkpoint should be clean.
+- Content Plant project-agnostic foundation is committed, pushed to `main`, operationally verified, and ready for the next implementation tasks.
+- Working tree at the operational acceptance test checkpoint should be clean.
 - Latest relevant commits:
+  - `7ada027` Add developer quickstart
+  - `a6b9cb6` Mark foundation MVP ready
+  - `718dc4b` Quarantine legacy specs from foundation MVP
   - `8be5876` Add manual metrics workflow smoke test
   - `1590159` Add draft metric snapshot finder
   - `8ec8c57` Add manual metrics import helper
@@ -445,7 +448,50 @@ Boundaries remain unchanged:
   - API, UI, DB, render or autoposting work
   - validation-project introduction
 
+## Operational Acceptance Test v1
+
+- Operational Acceptance Test v1: PASS
+- Foundation MVP status: READY + OPERATIONALLY VERIFIED
+- Test run after: `7ada027 Add developer quickstart`
+- All 14 operational steps passed.
+
+Verified path:
+
+- git baseline: clean working tree, latest commit `7ada027`
+- full test suite: 107/107 OK
+- compile checks: `core` and `scripts` OK
+- `scripts/smoke_loop.py`: end-to-end loop completed
+- `scripts/inspect_package.py`: content_format=text_social_post, target_platform=telegram, status=ready, manual_publication_only=true
+- `scripts/validate_package.py`: validation_status=ok, ready_for_manual_publication=true
+- `scripts/find_metric_snapshots.py`: draft MetricSnapshot found
+- manual metrics JSON creation: OK
+- `scripts/import_manual_metrics.py`: metrics_import_status=ok, recorded_keys=views,likes,comments,shares,saves,clicks,published_url
+- MetricSnapshot moved from draft to recorded
+- MetricSnapshot content_metrics: views=123, likes=17, comments=4, shares=2, saves=5, link_clicks=9
+- MetricSnapshot raw `clicks` not stored, raw `published_url` not stored in content_metrics
+- Publication.published_url updated to test URL
+- generated/runtime artifacts: ignored
+
+Scope remains unchanged:
+
+- no API/UI
+- no DB/migrations
+- no SaaS/billing/users/roles/marketplace
+- no autoposting
+- no external APIs
+- no external analytics APIs
+- no render/video/HyperFrames/FFmpeg
+- no Trend Radar implementation
+- no NURA validation project yet
+
+Next recommended direction:
+
+- NURA validation project planning via Architecture Gate
+- or: next content format planning
+- Do not start either in this checkpoint.
+
 ## Next Task Direction
 
-- Developer Quickstart v1
-- Do not start it in this checkpoint.
+- NURA validation project planning via Architecture Gate
+- or: next content format planning
+- Do not start either in this checkpoint.
