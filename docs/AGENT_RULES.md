@@ -39,9 +39,13 @@
 Перед любой задачей агент обязан прочитать:
 
 1. `docs/00_index.md`
-2. `docs/01_platform/PLATFORM_OVERVIEW.md`
-3. `docs/01_platform/MVP_SCOPE.md`
-4. `docs/06_agents/AGENT_RULES.md`
+2. `STATE.md`
+3. `AGENTS.md`
+4. `docs/PLATFORM_OVERVIEW.md`
+5. `docs/MVP_SCOPE.md`
+6. `docs/DATA_MODEL.md`
+7. `docs/PIPELINES_SPEC.md`
+8. `docs/AGENT_RULES.md`
 
 После этого агент должен прочитать документы, относящиеся к конкретной задаче.
 
@@ -53,9 +57,9 @@
 
 Прочитать:
 
-- `docs/01_platform/PLATFORM_OVERVIEW.md`
-- `docs/01_platform/PRODUCT_STRATEGY.md`
-- `docs/01_platform/MVP_SCOPE.md`
+- `docs/PLATFORM_OVERVIEW.md`
+- `docs/PRODUCT_STRATEGY.md`
+- `docs/MVP_SCOPE.md`
 
 ---
 
@@ -63,9 +67,9 @@
 
 Прочитать:
 
-- `docs/02_platform_architecture/WORKSPACE_AND_PROJECT_MODEL.md`
-- `docs/02_platform_architecture/BRAND_SYSTEM_SPEC.md`
-- `docs/01_platform/MVP_SCOPE.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/PLATFORM_OVERVIEW.md`
+- `docs/MVP_SCOPE.md`
 
 ---
 
@@ -73,8 +77,8 @@
 
 Прочитать:
 
-- `docs/02_platform_architecture/BRAND_SYSTEM_SPEC.md`
-- `docs/02_platform_architecture/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/PLATFORM_OVERVIEW.md`
 - `docs/07_projects/{project_slug}/PROJECT_PROFILE.md`
 - `docs/07_projects/{project_slug}/VISUAL_GUIDELINES.md`
 - `docs/07_projects/{project_slug}/TONE_OF_VOICE.md`
@@ -88,9 +92,9 @@
 
 Прочитать:
 
-- `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
-- соответствующий `docs/04_content_formats/FORMAT_*.md`
-- `docs/02_platform_architecture/BRAND_SYSTEM_SPEC.md`
+- `docs/CONTENT_FORMATS_OVERVIEW.md`
+- соответствующий `docs/FORMAT_*.md`
+- `docs/PLATFORM_OVERVIEW.md`
 - проектный `CONTENT_STRATEGY.md`, если задача относится к конкретному проекту.
 
 ---
@@ -99,10 +103,12 @@
 
 Прочитать:
 
-- `docs/05_product_design/USER_WORKFLOWS.md`
-- `docs/05_product_design/WEB_UI_SPEC.md`
-- `docs/05_product_design/PROJECT_SETTINGS_SPEC.md`
+- `docs/USER_WORKFLOWS.md`
+- `docs/WEB_UI_SPEC.md`
+- `docs/PROJECT_SETTINGS_SPEC.md`
 - документы конкретного модуля.
+
+Интерфейсные задачи остаются вне текущего foundation MVP, если они не запрошены явно.
 
 ---
 
@@ -110,10 +116,10 @@
 
 Прочитать:
 
-- `docs/02_platform_architecture/SYSTEM_ARCHITECTURE.md`
-- `docs/02_platform_architecture/DATA_MODEL.md`
-- `docs/02_platform_architecture/WORKSPACE_AND_PROJECT_MODEL.md`
-- `docs/02_platform_architecture/PIPELINES_SPEC.md`
+- `docs/SYSTEM_ARCHITECTURE.md`
+- `docs/DATA_MODEL.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/PIPELINES_SPEC.md`
 
 Если эти документы ещё не созданы, агент должен работать только в рамках существующих документов и явно отметить пробел.
 
@@ -123,9 +129,11 @@
 
 Прочитать:
 
-- `docs/03_modules/TREND_RADAR_SPEC.md`
-- `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
-- `docs/02_platform_architecture/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/TREND_RADAR_SPEC.md`
+- `docs/CONTENT_FORMATS_OVERVIEW.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+
+Trend Radar не входит в текущий foundation MVP и должен затрагиваться только по явной отдельной задаче.
 
 ---
 
@@ -133,9 +141,9 @@
 
 Прочитать:
 
-- `docs/03_modules/SCENARIO_STUDIO_SPEC.md`
-- `docs/02_platform_architecture/BRAND_SYSTEM_SPEC.md`
-- `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
+- `docs/SCENARIO_STUDIO_SPEC.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/CONTENT_FORMATS_OVERVIEW.md`
 - проектный `PROMPT_LIBRARY.md`, если есть.
 
 ---
@@ -144,10 +152,10 @@
 
 Прочитать:
 
-- `docs/03_modules/PRODUCTION_ENGINE_SPEC.md`
-- `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
+- `docs/PRODUCTION_ENGINE_SPEC.md`
+- `docs/CONTENT_FORMATS_OVERVIEW.md`
 - соответствующий `FORMAT_*.md`
-- `docs/02_platform_architecture/BRAND_SYSTEM_SPEC.md`
+- `docs/PIPELINES_SPEC.md`
 
 ---
 
@@ -155,9 +163,9 @@
 
 Прочитать:
 
-- `docs/03_modules/ANALYTICS_AND_OPTIMIZATION.md`
-- `docs/02_platform_architecture/WORKSPACE_AND_PROJECT_MODEL.md`
-- `docs/02_platform_architecture/DATA_MODEL.md`
+- `docs/ANALYTICS_AND_OPTIMIZATION.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/DATA_MODEL.md`
 
 ---
 
@@ -236,18 +244,19 @@ project-specific script → hardcoded render → project-only output
 Video formats, включая `dialog_miniseries`, должны подключаться после стабилизации core loop:
 
 ```text
-Project
-→ Brand Profile
-→ Idea
-→ Scenario / Draft
-→ QA
-→ Review
-→ Export Package
-→ Manual Publication
-→ Metric Snapshot
-→ Insight
-→ New Idea
+Idea
+→ Scenario
+→ ContentItem
+→ ExportPackage v1
+→ Manual Publication Record v1
+→ MetricSnapshot v1
 ```
+
+`MetricSnapshot` в foundation MVP наполняется через ручной импорт метрик.
+
+`Insight` и `New Idea` могут существовать только как будущие stub/out-of-scope concepts.
+
+Автоматического insight-to-idea loop в текущем foundation MVP нет.
 
 `Export Package` belongs to `Publishing Hub`.
 
@@ -307,35 +316,17 @@ Project
 
 Агент должен использовать существующие статусы, если они уже описаны в документации.
 
-Примеры статусов идей:
+В текущем foundation MVP агент не должен придумывать или документировать новые статусы без сверки с актуальной доменной моделью и текущими enum/transition rules.
+
+Надо ориентироваться на существующие foundation статусы по их владельцу:
 
 ```text
-raw
-approved
-scripted
-waiting_assets
-in_production
-ready
-scheduled
-published
-analyzed
-archived
-```
-
-Примеры статусов production:
-
-```text
-draft
-needs_assets
-ready_to_render
-rendering
-rendered
-needs_review
-approved
-rejected
-scheduled
-published
-failed
+Idea uses current domain statuses.
+Scenario uses current domain statuses.
+ContentItem uses current foundation production statuses.
+ExportPackage status belongs to Publishing Hub.
+Publication status belongs to Publishing Hub.
+MetricSnapshot status belongs to Analytics.
 ```
 
 Если нужен новый статус, агент должен:
@@ -408,9 +399,9 @@ exports/
 Примеры:
 
 ```text
-01_platform/
-02_platform_architecture/
-07_projects/
+core/domain/
+docs/07_projects/
+storage/smoke_projects/
 ```
 
 ### 12.2. Markdown-документы
@@ -877,9 +868,9 @@ Validation project boundary: задаётся отдельно в `docs/07_proje
 
 ## 34. Следующие документы
 
-После этого документа необходимо создать:
+После этого документа обычно нужно свериться с:
 
-1. `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
-2. `docs/04_content_formats/FORMAT_DIALOG_MINISERIES.md`
-3. `docs/05_product_design/USER_WORKFLOWS.md`
+1. `docs/CONTENT_FORMATS_OVERVIEW.md`
+2. `docs/USER_WORKFLOWS.md`
+3. `docs/WORKSPACE_AND_PROJECT_MODEL.md`
 4. `docs/07_projects/{project_slug}/PROJECT_PROFILE.md`
