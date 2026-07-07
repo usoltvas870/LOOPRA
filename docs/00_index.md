@@ -45,7 +45,8 @@ Read in this order at the start of a new task:
 10. `docs/AGENT_RULES.md`
 11. `docs/DATA_MODEL.md`
 12. `docs/PIPELINES_SPEC.md`
-13. task-specific docs
+13. `docs/DEVELOPER_QUICKSTART.md`
+14. task-specific docs
 
 ---
 
@@ -129,8 +130,8 @@ If documents conflict, do not silently follow older expanded-scope guidance.
 
 ## 8. Status
 
-Status: Draft  
-Version: 0.3  
+Status: Current  
+Version: 0.4  
 Updated: 2026-07-07  
 Project: Content Plant  
 Current docs layout: flat foundation docs baseline
