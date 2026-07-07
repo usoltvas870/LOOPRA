@@ -5,8 +5,9 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the manual metrics import helper checkpoint should be clean.
+- Working tree at the draft metric snapshot finder checkpoint should be clean.
 - Latest relevant commits:
+  - `1590159` Add draft metric snapshot finder
   - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
@@ -93,6 +94,33 @@ Idea → Scenario → ContentItem → ExportPackage v1 → Manual Publication Re
 - Current implementation does not generate insights.
 - Current implementation does not generate new ideas from analytics.
 - The smoke loop creates `MetricSnapshot` in `draft` / unrecorded status.
+
+## Draft MetricSnapshot Finder Helper
+
+- Script path: `scripts/find_metric_snapshots.py`
+- Run command:
+
+```bash
+python scripts/find_metric_snapshots.py <project_id>
+```
+
+- The helper is developer-only and read-only.
+- The helper lists draft / unrecorded `MetricSnapshot` records for a project.
+- The helper helps find the `metric_snapshot_id` needed by `python scripts/import_manual_metrics.py <manual_metrics_json>`.
+- `CONTENT_PLANT_PROJECTS_ROOT` can be used when the helper must target local/runtime project storage, for example smoke runtime data under `storage/smoke_projects/...`.
+- The helper reads local project storage and filters out recorded / non-draft snapshots.
+- Example local smoke usage:
+
+```bash
+python scripts/smoke_loop.py
+CONTENT_PLANT_PROJECTS_ROOT=storage/smoke_projects python scripts/find_metric_snapshots.py example
+```
+
+- The helper does not write files and does not create runtime artifacts.
+- The helper does not record metrics.
+- The helper does not generate insights.
+- The helper does not generate new ideas.
+- The helper is not a product UI, not an API, not autoposting logic, not external analytics, and not a full CLI framework.
 
 ## Manual Metrics Import Helper
 
@@ -234,6 +262,12 @@ python scripts/inspect_package.py <export_directory_from_smoke_output>
 python scripts/validate_package.py <export_directory_from_smoke_output>
 ```
 
+- Find the created draft `MetricSnapshot` id in local smoke runtime storage:
+
+```bash
+CONTENT_PLANT_PROJECTS_ROOT=storage/smoke_projects python scripts/find_metric_snapshots.py example
+```
+
 - Import manually collected metrics into the created draft `MetricSnapshot`:
 
 ```bash
@@ -244,6 +278,7 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - `smoke_loop.py` also creates a generic draft / unrecorded `MetricSnapshot`.
 - `inspect_package.py` prints a human-readable package summary from `manifest.json`.
 - `validate_package.py` checks whether the package is complete and ready for manual publication.
+- `find_metric_snapshots.py` finds the draft `metric_snapshot_id` needed for manual metrics import.
 - `import_manual_metrics.py` records manual metrics through existing `AnalyticsService` service rules.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
@@ -265,14 +300,16 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 ## Validation Snapshot
 
-- Manual metrics import helper checkpoint is committed and pushed to `main`.
+- Draft metric snapshot finder checkpoint is committed and pushed to `main`.
 - Latest relevant helper checkpoint:
+  - `1590159` Add draft metric snapshot finder
   - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
 - The minimal loop is runnable end-to-end through `python scripts/smoke_loop.py`.
 - Prepared export packages can be inspected through `python scripts/inspect_package.py <export_package_directory>`.
 - Prepared export packages can be validated through `python scripts/validate_package.py <export_package_directory>`.
+- Draft `MetricSnapshot` records can be listed through `python scripts/find_metric_snapshots.py <project_id>`.
 - Draft `MetricSnapshot` records can be populated through `python scripts/import_manual_metrics.py <manual_metrics_json>`.
 - Working tree should be clean at checkpoint handoff.
 
@@ -309,6 +346,6 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 ## Next Task Direction
 
-- Continue implementation on top of the committed manual metrics import helper checkpoint.
+- Continue implementation on top of the committed draft metric snapshot finder checkpoint.
 - Preserve export-first and manual-publication-first MVP boundaries.
 - Keep new platform work generic enough to support multiple projects.
