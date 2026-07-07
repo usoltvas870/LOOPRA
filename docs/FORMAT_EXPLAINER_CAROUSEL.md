@@ -1,5 +1,12 @@
 # Format: Explainer Carousel
 
+> **Legacy / future-scope note**
+>
+> This document is not the current foundation MVP source of truth.
+> It may describe future modules, historical plans, or expanded-scope ideas.
+> Current foundation MVP source of truth: `STATE.md`, `AGENTS.md`, `docs/00_index.md`, `docs/MVP_SCOPE.md`, `docs/DATA_MODEL.md`, `docs/PIPELINES_SPEC.md`.
+> Do not treat API/UI/render/video/autoposting/external analytics/Trend Radar/automatic insight-to-idea loops as current scope unless a future Architecture Gate explicitly reactivates them.
+
 ## 1. Назначение документа
 
 Этот документ описывает универсальный формат **Explainer Carousel** для платформы **Content Plant**.

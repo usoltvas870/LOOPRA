@@ -1,5 +1,12 @@
 # Changelog
 
+> **Legacy / future-scope note**
+>
+> This document is not the current foundation MVP source of truth.
+> It may describe historical plans, prior layouts, or expanded-scope ideas from earlier checkpoints.
+> Current foundation MVP source of truth: `STATE.md`, `AGENTS.md`, `docs/00_index.md`, `docs/MVP_SCOPE.md`, `docs/DATA_MODEL.md`, `docs/PIPELINES_SPEC.md`.
+> Do not treat old doc tree paths or broader scope references in this changelog as current MVP requirements unless a future Architecture Gate explicitly reactivates them.
+
 All notable changes to **Content Plant** documentation and implementation should be recorded in this file.
 
 This changelog follows a simple human-readable format.
