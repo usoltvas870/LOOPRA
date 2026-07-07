@@ -7,6 +7,7 @@ Last updated: 2026-07-07 (NURA validation skeleton)
 - Content Plant project-agnostic foundation is committed, pushed to `main`, operationally verified, and ready for the next implementation tasks.
 - Working tree at the operational acceptance test checkpoint should be clean.
 - Latest relevant commits:
+  - `43178b5` Add NURA validation project skeleton
   - `7ada027` Add developer quickstart
   - `a6b9cb6` Mark foundation MVP ready
   - `718dc4b` Quarantine legacy specs from foundation MVP
