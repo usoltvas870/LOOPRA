@@ -35,9 +35,10 @@ class ProjectServicesTests(unittest.TestCase):
 
     def test_list_projects_returns_example_project(self) -> None:
         projects = self.project_service.list_projects()
+        project_ids = [p.project_id for p in projects]
 
-        self.assertEqual(len(projects), 1)
-        self.assertEqual(projects[0].project_id, "example")
+        self.assertGreaterEqual(len(projects), 1)
+        self.assertIn("example", project_ids)
 
     def test_brand_profile_can_be_built_from_project_config(self) -> None:
         brand_profile = self.brand_profile_service.get_brand_profile("example")

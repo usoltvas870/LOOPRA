@@ -1,0 +1,45 @@
+{
+  "workspace_id": "internal",
+  "project_id": "nura",
+  "project_name": "NURA",
+  "project_slug": "nura",
+  "description": "Validation project for Content Plant foundation. NURA is an AI self-understanding product based on Destiny Matrix and Tarot-like archetypal content.",
+  "default_language": "ru",
+  "status": "active",
+  "primary_url": "https://nura-ai.ru",
+  "target_platforms": ["telegram"],
+  "brand": {
+    "brand_name": "NURA",
+    "positioning": "Soft self-understanding tool. Not fortune telling, not therapy, not occult promises.",
+    "audience_summary": "Mostly women interested in self-understanding, relationships, personal patterns, emotional clarity, and gentle reflective rituals.",
+    "language": "ru",
+    "brand_values": ["self-understanding", "clarity", "warmth", "reflection"],
+    "tone_of_voice": {
+      "tone_summary": "Calm, warm, clear, premium but simple, reflective, supportive.",
+      "style_keywords": ["calm", "warm", "clear", "reflective", "supportive"],
+      "allowed_phrases": [],
+      "forbidden_phrases": [
+        "guaranteed results",
+        "predict your future",
+        "diagnosis",
+        "therapy session"
+      ]
+    },
+    "content_rules": {
+      "allowed_topics": ["self-understanding", "emotional patterns", "daily reflection", "archetypal content", "Destiny Matrix education"],
+      "forbidden_topics": ["medical claims", "psychological diagnosis", "deterministic predictions", "occult promises", "fear-based manipulation"],
+      "writing_rules": [
+        "Use warm and reflective language.",
+        "Never claim to predict the future.",
+        "Never use medical or therapeutic terminology.",
+        "Never pressure the reader with fear or urgency."
+      ],
+      "claim_restrictions": [
+        "No promises of guaranteed outcomes.",
+        "No claims of predicting the future.",
+        "No therapy claims.",
+        "No medical diagnosis claims."
+      ]
+    }
+  }
+}

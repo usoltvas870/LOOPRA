@@ -1,6 +1,6 @@
 # Content Plant State
 
-Last updated: 2026-07-07
+Last updated: 2026-07-07 (NURA validation skeleton)
 
 ## Current Status
 
@@ -482,16 +482,80 @@ Scope remains unchanged:
 - no external analytics APIs
 - no render/video/HyperFrames/FFmpeg
 - no Trend Radar implementation
-- no NURA validation project yet
+- NURA validation skeleton created, smoke loop passed
 
 Next recommended direction:
 
-- NURA validation project planning via Architecture Gate
+- NURA manual metrics import (next in validation pipeline)
+- or: NURA-specific content generation
 - or: next content format planning
-- Do not start either in this checkpoint.
+- Do not start any of these without explicit task.
 
 ## Next Task Direction
 
-- NURA validation project planning via Architecture Gate
+- NURA manual metrics import (next in validation pipeline)
+- or: NURA-specific content generation
 - or: next content format planning
-- Do not start either in this checkpoint.
+- Do not start any of these without explicit task.
+
+---
+
+## NURA Validation Skeleton
+
+Status: READY
+Architecture Gate: Accepted
+First NURA Smoke Loop: PASS
+NURA Export Package: inspect OK, validate OK
+Draft MetricSnapshot: created and found
+Foundation Leakage Check: PASS (no NURA in core/scripts/tests)
+Scope: `text_social_post` only, manual publication only
+
+### Added Under This Milestone
+
+```text
+projects/nura/project.yaml                     — NURA project config (ProjectConfig schema)
+docs/07_projects/nura/README.md                — NURA validation project overview
+docs/07_projects/nura/POSITIONING.md           — NURA positioning and audience
+docs/07_projects/nura/TONE_OF_VOICE.md         — NURA tone of voice rules
+docs/07_projects/nura/CONTENT_PILLARS.md       — NURA content pillars
+docs/07_projects/nura/VALIDATION_PLAN.md       — NURA validation plan and criteria
+```
+
+### Updated Foundation Files
+
+```text
+.gitignore                                      — added projects/nura/* exception for project.yaml
+tests/services/test_projects.py                 — project-agnostic list_projects assertion
+```
+
+### Verified
+
+```text
+Foundation tests: 107/107 OK
+NURA smoke loop: Idea -> Scenario -> ContentItem -> ExportPackage -> Publication -> MetricSnapshot
+NURA export package: title.txt, body.txt, caption_telegram.txt, manual_publication_checklist.txt, metadata.json, manifest.json
+NURA package inspection: OK (content_format=text_social_post, target_platform=telegram, status=ready)
+NURA package validation: OK (validation_status=ok, ready_for_manual_publication=true)
+NURA draft MetricSnapshot: found via find_metric_snapshots.py
+NURA leakage check: no NURA references in core/, scripts/, tests/
+compileall core: OK
+compileall scripts: OK
+```
+
+### Boundaries Preserved
+
+```text
+No changes to core/
+No changes to scripts/
+No API/UI
+No DB/migrations
+No SaaS/billing/users/roles/marketplace
+No autoposting
+No external APIs
+No external analytics APIs
+No video/render/HyperFrames/FFmpeg
+No Trend Radar
+No generated insights or new ideas from metrics
+No NURA hardcode in foundation
+No runtime artifacts committed (storage/smoke_projects/ ignored)
+```

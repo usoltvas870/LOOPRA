@@ -28,7 +28,8 @@ hyperframes/output/
 
 # Project-specific work that should not enter project-agnostic foundation commits
 brands/
-projects/nura/
+projects/nura/*
+!projects/nura/project.yaml
 
 # Runtime job artifacts
 jobs/*/input/
