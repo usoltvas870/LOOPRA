@@ -5,13 +5,13 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the export package manifest checkpoint should be clean.
+- Working tree at the package inspection helper checkpoint should be clean.
 - Latest relevant commits:
+  - `63e8143` Add export package inspection helper
   - `8b53b67` Add export package manifest
   - `2640366` Add end-to-end loop smoke script
   - `3e799ec` Enhance manual metric snapshots
   - `d2a7d7e` Enhance manual publication records
-  - `70e46a4` Enhance text social post export package
 
 ## Baseline Guarantees
 
@@ -122,6 +122,41 @@ python scripts/smoke_loop.py
 - Runtime smoke artifacts are written under `storage/smoke_projects/...`.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
+## Package Inspection Helper
+
+- Script path: `scripts/inspect_package.py`
+- Run command:
+
+```bash
+python scripts/inspect_package.py <export_package_directory>
+```
+
+- The helper is developer-only and reads `manifest.json` from an existing export package directory.
+- The helper prints a concise human-readable package summary to stdout.
+- The helper validates required manifest fields needed for package inspection.
+- The helper fails clearly when the export package directory is missing, `manifest.json` is missing, `manifest.json` is invalid JSON, or required manifest fields are missing.
+- The helper rejects absolute paths in `manifest.json.files` entries and prints only relative file names from the manifest.
+- The helper does not write files and does not create runtime artifacts.
+- The helper is not a product UI, not an API, not autoposting logic, and not a full CLI framework.
+
+## Current Dev Workflow
+
+- Run the generic smoke loop:
+
+```bash
+python scripts/smoke_loop.py
+```
+
+- Inspect the generated export package:
+
+```bash
+python scripts/inspect_package.py <export_directory_from_smoke_output>
+```
+
+- `smoke_loop.py` creates a generic smoke export package under `storage/smoke_projects/...`.
+- `inspect_package.py` inspects that generated package through `manifest.json`.
+- Generated smoke runtime artifacts are local-only and must not be committed.
+
 ## Current MVP Boundaries
 
 - No API or UI.
@@ -138,11 +173,12 @@ python scripts/smoke_loop.py
 
 ## Validation Snapshot
 
-- Export package manifest checkpoint is committed and pushed to `main`.
-- Latest relevant manifest checkpoint:
-  - `8b53b67` Add export package manifest
+- Package inspection helper checkpoint is committed and pushed to `main`.
+- Latest relevant helper checkpoint:
+  - `63e8143` Add export package inspection helper
+- The minimal loop is runnable end-to-end through `python scripts/smoke_loop.py`.
+- Prepared export packages can be inspected through `python scripts/inspect_package.py <export_package_directory>`.
 - Working tree should be clean at checkpoint handoff.
-- The minimal loop is now runnable end-to-end through `python scripts/smoke_loop.py`.
 
 ## Current Guidance
 
