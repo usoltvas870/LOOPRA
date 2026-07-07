@@ -5,8 +5,9 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the package inspection helper checkpoint should be clean.
+- Working tree at the package validation helper checkpoint should be clean.
 - Latest relevant commits:
+  - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
   - `8b53b67` Add export package manifest
   - `2640366` Add end-to-end loop smoke script
@@ -139,6 +140,32 @@ python scripts/inspect_package.py <export_package_directory>
 - The helper does not write files and does not create runtime artifacts.
 - The helper is not a product UI, not an API, not autoposting logic, and not a full CLI framework.
 
+## Package Validation Helper
+
+- Script path: `scripts/validate_package.py`
+- Run command:
+
+```bash
+python scripts/validate_package.py <export_package_directory>
+```
+
+- The helper is developer-only and reads `manifest.json` from an existing export package directory.
+- The helper validates package completeness and internal consistency.
+- The helper validates required manifest fields needed for package validation.
+- The helper validates `manifest.json.files` as a list of file entries with required `name` and `role` fields.
+- The helper rejects absolute paths in `manifest.json.files` entries.
+- The helper verifies that every file listed in `manifest.json.files` exists on disk.
+- The helper verifies that `metadata.json` exists and is valid JSON.
+- The helper verifies that `manual_publication_checklist.txt` exists.
+- The helper verifies that expected package content files exist:
+  - `title.txt`
+  - `body.txt`
+  - `caption_{target_platform}.txt`
+- The helper verifies that `manual_publication_only` is `true`.
+- The helper verifies that the current prepared export package status is `ready`.
+- The helper does not write files and does not create runtime artifacts.
+- The helper is not a product UI, not an API, not autoposting logic, not external analytics, and not a full CLI framework.
+
 ## Current Dev Workflow
 
 - Run the generic smoke loop:
@@ -153,8 +180,15 @@ python scripts/smoke_loop.py
 python scripts/inspect_package.py <export_directory_from_smoke_output>
 ```
 
+- Validate the generated export package:
+
+```bash
+python scripts/validate_package.py <export_directory_from_smoke_output>
+```
+
 - `smoke_loop.py` creates a generic smoke export package under `storage/smoke_projects/...`.
-- `inspect_package.py` inspects that generated package through `manifest.json`.
+- `inspect_package.py` prints a human-readable package summary from `manifest.json`.
+- `validate_package.py` checks whether the package is complete and ready for manual publication.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
 ## Current MVP Boundaries
@@ -173,11 +207,13 @@ python scripts/inspect_package.py <export_directory_from_smoke_output>
 
 ## Validation Snapshot
 
-- Package inspection helper checkpoint is committed and pushed to `main`.
+- Package validation helper checkpoint is committed and pushed to `main`.
 - Latest relevant helper checkpoint:
+  - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
 - The minimal loop is runnable end-to-end through `python scripts/smoke_loop.py`.
 - Prepared export packages can be inspected through `python scripts/inspect_package.py <export_package_directory>`.
+- Prepared export packages can be validated through `python scripts/validate_package.py <export_package_directory>`.
 - Working tree should be clean at checkpoint handoff.
 
 ## Current Guidance
@@ -213,6 +249,6 @@ python scripts/inspect_package.py <export_directory_from_smoke_output>
 
 ## Next Task Direction
 
-- Continue implementation on top of the committed smoke loop checkpoint.
+- Continue implementation on top of the committed package validation helper checkpoint.
 - Preserve export-first and manual-publication-first MVP boundaries.
 - Keep new platform work generic enough to support multiple projects.
