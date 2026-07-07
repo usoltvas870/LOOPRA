@@ -133,6 +133,7 @@ class PublishingService:
         scenario = self._scenario_repository.load_scenario(project_id, content_item.scenario_id)
         export_dir = resolve_project_dir(project_id, self._projects_root) / "exports" / export_package.export_package_id
         export_dir.mkdir(parents=True, exist_ok=True)
+        prepared_at = utc_now()
 
         title_path = export_dir / "title.txt"
         title_path.write_text(content_item.title or "", encoding="utf-8")
@@ -150,7 +151,32 @@ class PublishingService:
         metadata_path = export_dir / "metadata.json"
         metadata_path.write_text(
             json.dumps(
-                self._build_export_metadata(export_package, content_item, scenario),
+                self._build_export_metadata(export_package, content_item, scenario, prepared_at=prepared_at),
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        manifest_path = export_dir / "manifest.json"
+        package_artifacts = [
+            {"path": title_path, "role": "title"},
+            {"path": body_path, "role": "body"},
+            {"path": caption_path, "role": "caption"},
+            {"path": checklist_path, "role": "manual_publication_checklist"},
+            {"path": metadata_path, "role": "metadata"},
+            {"path": manifest_path, "role": "manifest"},
+        ]
+        manifest_path.write_text(
+            json.dumps(
+                self._build_export_manifest(
+                    export_package,
+                    content_item,
+                    scenario,
+                    package_artifacts=package_artifacts,
+                    prepared_at=prepared_at,
+                    status=ExportPackageStatus.READY,
+                ),
                 indent=2,
                 ensure_ascii=False,
             ),
@@ -159,14 +185,8 @@ class PublishingService:
 
         export_package = validated_model_copy(
             export_package,
-            package_files=[
-                str(title_path),
-                str(body_path),
-                str(caption_path),
-                str(checklist_path),
-                str(metadata_path),
-            ],
-            updated_at=utc_now(),
+            package_files=[str(artifact["path"]) for artifact in package_artifacts],
+            updated_at=prepared_at,
         )
         export_package = export_package.transition_to(ExportPackageStatus.READY)
         self._export_repository.save_export_package(export_package)
@@ -202,7 +222,14 @@ class PublishingService:
             ]
         )
 
-    def _build_export_metadata(self, export_package: ExportPackage, content_item: ContentItem, scenario) -> dict[str, object]:
+    def _build_export_metadata(
+        self,
+        export_package: ExportPackage,
+        content_item: ContentItem,
+        scenario,
+        *,
+        prepared_at,
+    ) -> dict[str, object]:
         return {
             "project_id": content_item.project_id,
             "content_item_id": content_item.content_item_id,
@@ -210,13 +237,42 @@ class PublishingService:
             "content_format": content_item.content_format.value,
             "target_platform": export_package.target_platform.value,
             "manual_publication_only": True,
-            "prepared_at": utc_now().isoformat(),
+            "prepared_at": prepared_at.isoformat(),
             "brand_profile_id": content_item.brand_profile_id or scenario.brand_profile_id,
             "funnel_stage": scenario.funnel_stage,
             "title": content_item.title,
             "content_item_status": content_item.status.value,
             "target_platforms": [platform.value for platform in scenario.target_platforms],
             "scenario_qa_warnings": list(scenario.qa_warnings),
+        }
+
+    def _build_export_manifest(
+        self,
+        export_package: ExportPackage,
+        content_item: ContentItem,
+        scenario,
+        *,
+        package_artifacts: list[dict[str, object]],
+        prepared_at,
+        status: ExportPackageStatus,
+    ) -> dict[str, object]:
+        return {
+            "package_id": export_package.export_package_id,
+            "project_id": export_package.project_id,
+            "content_item_id": content_item.content_item_id,
+            "scenario_id": scenario.scenario_id,
+            "content_format": export_package.content_format.value,
+            "target_platform": export_package.target_platform.value,
+            "manual_publication_only": True,
+            "prepared_at": prepared_at.isoformat(),
+            "status": status.value,
+            "files": [
+                {
+                    "name": artifact["path"].name,
+                    "role": artifact["role"],
+                }
+                for artifact in package_artifacts
+            ],
         }
 
     def _build_publication_notes(

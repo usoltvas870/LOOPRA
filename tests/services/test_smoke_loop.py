@@ -46,6 +46,7 @@ class SmokeLoopScriptTests(unittest.TestCase):
                 [
                     "body.txt",
                     "caption_telegram.txt",
+                    "manifest.json",
                     "manual_publication_checklist.txt",
                     "metadata.json",
                     "title.txt",

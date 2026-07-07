@@ -208,6 +208,7 @@ class PublishingServiceTests(LoopEngineeringFixture):
             export_dir / "caption_telegram.txt",
             export_dir / "manual_publication_checklist.txt",
             export_dir / "metadata.json",
+            export_dir / "manifest.json",
         }
 
         self.assertEqual(prepared.status, ExportPackageStatus.READY)
@@ -247,7 +248,34 @@ class PublishingServiceTests(LoopEngineeringFixture):
                 "scenario_qa_warnings": scenario.qa_warnings,
             },
         )
+
+        manifest = json.loads((export_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            manifest,
+            {
+                "package_id": prepared.export_package_id,
+                "project_id": "example",
+                "content_item_id": content_item.content_item_id,
+                "scenario_id": scenario.scenario_id,
+                "content_format": "text_social_post",
+                "target_platform": "telegram",
+                "manual_publication_only": True,
+                "prepared_at": manifest["prepared_at"],
+                "status": "ready",
+                "files": [
+                    {"name": "title.txt", "role": "title"},
+                    {"name": "body.txt", "role": "body"},
+                    {"name": "caption_telegram.txt", "role": "caption"},
+                    {"name": "manual_publication_checklist.txt", "role": "manual_publication_checklist"},
+                    {"name": "metadata.json", "role": "metadata"},
+                    {"name": "manifest.json", "role": "manifest"},
+                ],
+            },
+        )
+        self.assertTrue(manifest["prepared_at"])
+        self.assertTrue(all(not Path(file_info["name"]).is_absolute() for file_info in manifest["files"]))
         self.assertNotIn(self._forbidden_project_marker, json.dumps(metadata).lower())
+        self.assertNotIn(self._forbidden_project_marker, json.dumps(manifest).lower())
 
     def test_prepare_export_prefers_scenario_caption_draft_for_target_platform(self) -> None:
         scenario, content_item = self.create_approved_content_item()
