@@ -8,364 +8,278 @@
 
 - что такое Content Plant;
 - какую проблему решает платформа;
-- почему она проектируется как мультипроектная система;
-- какую роль играет первый проект NURA;
-- какие основные модули входят в платформу;
-- какие задачи платформа должна решать на MVP;
-- какой долгосрочный потенциал у проекта.
+- почему она должна оставаться мультипроектной и project-agnostic;
+- какой foundation MVP зафиксирован сейчас;
+- какие границы нельзя нарушать;
+- как соотносятся platform layer и project layer.
 
-Документ является одним из главных источников истины для понимания продукта.
+Документ является одним из основных platform-level источников истины.
 
 ---
 
-## 2. Краткое описание Content Plant
+## 2. Что такое Content Plant
 
-**Content Plant** — это мультипроектная контентная платформа для системного производства, упаковки, публикации и оптимизации контента под разные бренды и проекты.
+**Content Plant** — это standalone мультипроектная платформа для системного производства, упаковки, ручной публикации и базовой аналитики контента.
 
 Платформа должна помогать превращать:
 
 ```text
-рыночные тренды
-→ идеи
-→ сценарии
-→ визуальные задачи
-→ ассеты
-→ видео, карусели, посты
-→ публикации
-→ аналитику
-→ новые контентные гипотезы
+Idea
+→ Scenario
+→ ContentItem
+→ ExportPackage
+→ Manual Publication Record
+→ MetricSnapshot
 ```
 
-Content Plant не является инструментом только для одного бренда. Платформа должна поддерживать разные проекты через отдельные **Project Profiles** и **Brand Profiles**.
+в управляемый и воспроизводимый контентный цикл.
 
-Первый практический проект внутри платформы — **NURA**.
+Content Plant не должен быть зашит под один бренд, один продукт, одну нишу или один набор примеров. Все project-specific правила должны жить только в project layer.
 
 ---
 
 ## 3. Основная проблема
 
-Большинство AI-продуктов и небольших цифровых проектов сталкиваются с одной и той же проблемой:
+Даже у небольших команд и внутренних продуктов контентный цикл часто остаётся фрагментированным:
 
-> Продукт можно сделать относительно быстро, но регулярное производство качественного контента, трафика и маркетинговых гипотез остаётся ручным, хаотичным и трудозатратным.
+- идеи хранятся отдельно;
+- сценарии и тексты создаются вручную без общей структуры;
+- публикационные материалы собираются несистемно;
+- публикации фиксируются вручную;
+- метрики теряются или не связываются с исходным контентом.
 
-Для продвижения проекта нужно постоянно искать тренды, анализировать конкурентов, придумывать темы, писать сценарии, генерировать визуалы, собирать видео, делать карусели, писать посты, адаптировать контент под разные платформы, публиковать, отслеживать результаты и понимать, что масштабировать.
-
-Content Plant должен решить эту проблему за счёт структурированного контентного конвейера.
-
----
-
-## 4. Главная цель платформы
-
-Главная цель Content Plant:
-
-> Дать владельцу проекта возможность регулярно производить и тестировать большое количество контента под разные платформы, не превращаясь в монтажёра, копирайтера, контент-менеджера и аналитика одновременно.
-
-На первом этапе Content Plant помогает владельцу внутренних проектов. В дальнейшем платформа может стать самостоятельным продуктом, который позволит другим пользователям запускать свои контентные заводы под собственные бренды.
-
----
-
-## 5. Продуктовая формула
+Content Plant нужен как нейтральный foundation, который задаёт единый контур:
 
 ```text
-Trend Intelligence
-+ Scenario Generation
-+ Brand System
-+ Asset Management
-+ Production Engine
-+ Publishing Workflow
-+ Analytics Loop
-= Content Factory
+project-scoped content production
+without project-specific hardcode
+and without early SaaS complexity
 ```
-
-Content Plant становится полноценной платформой только тогда, когда соединяет весь цикл от идеи до анализа результата.
 
 ---
 
-## 6. Первый прикладной проект: NURA
+## 4. Project-Agnostic Principle
 
-NURA является первым проектом, на котором проверяется работа Content Plant.
+Главный platform-level принцип:
 
-Для NURA платформа должна помогать производить:
+> Foundation должен быть универсальным, а project-specific поведение должно подключаться через `Project`, `Brand Profile`, project docs и project config.
 
-- мини-сериалы “Диалоги с NURA”;
-- атмосферные видео с текстом;
-- карусели-диалоги;
-- объясняющие карусели про Матрицу судьбы;
-- текстовые посты для Telegram, Threads и VK;
-- Pinterest Pins;
-- публикационные пакеты для Reels, TikTok, Shorts и других платформ;
-- аналитику эффективности контента.
+Это означает:
 
-Все специфичные настройки NURA должны храниться в проектных документах и настройках:
+- platform docs не должны содержать active brand assumptions;
+- platform code не должен содержать project-specific templates, CTA, prompts или packages;
+- примеры должны быть нейтральными;
+- validation project может существовать, но не должен определять foundation baseline.
+
+Разрешённые места для project-specific source of truth:
 
 ```text
-docs/07_projects/nura/
+docs/07_projects/{project_slug}/
+projects/{project_id}/project.yaml
 ```
-
-и в соответствующем Brand Profile внутри платформы.
 
 ---
 
-## 7. Почему платформа должна быть мультипроектной
+## 5. Current Foundation MVP
 
-### 7.1. У владельца может быть несколько проектов
+Текущий foundation MVP intentionally narrow.
 
-Кроме NURA, могут быть другие проекты: Astra Insight, будущие AI-продукты, контентные эксперименты, коммерческие проекты, клиентские бренды.
-
-### 7.2. Универсальные форматы можно переиспользовать
-
-Один и тот же формат может работать в разных проектах.
+### 5.1. Current implemented loop
 
 ```text
-Universal format: Dialog Miniseries
-
-NURA:
-  NURA + человек
-  мягкий диалог о самопонимании
-
-E-commerce:
-  консультант + покупатель
-  диалог о выборе продукта
-
-Education:
-  наставник + ученик
-  объяснение темы через короткую сцену
+Idea
+→ Scenario
+→ ContentItem
+→ ExportPackage v1
+→ Manual Publication Record v1
+→ MetricSnapshot v1
 ```
 
-### 7.3. Будущий SaaS требует проектной модели
+### 5.2. Current safest content format
 
-Если Content Plant в перспективе будет продаваться другим пользователям, архитектура должна заранее учитывать рабочие пространства, проекты, бренд-профили, проектные ассеты, платформенные аккаунты и аналитику по проектам.
+Текущий safest foundation format:
 
-В MVP не нужно делать полноценный SaaS, но проектная модель должна быть заложена с самого начала.
+```text
+text_social_post
+```
+
+Этот формат выбран как минимальный и безопасный foundation loop, потому что не требует реального render pipeline.
+
+### 5.3. Current workflow shape
+
+Foundation сейчас является:
+
+- export-first;
+- manual-publication-first;
+- local/filesystem-first;
+- manual-metrics-first.
+
+### 5.4. Current dev helpers
+
+Текущий локальный workflow опирается на:
+
+```bash
+python scripts/smoke_loop.py
+python scripts/inspect_package.py <export_package_directory>
+python scripts/validate_package.py <export_package_directory>
+python scripts/find_metric_snapshots.py <project_id>
+python scripts/import_manual_metrics.py <manual_metrics_json>
+```
 
 ---
 
-## 8. Что такое Project
+## 6. Current Platform Modules
 
-**Project** — это отдельный бренд, продукт или направление внутри Content Plant.
+В текущем foundation baseline зафиксированы:
 
-Проект содержит:
+- canonical domain layer;
+- project services and project config binding;
+- `IdeaService`;
+- `ScenarioService`;
+- `ProductionLifecycleService`;
+- `PublishingService`;
+- `AnalyticsService`;
+- thin `LoopOrchestrator`;
+- filesystem-based persistence.
 
-- название;
-- описание;
-- Brand Profile;
-- Content Strategy;
-- Visual Guidelines;
-- Tone of Voice;
-- CTA Library;
-- Prompt Library;
-- Asset Library;
-- сценарии;
-- публикации;
-- аналитику;
-- настройки платформ;
-- UTM-настройки.
+Platform-level ownership:
 
-Проекты не должны смешивать данные между собой.
+- `Production Engine` owns `ContentItem` and related production lifecycle concerns;
+- `Publishing Hub` owns `ExportPackage`, publication preparation and `Publication`;
+- analytics foundation currently records manual metrics into `MetricSnapshot`.
 
 ---
 
-## 9. Что такое Brand Profile
+## 7. Platform Layer vs Project Layer
 
-**Brand Profile** — это набор параметров, которые позволяют Content Plant производить контент в стиле конкретного проекта.
+### 7.1. Platform layer
 
-Brand Profile должен включать:
+Platform layer описывает:
 
-- название бренда;
-- позиционирование;
-- целевую аудиторию;
-- tone of voice;
-- цвета;
-- шрифты;
-- логотипы;
-- визуальный стиль;
-- правила композиции;
-- персонажей;
-- допустимые и запрещённые темы;
+- universal entities;
+- neutral workflows;
+- shared lifecycle rules;
+- generic content formats;
+- export/validation mechanics;
+- project isolation rules.
+
+### 7.2. Project layer
+
+Project layer описывает:
+
+- positioning;
+- offers;
+- pricing;
 - CTA;
-- ссылки;
-- продуктовые офферы;
-- платформенные особенности.
+- prompts;
+- visual rules;
+- tone of voice;
+- project-specific examples;
+- asset libraries and project-specific strategy.
 
-Brand Profile используется модулями Scenario Studio, Production Engine, Publishing Hub, QA и Analytics.
+### 7.3. Neutral examples
 
----
+Допустимые нейтральные project examples:
 
-## 10. Основные пользователи платформы
-
-### 10.1. Пользователь MVP
-
-На этапе MVP главный пользователь — владелец проектов.
-
-Его роль:
-
-- выбирать проекты;
-- утверждать стратегии;
-- добавлять тренды;
-- выбирать идеи;
-- утверждать сценарии;
-- генерировать или загружать визуальные ассеты;
-- проверять готовый контент;
-- запускать публикации или экспорт;
-- смотреть аналитику.
-
-### 10.2. Будущий пользователь SaaS
-
-В будущем пользователь Content Plant может быть соло-фаундером, маркетологом, владельцем малого бизнеса, экспертом, агентством, контент-командой, онлайн-школой, e-commerce проектом или медиа-брендом.
-
-Для внешних пользователей потребуется отдельный SaaS-слой, но он не входит в MVP.
+- `example_project`
+- `wellness_app`
+- `education_project`
+- `content_brand`
+- `client_brand`
 
 ---
 
-## 11. Роль человека в системе
+## 8. Validation Project Boundary
 
-На MVP человек выбирает идеи, утверждает сценарии, генерирует часть визуалов во внешних нейросетях, загружает ассеты, проверяет контент и принимает стратегические решения.
+Платформа может позже проверяться на одном или нескольких validation projects, но это не меняет foundation baseline.
 
-Платформа хранит идеи, генерирует сценарии, создаёт промты для визуалов, принимает ассеты, собирает ролики и карусели, генерирует текстовые посты, готовит публикационные пакеты, ведёт календарь, собирает аналитику и предлагает рекомендации.
-
----
-
-## 12. Основные модули платформы
-
-1. **Dashboard** — главный экран управления.
-2. **Projects** — управление проектами и Brand Profile.
-3. **Trend Radar** — импорт и анализ трендов.
-4. **Idea Bank** — банк идей.
-5. **Scenario Studio** — генерация сценариев, диалогов, хуков, CTA и визуальных prompts.
-6. **Asset Library** — хранение изображений, видео, музыки, логотипов, фонов и шаблонов.
-7. **Production Engine** — сборка видео, каруселей, pins и текстовых постов.
-8. **Review & QA** — проверка качества.
-9. **Publishing Hub** — календарь, export packages, публикации и UTM.
-10. **Analytics & Optimization** — метрики, выводы и рекомендации.
-
----
-
-## 13. Основные типы контента
-
-Content Plant должен поддерживать портфель универсальных форматов:
-
-1. **Dialog Miniseries** — короткие видео-сцены с диалогом двух персонажей или двух точек зрения.
-2. **Atmospheric Text Video** — атмосферное видео или анимированный фон с появляющимся текстом.
-3. **Dialog Carousel** — карусель, построенная на диалоге.
-4. **Explainer Carousel** — объясняющая карусель.
-5. **Text Social Posts** — текстовые посты для Telegram, Threads, VK и других каналов.
-6. **Pinterest Pins** — вертикальные карточки и пины.
-
----
-
-## 14. Основной производственный цикл
+Правильный подход:
 
 ```text
-Trend / Idea
-  ↓
-Scenario
-  ↓
-Visual Prompts
-  ↓
-Assets
-  ↓
-Production
-  ↓
-Review
-  ↓
-Publishing Package
-  ↓
-Publication
-  ↓
-Metrics
-  ↓
-Optimization
+Platform foundation
+→ generic project model
+→ project-specific docs/config
+→ validation on a concrete project
+```
+
+Неправильный подход:
+
+```text
+concrete project rules
+→ copied into platform docs
+→ treated as foundation requirement
 ```
 
 ---
 
-## 15. MVP-подход
+## 9. MVP Boundaries
 
-MVP должен включать:
+В текущий foundation MVP не входят:
 
-- поддержку нескольких внутренних проектов;
-- выбор активного проекта;
-- Brand Profile для каждого проекта;
-- генерацию сценариев;
-- генерацию prompts для визуалов;
-- загрузку ассетов;
-- сборку хотя бы одного ключевого видеоформата;
-- сборку каруселей;
-- генерацию текстовых постов;
-- экспорт публикационных пакетов;
-- базовый календарь;
-- базовую аналитику или импорт метрик;
-- правила QA.
+- API;
+- UI;
+- database layer или migrations;
+- SaaS, billing, users, roles или marketplace;
+- autoposting;
+- external APIs;
+- external analytics APIs;
+- `HyperFrames`, FFmpeg flows или `video-assembler/`;
+- `Trend Radar`;
+- generated insights;
+- generated new ideas from metrics;
+- project-specific hardcode в platform-level docs или code.
 
-MVP не должен включать:
+Также важно:
 
-- публичную регистрацию пользователей;
-- оплату и тарифы;
-- команды и роли доступа;
-- marketplace шаблонов;
-- полноценный SaaS onboarding;
-- обязательный автопостинг во все социальные сети;
-- полную автоматическую генерацию изображений и видео через API;
-- сложный AI-оптимизатор.
-
-Главный принцип MVP:
-
-> Сначала построить рабочий внутренний контентный конвейер. Потом расширять его до платформы для внешних пользователей.
+- не смешивать `ContentItem` status и `Publication` status;
+- не смешивать Content Analytics и Product Analytics;
+- не коммитить generated runtime artifacts и `graphify-out/`.
 
 ---
 
-## 16. Платформа и SaaS-видение
+## 10. Long-Term Direction
 
-Будущий SaaS может включать регистрацию пользователей, рабочие пространства, команды, роли доступа, тарифы, биллинг, onboarding, шаблоны для разных ниш, marketplace форматов, интеграции с соцсетями, white-label режим и API.
+После стабилизации foundation loop платформа может расширяться:
 
-На текущем этапе эти возможности должны учитываться архитектурно, но не реализовываться без отдельного решения.
+- дополнительными content formats;
+- richer review and QA flows;
+- project-level templates;
+- broader analytics summaries;
+- later SaaS-oriented layers.
 
----
-
-## 17. Ключевые продуктовые принципы
-
-1. **Platform-first** — Content Plant не должен быть зашит под один бренд.
-2. **Project isolation** — проекты должны иметь отдельные ассеты, сценарии, публикации, настройки и аналитику.
-3. **Reusable formats** — форматы должны быть универсальными и переиспользуемыми.
-4. **Human-in-the-loop** — на MVP человек остаётся в контуре утверждения.
-5. **Analytics-driven iteration** — контентные решения постепенно принимаются на основе данных.
-6. **MVP discipline** — не добавлять SaaS-функции, если они не нужны для первого внутреннего использования.
-7. **Documentation-first** — новые модули, форматы и архитектурные изменения сначала описываются в документации.
+Но такие расширения не должны переписывать текущий foundation baseline задним числом.
 
 ---
 
-## 18. Главные риски
+## 11. Main Risks
 
-1. Зашить платформу под NURA.
-2. Сделать слишком широкий MVP.
-3. Создать интерфейс без реальной пользы.
-4. Получить контент без связи с продажами.
-5. Упереться в ограничения API социальных сетей.
+Главные риски для платформы:
 
----
-
-## 19. Критерии успеха MVP
-
-MVP можно считать успешным, если:
-
-- можно создать несколько проектов;
-- у каждого проекта есть отдельный Brand Profile;
-- можно создать сценарий под выбранный проект;
-- можно получить prompts для визуалов;
-- можно загрузить ассеты;
-- можно собрать готовый контент;
-- можно экспортировать публикационный пакет;
-- можно сгенерировать текстовые версии;
-- можно сохранить публикацию в календаре;
-- можно занести или импортировать базовые метрики;
-- можно понять, какие форматы и темы стоит масштабировать.
+1. Зашить foundation под один конкретный проект.
+2. Расширить MVP раньше, чем стабилизирован минимальный loop.
+3. Смешать platform docs и project docs.
+4. Подменить export-first/manual workflow premature integrations.
+5. Трактовать generated/runtime artifacts как source changes.
 
 ---
 
-## 20. Статус документа
+## 12. Success Criteria For Current Foundation
+
+Текущий foundation можно считать platform-ready, когда:
+
+- loop `Idea -> Scenario -> ContentItem -> ExportPackage v1 -> Manual Publication Record v1 -> MetricSnapshot v1` согласован в docs и code;
+- платформа остаётся project-agnostic;
+- `text_social_post` остаётся минимальным безопасным foundation format;
+- export package можно создать, проверить и валидировать локально;
+- manual metrics path работает без внешних API;
+- project-specific examples не протекают в platform baseline.
+
+---
+
+## 13. Статус документа
 
 Статус: Draft  
-Версия: 0.1  
-Дата создания: 2026-07-04  
+Версия: 0.2  
+Дата обновления: 2026-07-07  
 Проект: Content Plant  
-Первый прикладной проект: NURA
+Validation project boundary: project-specific validation lives outside platform baseline

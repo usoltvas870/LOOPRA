@@ -1077,7 +1077,7 @@ Create Project
 Версия: 0.1  
 Дата создания: 2026-07-04  
 Проект: Content Plant  
-Первый прикладной проект: NURA
+Validation project boundary: задаётся отдельно в `docs/07_projects/{project_slug}/`
 
 ---
 
@@ -1085,7 +1085,7 @@ Create Project
 
 После этого документа необходимо создать:
 
-1. `docs/07_projects/nura/PROJECT_PROFILE.md`
+1. `docs/07_projects/{project_slug}/PROJECT_PROFILE.md`
 2. `docs/05_product_design/WEB_UI_SPEC.md`
 3. `docs/05_product_design/DASHBOARD_SPEC.md`
 4. `docs/03_modules/SCENARIO_STUDIO_SPEC.md`

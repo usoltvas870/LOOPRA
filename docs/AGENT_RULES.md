@@ -29,7 +29,7 @@
 - задача противоречит существующей документации;
 - задача требует изменения архитектуры, но архитектурный документ не обновлён;
 - задача расширяет MVP без явного решения;
-- задача зашивает платформу под NURA;
+- задача зашивает платформу под конкретный проект;
 - задача смешивает платформенный и проектный уровни.
 
 ---
@@ -161,19 +161,19 @@
 
 ---
 
-## 5. Запрет на хардкод NURA в платформе
+## 5. Запрет на project-specific hardcode в платформе
 
-NURA является первым проектом внутри Content Plant, но не является ядром платформы.
+Validation project или другой concrete project может использоваться для проверки платформы, но не является ядром платформы.
 
 Агенту запрещено:
 
-- называть универсальные функции `nura_*`, если функция должна работать для разных проектов;
-- зашивать цвета NURA в production templates;
-- зашивать CTA NURA в универсальные шаблоны;
-- использовать персонажа NURA как обязательный элемент платформы;
+- называть универсальные функции project-specific именами, если функция должна работать для разных проектов;
+- зашивать цвета конкретного проекта в production templates;
+- зашивать project-specific CTA в универсальные шаблоны;
+- использовать project-specific персонажа или persona как обязательный элемент платформы;
 - хранить все ассеты в общей папке без project separation;
-- смешивать аналитику NURA с другими проектами;
-- создавать модель данных, где NURA является особым случаем.
+- смешивать аналитику одного проекта с другими проектами;
+- создавать модель данных, где конкретный validation project является особым случаем.
 
 Правильный подход:
 
@@ -184,7 +184,7 @@ Project → Brand Profile → Format → Production Template
 Неправильный подход:
 
 ```text
-NURA-specific script → hardcoded render → NURA-only output
+project-specific script → hardcoded render → project-only output
 ```
 
 ---
@@ -376,13 +376,13 @@ failed
 Правильно:
 
 ```text
-storage/projects/nura/assets/
-storage/projects/nura/renders/
-storage/projects/nura/exports/
+storage/projects/example_project/assets/
+storage/projects/example_project/renders/
+storage/projects/example_project/exports/
 
-storage/projects/astra/assets/
-storage/projects/astra/renders/
-storage/projects/astra/exports/
+storage/projects/content_brand/assets/
+storage/projects/content_brand/renders/
+storage/projects/content_brand/exports/
 ```
 
 Неправильно:
@@ -436,8 +436,8 @@ WORKSPACE_AND_PROJECT_MODEL.md
 Примеры:
 
 ```text
-nura
-astra
+example_project
+content_brand
 client_brand
 ```
 
@@ -623,7 +623,7 @@ TikTok autopost unavailable → create export package for manual upload.
 Перед завершением задачи агент должен проверить:
 
 - не нарушена ли мультипроектность;
-- нет ли хардкода NURA;
+- нет ли project-specific хардкода;
 - не добавлены ли SaaS-функции в MVP;
 - обновлена ли документация, если нужно;
 - корректно ли работают статусы;
@@ -712,7 +712,7 @@ asset_test_001
 scenario_demo_001
 ```
 
-Для NURA можно использовать демо-сценарии, но нельзя считать их реальными production-данными без статуса.
+Для project-specific validation app можно использовать демо-сценарии, но нельзя считать их реальными production-данными без статуса.
 
 ---
 
@@ -794,7 +794,7 @@ scenario_demo_001
 - добавление ролей и пользователей;
 - изменение production engine;
 - удаление существующего функционала;
-- изменение проектного позиционирования NURA или другого бренда.
+- изменение project-specific позиционирования конкретного бренда или проекта.
 
 ---
 
@@ -806,7 +806,7 @@ scenario_demo_001
 - не нарушены документы;
 - код или документ обновлён в нужном месте;
 - проектная и платформенная логика не смешаны;
-- нет хардкода NURA в платформенном слое;
+- нет project-specific хардкода в платформенном слое;
 - соблюдён MVP scope;
 - обновлён changelog при значимом изменении;
 - агент дал отчёт;
@@ -871,7 +871,7 @@ Risks:
 Версия: 0.1  
 Дата создания: 2026-07-04  
 Проект: Content Plant  
-Первый прикладной проект: NURA
+Validation project boundary: задаётся отдельно в `docs/07_projects/{project_slug}/`
 
 ---
 
@@ -882,4 +882,4 @@ Risks:
 1. `docs/04_content_formats/CONTENT_FORMATS_OVERVIEW.md`
 2. `docs/04_content_formats/FORMAT_DIALOG_MINISERIES.md`
 3. `docs/05_product_design/USER_WORKFLOWS.md`
-4. `docs/07_projects/nura/PROJECT_PROFILE.md`
+4. `docs/07_projects/{project_slug}/PROJECT_PROFILE.md`
