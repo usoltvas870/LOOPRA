@@ -1,12 +1,14 @@
 # Content Plant State
 
-Last updated: 2026-07-07 (NURA validation skeleton)
+Last updated: 2026-07-07 (first real NURA content validation)
 
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, operationally verified, and ready for the next implementation tasks.
 - Working tree at the operational acceptance test checkpoint should be clean.
 - Latest relevant commits:
+  - (pending) Record first real NURA content validation
+  - `c1654b7` Update STATE.md with NURA validation skeleton commit
   - `43178b5` Add NURA validation project skeleton
   - `7ada027` Add developer quickstart
   - `a6b9cb6` Mark foundation MVP ready
@@ -494,8 +496,8 @@ Next recommended direction:
 
 ## Next Task Direction
 
-- NURA manual metrics import (next in validation pipeline)
-- or: NURA-specific content generation
+- NURA manual metrics import (after real manual publication)
+- or: next NURA text_social_post (next content pillar)
 - or: next content format planning
 - Do not start any of these without explicit task.
 
@@ -559,4 +561,57 @@ No Trend Radar
 No generated insights or new ideas from metrics
 No NURA hardcode in foundation
 No runtime artifacts committed (storage/smoke_projects/ ignored)
+
+## First Real NURA Text Social Post Validation
+
+Status: PASS
+
+First real NURA-specific `text_social_post` content was generated and validated.
+
+Export package: `export_806ee39bdf66`  
+Content format: `text_social_post`  
+Target platform: `telegram`  
+Manual publication readiness: `true`
+
+### Generated IDs
+
+```text
+idea_id=idea_c191ccaf2dc5
+scenario_id=scenario_6d502c10a623
+content_item_id=content_629193f7ef86
+export_package_id=export_806ee39bdf66
+publication_id=publication_f0f6d21d7724
+metric_snapshot_id=metric_fc092922555d
+```
+
+### Verification
+
+```text
+Inspect: OK (package_id=export_806ee39bdf66, content_format=text_social_post, status=ready)
+Validate: OK (validation_status=ok, ready_for_manual_publication=true)
+Draft MetricSnapshot: found via find_metric_snapshots.py
+CTA: https://nura-ai.ru
+Content quality: matches NURA tone/pillars, avoids forbidden claims (no therapy, no fortune-telling, no deterministic predictions, no fear pressure)
+QA warnings: none
+```
+
+### Content Topic
+
+```text
+Почему человек снова и снова попадает в похожие отношения
+```
+
+Content pillar: Relationships and Emotional Patterns.
+
+### Non-Goals Preserved
+
+```text
+Metrics import: not performed (no real manual publication yet)
+Temporary generator: removed, not committed
+Foundation core/: unchanged
+Foundation tests/: unchanged
+All 107 foundation tests: OK
+Leakage check: PASS (no NURA in core/scripts/tests)
+Runtime artifacts: not committed (storage/smoke_projects/ ignored)
+```
 ```
