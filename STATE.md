@@ -5,8 +5,9 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the draft metric snapshot finder checkpoint should be clean.
+- Working tree at the manual metrics workflow smoke checkpoint should be clean.
 - Latest relevant commits:
+  - `8be5876` Add manual metrics workflow smoke test
   - `1590159` Add draft metric snapshot finder
   - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
@@ -34,6 +35,18 @@ Last updated: 2026-07-07
 - `AnalyticsService`.
 - Thin `LoopOrchestrator`.
 - Filesystem-based persistence.
+
+## Current Foundation Status
+
+- The current foundation MVP supports content loop creation from `Idea` through draft `MetricSnapshot`.
+- Export package generation is implemented for the minimal `text_social_post` loop.
+- Prepared export packages can be inspected through `scripts/inspect_package.py`.
+- Prepared export packages can be validated through `scripts/validate_package.py`.
+- Manual publication record support is implemented through `Publication`.
+- Draft `MetricSnapshot` creation is implemented for the local/manual metrics path.
+- Draft `MetricSnapshot` lookup is implemented through `scripts/find_metric_snapshots.py`.
+- Manual metrics import is implemented through `scripts/import_manual_metrics.py`.
+- End-to-end manual metrics workflow smoke coverage is implemented through `tests/services/test_manual_metrics_workflow.py`.
 
 ## Current MVP Flow
 
@@ -169,6 +182,24 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - The helper does not call external analytics APIs, does not generate insights, does not generate new ideas, and does not create runtime artifacts.
 - The helper is not a product UI, not an API, not autoposting logic, and not a full CLI framework.
 
+## Manual Metrics Workflow Smoke
+
+- Test path: `tests/services/test_manual_metrics_workflow.py`
+- The workflow is developer-only smoke/test coverage for the full local manual metrics path.
+- The workflow uses the existing smoke and helper scripts instead of adding a new orchestration engine.
+- The workflow verifies that `scripts/smoke_loop.py` creates the generic local loop and a draft `MetricSnapshot`.
+- The workflow verifies that `scripts/find_metric_snapshots.py` can locate the draft `MetricSnapshot`.
+- The workflow verifies that `scripts/import_manual_metrics.py` can import manual metrics from JSON.
+- The workflow verifies that the imported `MetricSnapshot` becomes `recorded`.
+- The workflow verifies that `views`, `likes`, `comments`, `shares`, and `saves` persist.
+- The workflow verifies that `clicks` maps to stored `link_clicks`.
+- The workflow verifies that `published_url` updates the related `Publication`.
+- The workflow verifies that `AnalyticsService.get_insights(...)` remains `[]`.
+- The workflow verifies that `AnalyticsService.generate_new_ideas_from_metrics(...)` remains `[]`.
+- The workflow verifies that no new `Idea` records are created by the manual metrics workflow.
+- No new user-facing script was added for this checkpoint.
+- No core services changed in this checkpoint.
+
 ## Locked Architecture Decisions
 
 - `ExportPackage` belongs to `Publishing Hub`.
@@ -280,6 +311,7 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - `validate_package.py` checks whether the package is complete and ready for manual publication.
 - `find_metric_snapshots.py` finds the draft `metric_snapshot_id` needed for manual metrics import.
 - `import_manual_metrics.py` records manual metrics through existing `AnalyticsService` service rules.
+- The current local/manual metrics workflow is covered by `tests/services/test_manual_metrics_workflow.py`.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
 ## Current MVP Boundaries
@@ -300,8 +332,9 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 ## Validation Snapshot
 
-- Draft metric snapshot finder checkpoint is committed and pushed to `main`.
+- Manual metrics workflow smoke checkpoint is committed and pushed to `main`.
 - Latest relevant helper checkpoint:
+  - `8be5876` Add manual metrics workflow smoke test
   - `1590159` Add draft metric snapshot finder
   - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
@@ -311,6 +344,7 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - Prepared export packages can be validated through `python scripts/validate_package.py <export_package_directory>`.
 - Draft `MetricSnapshot` records can be listed through `python scripts/find_metric_snapshots.py <project_id>`.
 - Draft `MetricSnapshot` records can be populated through `python scripts/import_manual_metrics.py <manual_metrics_json>`.
+- The full local/manual metrics workflow is covered through `python -m unittest tests.services.test_manual_metrics_workflow -v`.
 - Working tree should be clean at checkpoint handoff.
 
 ## Current Guidance
@@ -346,6 +380,5 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 ## Next Task Direction
 
-- Continue implementation on top of the committed draft metric snapshot finder checkpoint.
-- Preserve export-first and manual-publication-first MVP boundaries.
-- Keep new platform work generic enough to support multiple projects.
+- Final Foundation MVP Audit
+- Do not start the audit in this checkpoint.
