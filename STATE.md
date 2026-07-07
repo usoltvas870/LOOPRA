@@ -95,7 +95,7 @@ Idea → Scenario → ContentItem → ExportPackage v1 → Manual Publication Re
 ## MetricSnapshot v1
 
 - `MetricSnapshot v1` records manually provided metrics only.
-- Supported stored metric keys currently implemented in code:
+- Manual metric input currently accepted in code:
   - `views`
   - `likes`
   - `comments`
@@ -103,6 +103,11 @@ Idea → Scenario → ContentItem → ExportPackage v1 → Manual Publication Re
   - `saves`
   - `clicks`
   - `published_url`
+- Stored snapshot metrics include the directly stored engagement fields plus `link_clicks`.
+- Normalization behavior:
+  - `clicks` is accepted as input and stored as `link_clicks`
+  - `published_url` is accepted as input and updates the related `Publication.published_url`
+  - `published_url` is not stored as a `MetricSnapshot.content_metrics` field
 - Current implementation does not fetch external analytics.
 - Current implementation does not generate insights.
 - Current implementation does not generate new ideas from analytics.
@@ -158,6 +163,7 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - Current helper behavior preserves existing analytics rules:
   - `clicks` maps to stored `link_clicks`
   - `published_url` updates the related `Publication`
+  - `published_url` is not written into `MetricSnapshot.content_metrics`
   - unsupported keys are rejected
   - empty metrics are rejected
 - Current expected JSON shape:
