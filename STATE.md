@@ -353,6 +353,67 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 - The full local/manual metrics workflow is covered through `python -m unittest tests.services.test_manual_metrics_workflow -v`.
 - Working tree should be clean at checkpoint handoff.
 
+## Foundation MVP Ready Checkpoint
+
+- Foundation MVP status: READY
+- Audit-lite passed after `718dc4b Quarantine legacy specs from foundation MVP`.
+- Tests: `107/107 OK`.
+- `python -m compileall core` and `python -m compileall scripts`: OK.
+- Smoke/dev workflow: OK.
+- Package inspection/validation: OK.
+- Manual metrics workflow: OK.
+- Project-specific leakage: clean.
+- Generated/runtime artifacts: ignored.
+- Legacy/spec docs: quarantined with `Legacy / future-scope note`.
+
+Current foundation MVP loop:
+
+```text
+Idea -> Scenario -> ContentItem -> ExportPackage v1 -> Manual Publication Record v1 -> MetricSnapshot v1
+```
+
+Current developer helpers:
+
+```bash
+python scripts/smoke_loop.py
+python scripts/inspect_package.py <export_package_directory>
+python scripts/validate_package.py <export_package_directory>
+python scripts/find_metric_snapshots.py <project_id>
+python scripts/import_manual_metrics.py <manual_metrics_json>
+```
+
+Current source-of-truth docs:
+
+- `STATE.md`
+- `AGENTS.md`
+- `docs/00_index.md`
+- `docs/PLATFORM_OVERVIEW.md`
+- `docs/MVP_SCOPE.md`
+- `docs/DATA_MODEL.md`
+- `docs/PIPELINES_SPEC.md`
+- `docs/CONTENT_FORMATS_OVERVIEW.md`
+- `docs/PRODUCT_STRATEGY.md`
+- `docs/WORKSPACE_AND_PROJECT_MODEL.md`
+- `docs/AGENT_RULES.md`
+- `docs/USER_WORKFLOWS.md`
+
+Legacy/spec docs with `Legacy / future-scope note` are not current foundation MVP source of truth.
+They must not be used to expand scope unless a future Architecture Gate explicitly reactivates them.
+
+Boundaries remain unchanged:
+
+- no API/UI
+- no DB/migrations
+- no SaaS/billing/users/roles/marketplace
+- no autoposting
+- no external APIs
+- no external analytics APIs
+- no HyperFrames/FFmpeg/video assembler
+- no Trend Radar implementation
+- no generated insights/new ideas from metrics
+- no project-specific hardcode
+- no NURA validation project yet
+
 ## Current Guidance
 
 - Read `STATE.md` first at the start of a new Codex session.
@@ -386,5 +447,5 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 ## Next Task Direction
 
-- Final Foundation MVP Audit
-- Do not start the audit in this checkpoint.
+- Developer Quickstart v1
+- Do not start it in this checkpoint.
