@@ -5,8 +5,9 @@ Last updated: 2026-07-07
 ## Current Status
 
 - Content Plant project-agnostic foundation is committed, pushed to `main`, and ready for the next implementation tasks.
-- Working tree at the package validation helper checkpoint should be clean.
+- Working tree at the manual metrics import helper checkpoint should be clean.
 - Latest relevant commits:
+  - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
   - `8b53b67` Add export package manifest
@@ -92,6 +93,53 @@ Idea → Scenario → ContentItem → ExportPackage v1 → Manual Publication Re
 - Current implementation does not generate insights.
 - Current implementation does not generate new ideas from analytics.
 - The smoke loop creates `MetricSnapshot` in `draft` / unrecorded status.
+
+## Manual Metrics Import Helper
+
+- Script path: `scripts/import_manual_metrics.py`
+- Run command:
+
+```bash
+python scripts/import_manual_metrics.py <manual_metrics_json>
+```
+
+- The helper is developer-only and imports manually collected metrics from a local JSON file.
+- The helper uses existing `AnalyticsService.record_metrics(...)`.
+- The helper records metrics into an existing `MetricSnapshot`.
+- Supported manual metric keys currently accepted by the helper:
+  - `views`
+  - `likes`
+  - `comments`
+  - `shares`
+  - `saves`
+  - `clicks`
+  - `published_url`
+- Current helper behavior preserves existing analytics rules:
+  - `clicks` maps to stored `link_clicks`
+  - `published_url` updates the related `Publication`
+  - unsupported keys are rejected
+  - empty metrics are rejected
+- Current expected JSON shape:
+
+```json
+{
+  "project_id": "example",
+  "metric_snapshot_id": "metric_...",
+  "metrics": {
+    "views": 100,
+    "likes": 12,
+    "comments": 3,
+    "shares": 1,
+    "saves": 2,
+    "clicks": 5,
+    "published_url": "https://example.invalid/post/123"
+  }
+}
+```
+
+- `CONTENT_PLANT_PROJECTS_ROOT` can be used when the helper must target local/runtime project storage, for example smoke runtime data under `storage/smoke_projects/...`.
+- The helper does not call external analytics APIs, does not generate insights, does not generate new ideas, and does not create runtime artifacts.
+- The helper is not a product UI, not an API, not autoposting logic, and not a full CLI framework.
 
 ## Locked Architecture Decisions
 
@@ -186,9 +234,17 @@ python scripts/inspect_package.py <export_directory_from_smoke_output>
 python scripts/validate_package.py <export_directory_from_smoke_output>
 ```
 
+- Import manually collected metrics into the created draft `MetricSnapshot`:
+
+```bash
+python scripts/import_manual_metrics.py <manual_metrics_json>
+```
+
 - `smoke_loop.py` creates a generic smoke export package under `storage/smoke_projects/...`.
+- `smoke_loop.py` also creates a generic draft / unrecorded `MetricSnapshot`.
 - `inspect_package.py` prints a human-readable package summary from `manifest.json`.
 - `validate_package.py` checks whether the package is complete and ready for manual publication.
+- `import_manual_metrics.py` records manual metrics through existing `AnalyticsService` service rules.
 - Generated smoke runtime artifacts are local-only and must not be committed.
 
 ## Current MVP Boundaries
@@ -197,23 +253,27 @@ python scripts/validate_package.py <export_directory_from_smoke_output>
 - No database layer or migrations.
 - No SaaS, billing, users, roles or marketplace.
 - No autoposting.
+- No external analytics APIs.
 - No external APIs.
 - No `HyperFrames`, FFmpeg flows or `video-assembler/`.
 - No `Trend Radar`.
 - No project-specific hardcode in platform-level code or docs.
 - No NURA-specific foundation logic, assets, templates, prompts or packages.
+- No generated insights or new ideas from metrics in the current foundation checkpoint.
 - The minimal `text_social_post` foundation loop does not require real render.
 - `RenderJob` and `OutputFile` are not mandatory for the current minimal loop unless a future task explicitly introduces them.
 
 ## Validation Snapshot
 
-- Package validation helper checkpoint is committed and pushed to `main`.
+- Manual metrics import helper checkpoint is committed and pushed to `main`.
 - Latest relevant helper checkpoint:
+  - `8ec8c57` Add manual metrics import helper
   - `1fc1862` Add export package validation helper
   - `63e8143` Add export package inspection helper
 - The minimal loop is runnable end-to-end through `python scripts/smoke_loop.py`.
 - Prepared export packages can be inspected through `python scripts/inspect_package.py <export_package_directory>`.
 - Prepared export packages can be validated through `python scripts/validate_package.py <export_package_directory>`.
+- Draft `MetricSnapshot` records can be populated through `python scripts/import_manual_metrics.py <manual_metrics_json>`.
 - Working tree should be clean at checkpoint handoff.
 
 ## Current Guidance
@@ -249,6 +309,6 @@ python scripts/validate_package.py <export_directory_from_smoke_output>
 
 ## Next Task Direction
 
-- Continue implementation on top of the committed package validation helper checkpoint.
+- Continue implementation on top of the committed manual metrics import helper checkpoint.
 - Preserve export-first and manual-publication-first MVP boundaries.
 - Keep new platform work generic enough to support multiple projects.
