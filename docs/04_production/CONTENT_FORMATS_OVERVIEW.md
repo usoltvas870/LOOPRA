@@ -2,7 +2,7 @@
 
 ## 1. Назначение документа
 
-Этот документ описывает platform-level content formats для **Content Plant**.
+Этот документ описывает platform-level content formats для **LOOPRA**.
 
 Он фиксирует:
 
@@ -458,6 +458,6 @@ Current content formats foundation считается согласованным
 
 Статус: Draft  
 Версия: 0.2  
-Дата обновления: 2026-07-07  
-Проект: Content Plant  
+Дата обновления: 2026-07-08  
+Проект: LOOPRA  
 Current foundation format: `text_social_post`

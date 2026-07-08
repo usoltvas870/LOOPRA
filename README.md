@@ -1,97 +1,181 @@
-# Content Plant
+# LOOPRA
 
-Набор инструментов для генерации контента: поиск трендов в TikTok и сборка видео.
+## Autonomous Marketing Operating System
 
-## Структура проекта
+## Overview
 
-```
-content-plant/
-├── trend-radar/        # Тренд-радар — сбор и анализ TikTok-видео
-├── video-assembler/    # Сборщик видео — FFmpeg-пайплайн + AI-генерация сценариев
-├── hyperframes/        # HeyGen HyperFrames — HTML → MP4 (экспериментальный рендер)
-└── README.md
-```
+LOOPRA is an AI-powered operating system for continuous brand growth.
 
-## Связь с другими проектами
+It transforms marketing from disconnected manual tasks into an
+autonomous improvement cycle.
 
-- **NURA** (`C:\git\NURA`) — оригинальный монолит. Content Plant — выделенные модули.
-- **Hyperframes** (`hyperframes/`) — экспериментальный рендер HTML-композиций в MP4.
+LOOPRA combines:
 
-Модули внутри content-plant **не зависят друг от друга**. Каждый можно запускать отдельно.
+-   brand intelligence;
+-   market signals;
+-   AI agents;
+-   content production;
+-   publishing workflows;
+-   analytics;
+-   learning memory.
 
----
+The system does not only create content. It continuously learns what
+works and improves future cycles.
 
-## Быстрый старт
+------------------------------------------------------------------------
 
-### 1. Тренд-радар
+# Core Concept
 
-```bash
-cd trend-radar
+The foundation of LOOPRA is the Growth Loop:
 
-# Установка
-pip install -r requirements.txt
-playwright install chromium
+Market Signals → Insights → Ideas → Creation → Distribution → Analytics
+→ Learning Memory → Improved Next Cycle
 
-# Настройка
-cp .env.example .env
-# отредактируйте .env (впишите DEEPSEEK_API_KEY)
+------------------------------------------------------------------------
 
-# Запуск
-python run_radar.py
-```
+# Architecture
 
-Результат: `data/trend_top.json` — топ-10 видео для передачи в видео-ассемблер.
+Workspace
 
-### 2. Сборщик видео (изолированно)
+↓
 
-```bash
-cd video-assembler
+Brand System
 
-# Установка
-pip install -r requirements.txt
+↓
 
-# Настройка
-cp .env.example .env
-# отредактируйте .env (впишите DEEPSEEK_API_KEY для AI-пайплайна)
+Content Cycle
 
-# Прямая сборка из готового сценария
-python assemble.py ../scenarios/example.json
+↓
 
-# AI-пайплайн из данных тренд-радара (dry-run)
-python assemble.py --from-trend ../trend-radar/data/trend_top.json
+Orchestrator Agent
 
-# AI-пайплайн с реальной сборкой
-python assemble.py --from-trend ../trend-radar/data/trend_top.json --assemble
+↓
 
-# Сборка из job-директории
-python assemble.py --job jobs/my_job/
-```
+Intelligence Modules
 
-## Переменные окружения
+↓
 
-### Trend Radar (`trend-radar/.env`)
+Production Tools
 
-| Переменная | Описание | По умолчанию |
-|---|---|---|
-| `MIN_VIEWS` | Минимум просмотров для попадания в топ | `10000` |
-| `HEADLESS` | Режим браузера (true/false) | `true` |
-| `DEEPSEEK_API_KEY` | Ключ DeepSeek AI для анализа трендов | — |
-| `ENABLE_TELEGRAM` | Отправлять дайджест в Telegram | `false` |
+↓
 
-### Video Assembler (`video-assembler/.env`)
+Publishing
 
-| Переменная | Описание | По умолчанию |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | Ключ DeepSeek AI для генерации сценариев | — |
-| `DEEPSEEK_BASE_URL` | Базовый URL DeepSeek API | `https://api.deepseek.com/v1` |
-| `CONTENT_PLANT_ROOT` | Корень проекта (авто если пусто) | авто |
-| `JOBS_DIR` | Путь к job-директориям | `<root>/jobs` |
-| `MEDIA_DIR` | Путь к медиа-файлам | `<root>/videos/media` |
+↓
 
-## Команды разработки
+Analytics
 
-| Команда | Описание |
-|---|---|
-| `npm run dev` (в `hyperframes/`) | HTTP-превью HyperFrames на порту 3002 |
-| `python run_radar.py` (в `trend-radar/`) | Запуск тренд-радара |
-| `python assemble.py <file>` (в `video-assembler/`) | Сборка видео |
+↓
+
+Learning Memory
+
+↓
+
+Next Cycle
+
+------------------------------------------------------------------------
+
+# Current Development Stage
+
+Current implementation focuses on Foundation MVP.
+
+Validated lifecycle:
+
+Idea → Scenario → ContentItem → ExportPackage → Publication →
+MetricSnapshot
+
+Current capabilities:
+
+-   project management;
+-   content lifecycle entities;
+-   export packages;
+-   manual publication workflow;
+-   metric snapshot foundation.
+
+------------------------------------------------------------------------
+
+# Current Limitations
+
+Not implemented yet:
+
+-   UI;
+-   API;
+-   database;
+-   authentication;
+-   billing;
+-   external publishing APIs;
+-   autonomous agent execution;
+-   SaaS infrastructure.
+
+------------------------------------------------------------------------
+
+# Development Principles
+
+## Project Agnostic Core
+
+The foundation must not contain customer-specific logic.
+
+Project-specific information belongs in:
+
+projects/{project_id}/
+
+## Controlled Evolution
+
+Development follows:
+
+Foundation MVP
+
+↓
+
+Content Intelligence
+
+↓
+
+Production Automation
+
+↓
+
+Agentic Operations
+
+↓
+
+Marketing Operating System
+
+↓
+
+SaaS Platform
+
+## Agents and Tools
+
+Principle:
+
+Agents decide.
+
+Tools execute.
+
+------------------------------------------------------------------------
+
+# Future Vision
+
+A brand configures its identity once.
+
+LOOPRA continuously:
+
+-   monitors the market;
+-   identifies opportunities;
+-   creates content;
+-   measures results;
+-   learns;
+-   improves.
+
+------------------------------------------------------------------------
+
+# Historical Note
+
+The project was previously developed under the working name Content
+Plant.
+
+The architecture evolved from a content production platform into a
+broader autonomous marketing operating system.
+
+The current product identity is LOOPRA.

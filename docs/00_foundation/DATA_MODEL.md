@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document describes the current high-level foundation data model for Content Plant.
+This document describes the current high-level foundation data model for LOOPRA.
 
 It is intentionally narrow and describes only the active baseline that is relevant to the current minimal MVP.
 
@@ -10,7 +10,7 @@ It is intentionally narrow and describes only the active baseline that is releva
 
 ## 2. Core Modeling Principle
 
-Content Plant foundation must stay project-agnostic.
+LOOPRA foundation must stay project-agnostic.
 
 Anything that belongs to a concrete project must remain project-scoped and must not leak into the platform layer.
 
@@ -165,6 +165,6 @@ The current data model baseline is aligned when:
 
 Status: Draft  
 Version: 0.3  
-Updated: 2026-07-07  
-Project: Content Plant  
+Updated: 2026-07-08  
+Project: LOOPRA  
 Current model scope: minimal foundation entity baseline

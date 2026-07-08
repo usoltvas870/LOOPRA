@@ -2,14 +2,14 @@
 
 Status: Current  
 Version: 1.0  
-Updated: 2026-07-07  
-Project: Content Plant
+Updated: 2026-07-08  
+Project: LOOPRA
 
 ---
 
 ## 1. What This Foundation MVP Is
 
-Content Plant foundation MVP is a project-agnostic local platform for systematic content production.
+LOOPRA foundation MVP is a project-agnostic local platform for systematic content production.
 
 Current characteristics:
 
@@ -51,19 +51,15 @@ Current source-of-truth docs:
 ```text
 STATE.md
 AGENTS.md
-docs/00_index.md
-docs/PLATFORM_OVERVIEW.md
-docs/MVP_SCOPE.md
-docs/DATA_MODEL.md
-docs/PIPELINES_SPEC.md
-docs/CONTENT_FORMATS_OVERVIEW.md
-docs/PRODUCT_STRATEGY.md
-docs/WORKSPACE_AND_PROJECT_MODEL.md
-docs/AGENT_RULES.md
-docs/USER_WORKFLOWS.md
+docs/00_foundation/PLATFORM_OVERVIEW.md
+docs/00_foundation/MVP_SCOPE.md
+docs/00_foundation/DATA_MODEL.md
+docs/02_architecture/PIPELINES_SPEC.md
+docs/04_production/CONTENT_FORMATS_OVERVIEW.md
+docs/00_foundation/WORKSPACE_AND_PROJECT_MODEL.md
 ```
 
-Legacy/spec docs with `Legacy / future-scope note` are future/archival docs. Do not use them to expand current MVP scope unless an Architecture Gate explicitly reactivates them.
+Legacy/spec docs in `docs/archive/content-plant-era/` are future/archival docs. Do not use them to expand current MVP scope unless an Architecture Gate explicitly reactivates them.
 
 ---
 
@@ -154,7 +150,7 @@ ready_for_manual_publication=true
 ## 10. Find Draft MetricSnapshot
 
 ```bash
-CONTENT_PLANT_PROJECTS_ROOT=storage/smoke_projects python scripts/find_metric_snapshots.py example
+LOOPRA_PROJECTS_ROOT=storage/smoke_projects python scripts/find_metric_snapshots.py example
 ```
 
 Lists draft snapshots and gives `metric_snapshot_id` for manual metrics import.
@@ -184,7 +180,7 @@ JSON shape:
 Command:
 
 ```bash
-CONTENT_PLANT_PROJECTS_ROOT=storage/smoke_projects python scripts/import_manual_metrics.py <manual_metrics_json>
+LOOPRA_PROJECTS_ROOT=storage/smoke_projects python scripts/import_manual_metrics.py <manual_metrics_json>
 ```
 
 Notes:

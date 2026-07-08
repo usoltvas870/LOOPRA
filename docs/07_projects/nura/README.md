@@ -5,7 +5,7 @@ Updated: 2026-07-07
 
 ## 1. Purpose
 
-NURA is the first validation project for the Content Plant foundation.
+NURA is the first validation project for the LOOPRA foundation.
 It uses the project-agnostic foundation MVP to produce manual-publication-ready content
 for the NURA brand and verifies that the platform foundation works correctly
 with a real project without modifying the foundation layer.
@@ -77,11 +77,11 @@ manifest.json
 
 Path: `projects/nura/project.yaml`
 
-Loaded by Content Plant foundation through `ProjectConfig` / `load_project()`.
+Loaded by LOOPRA foundation through `ProjectConfig` / `load_project()`.
 Must remain project-scoped and must not modify foundation architecture.
 
 ## 8. Boundary
 
 NURA is a project-specific validation layer.
-It must not modify Content Plant foundation architecture.
+It must not modify LOOPRA foundation architecture.
 No NURA-specific hardcode may appear in `core/`, `scripts/`, or `tests/`.

@@ -61,7 +61,7 @@ social traffic (Telegram, Instagram, VK)
   → one-time purchase or subscription
 ```
 
-Content Plant validation currently uses Telegram as the manual publication
+LOOPRA validation currently uses Telegram as the manual publication
 test channel. Real commercial traffic will include other platforms.
 
 ## 6. What NURA Is Not

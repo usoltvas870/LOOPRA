@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document describes the current helper-supported local/manual pipeline for the Content Plant foundation MVP.
+This document describes the current helper-supported local/manual pipeline for the LOOPRA foundation MVP.
 
 It documents the active baseline only and should not be read as a broader future automation plan.
 
@@ -31,9 +31,8 @@ Use these documents together for the current baseline:
 
 - `STATE.md`
 - `AGENTS.md`
-- `docs/PLATFORM_OVERVIEW.md`
-- `docs/USER_WORKFLOWS.md`
-- `docs/DATA_MODEL.md`
+- `docs/00_foundation/PLATFORM_OVERVIEW.md`
+- `docs/00_foundation/DATA_MODEL.md`
 
 If older or broader pipeline descriptions conflict with this loop, follow the current minimal foundation baseline.
 
@@ -189,6 +188,6 @@ The current pipeline baseline is healthy when:
 
 Status: Draft  
 Version: 0.3  
-Updated: 2026-07-07  
-Project: Content Plant  
+Updated: 2026-07-08  
+Project: LOOPRA  
 Current pipeline scope: local/manual helper-supported foundation MVP

@@ -2,7 +2,7 @@
 
 ## 1. Validation Goal
 
-Verify that the Content Plant foundation MVP can serve a real project (NURA)
+Verify that the LOOPRA foundation MVP can serve a real project (NURA)
 without modifying the project-agnostic foundation layer.
 
 ## 2. First Validation Output
@@ -32,7 +32,7 @@ manifest.json
 
 ```text
 Publication is manual-only for the current foundation MVP.
-The package is exported locally and published manually outside Content Plant.
+The package is exported locally and published manually outside LOOPRA.
 No autoposting. No external platform APIs.
 ```
 
@@ -40,7 +40,7 @@ No autoposting. No external platform APIs.
 
 ```text
 Metrics are collected manually and imported through:
-CONTENT_PLANT_PROJECTS_ROOT=storage/smoke_projects python scripts/import_manual_metrics.py <json>
+LOOPRA_PROJECTS_ROOT=storage/smoke_projects python scripts/import_manual_metrics.py <json>
 
 No external analytics APIs. No automatic insights.
 ```

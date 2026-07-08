@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document defines the current minimal foundation MVP for Content Plant.
+This document defines the current minimal foundation MVP for LOOPRA.
 
 It describes the real baseline that is implemented today and must not be read as a broader future platform plan.
 
@@ -149,6 +149,6 @@ The current foundation MVP can be considered aligned when:
 
 Status: Draft  
 Version: 0.3  
-Updated: 2026-07-07  
-Project: Content Plant  
+Updated: 2026-07-08  
+Project: LOOPRA  
 Current MVP scope: minimal local/manual foundation baseline
