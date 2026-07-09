@@ -19,7 +19,7 @@ Content Plant
 The transition from Content Plant to LOOPRA changes the product
 identity, not the validated technical foundation.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # Current Status
 
@@ -27,7 +27,7 @@ identity, not the validated technical foundation.
 
 Status:
 
-READY
+READY + OPERATIONALLY VERIFIED
 
 The foundation layer is operationally verified.
 
@@ -38,7 +38,86 @@ Validated principles:
 -   filesystem-first approach;
 -   controlled development process.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
+
+# Stage 1 Foundation Hardening
+
+## Documentation Baseline
+
+Commit:
+ff6589b — docs: complete LOOPRA documentation baseline
+
+Status:
+COMPLETE
+
+36 active documents across 9 layers catalogued in
+docs/DOCUMENTATION_INDEX.md. All previous documentation warnings
+(W1, W2, W5, W6, W7) resolved in the Final Architecture Audit
+(docs/FINAL_ARCHITECTURE_AUDIT.md v1.0).
+
+## Naming Cleanup
+
+Commit:
+3c6c0a6 — fix: make LOOPRA env vars primary
+
+W3/W4 resolved:
+
+W3 — CONTENT_PLANT_* env var naming migrated to LOOPRA_*.
+W4 — Content Plant user-facing strings replaced with LOOPRA.
+
+## Runtime / Configuration Naming
+
+LOOPRA_* env vars are primary:
+
+-   LOOPRA_SMOKE_PROJECT_ID
+-   LOOPRA_SMOKE_PROJECTS_ROOT
+-   LOOPRA_PROJECTS_ROOT
+
+CONTENT_PLANT_* env vars remain supported as legacy fallback:
+
+-   CONTENT_PLANT_SMOKE_PROJECT_ID
+-   CONTENT_PLANT_SMOKE_PROJECTS_ROOT
+-   CONTENT_PLANT_PROJECTS_ROOT
+
+Resolution order:
+
+LOOPRA_* → CONTENT_PLANT_* → default
+
+## Operational Acceptance Run
+
+Stage 1 Foundation Hardening Operational Acceptance: PASS
+
+Checks:
+
+-   tests: 109/109 OK
+-   smoke_loop default mode: PASS
+-   smoke_loop LOOPRA_* env mode: PASS
+-   smoke_loop legacy CONTENT_PLANT_* fallback mode: PASS
+-   inspect_package: PASS
+-   validate_package: PASS
+-   git status before run: clean
+-   git status after run: clean
+-   tracked files changed: none
+
+Smoke loop default verification IDs:
+
+project_id: example
+idea_id: idea_d1ff05507da5
+scenario_id: scenario_5922a10836e5
+content_item_id: content_0157b7417c71
+export_package_id: export_72ec3675f998
+publication_id: publication_76a254518fb0
+metric_snapshot_id: metric_b11f310f884f
+
+Statuses:
+
+scenario_status=approved
+content_item_status=exported
+export_package_status=ready
+publication_status=published
+metric_snapshot_status=draft
+
+-----------------------------------------------------------------------
 
 # Architecture Direction
 
@@ -74,7 +153,7 @@ Learning Memory
 
 Improved Next Cycle
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # Completed Foundation Capabilities
 
@@ -112,22 +191,29 @@ Publication
 
 MetricSnapshot
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # Current Development Phase
 
 Phase:
 
-Foundation Stabilization and Architecture Alignment
+Stage 1 Foundation Hardening — small bounded improvements
 
 Current objectives:
 
--   finalize LOOPRA documentation;
--   align repository terminology;
+-   CLI output consistency review;
+-   optional JSON output mode assessment;
+-   operational docs consistency checks;
 -   maintain architecture boundaries;
--   prepare future intelligence layers.
+-   no Stage 2 until explicitly approved.
 
-------------------------------------------------------------------------
+Completed in this phase:
+
+-   documentation baseline finalized and committed;
+-   naming cleanup: LOOPRA_* primary, Content Plant removed from runtime;
+-   operational acceptance run passed.
+
+-----------------------------------------------------------------------
 
 # Important Boundaries
 
@@ -140,11 +226,14 @@ Current phase does NOT include:
 -   billing;
 -   SaaS infrastructure;
 -   external publishing integrations;
--   autonomous agent swarm.
+-   autonomous agent swarm;
+-   Stage 2 Content Intelligence;
+-   connector development;
+-   autoposting.
 
 These belong to future phases.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # LOOPRA Transition
 
@@ -162,7 +251,7 @@ LOOPRA
 
 The architecture remains based on the validated foundation.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # Development Rules
 
@@ -173,22 +262,21 @@ Always preserve:
 -   documentation as source of truth;
 -   incremental validated progress.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 # Next Direction
 
-After documentation migration:
+Stage 1 Foundation Hardening can continue with small bounded
+improvements only:
 
-1.  Complete active documentation alignment.
-2.  Review remaining documents.
-3.  Classify documents:
-    -   active;
-    -   future;
-    -   archive.
-4.  Continue architecture evolution toward intelligence and autonomous
-    cycles.
+1.  CLI output consistency review.
+2.  Optional JSON output mode assessment.
+3.  Operational docs consistency checks.
 
-------------------------------------------------------------------------
+Do not start Stage 2 (Content Intelligence) without explicit
+Architecture Gate approval.
+
+-----------------------------------------------------------------------
 
 # Final State Statement
 
