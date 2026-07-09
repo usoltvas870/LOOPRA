@@ -424,6 +424,144 @@ class FindMetricSnapshotsScriptTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         self.assertIn("Usage", completed.stdout)
 
+    # ------------------------------------------------------------------
+    # JSON output mode
+    # ------------------------------------------------------------------
+
+    def test_json_success_with_draft_snapshots_produces_valid_json(self) -> None:
+        _, publication_id, metric_snapshot_id = self._create_draft_metric_snapshot()
+        content_item_id = self.metric_repository.load_metric_snapshot(
+            "example", metric_snapshot_id
+        ).content_item_id
+
+        completed = self._run_script(["--json", "example"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["project_id"], "example")
+        self.assertEqual(result["metric_snapshots_found"], 1)
+        self.assertIsInstance(result["snapshots"], list)
+        self.assertEqual(len(result["snapshots"]), 1)
+        snap = result["snapshots"][0]
+        self.assertEqual(snap["metric_snapshot_id"], metric_snapshot_id)
+        self.assertEqual(snap["publication_id"], publication_id)
+        self.assertEqual(snap["content_item_id"], content_item_id)
+        self.assertEqual(snap["platform"], "telegram")
+        self.assertEqual(snap["status"], "draft")
+
+    def test_json_success_with_draft_snapshots_has_empty_stderr(self) -> None:
+        self._create_draft_metric_snapshot()
+
+        completed = self._run_script(["--json", "example"])
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stderr, "")
+
+    def test_json_success_with_zero_snapshots_produces_empty_array(self) -> None:
+        completed = self._run_script(["--json", "example"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["project_id"], "example")
+        self.assertEqual(result["metric_snapshots_found"], 0)
+        self.assertEqual(result["snapshots"], [])
+
+    def test_json_zero_snapshot_success_has_empty_stderr_and_exit_zero(self) -> None:
+        completed = self._run_script(["--json", "example"])
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stderr, "")
+
+    def test_json_error_produces_valid_json_error_object(self) -> None:
+        completed = self._run_script(["--json", "missing_project"])
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "validation_error")
+        self.assertIn("Project config not found", result["message"])
+
+    def test_json_error_has_empty_stderr(self) -> None:
+        completed = self._run_script(["--json", "missing_project"])
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stderr, "")
+
+    def test_json_with_help_prints_usage_not_json(self) -> None:
+        for args in (["--json", "--help"], ["--help", "--json"]):
+            with self.subTest(args=args):
+                completed = self._run_script(args)
+
+                self.assertEqual(completed.returncode, 0)
+                self.assertIn("Usage", completed.stdout)
+                self.assertNotIn("{", completed.stdout)
+
+    def test_project_id_before_json_flag_works(self) -> None:
+        self._create_draft_metric_snapshot()
+
+        completed = self._run_script(["example", "--json"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["metric_snapshots_found"], 1)
+
+    def test_unknown_flag_rejected_in_human_mode(self) -> None:
+        completed = self._run_script(["--unknown", "example"])
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("unknown option", completed.stderr)
+        self.assertIn("--unknown", completed.stderr)
+
+    def test_unknown_flag_rejected_in_json_mode(self) -> None:
+        completed = self._run_script(["--json", "--unknown", "example"])
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "validation_error")
+        self.assertIn("unknown option", result["message"])
+        self.assertEqual(completed.stderr, "")
+
+    def test_human_mode_unchanged_with_draft_snapshot(self) -> None:
+        _, publication_id, metric_snapshot_id = self._create_draft_metric_snapshot()
+        content_item_id = self.metric_repository.load_metric_snapshot(
+            "example", metric_snapshot_id
+        ).content_item_id
+
+        completed = self._run_script(["example"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.strip().splitlines(),
+            [
+                "metric_snapshots_found=1",
+                "project_id=example",
+                "snapshots:",
+                (
+                    f"- metric_snapshot_id={metric_snapshot_id} "
+                    f"publication_id={publication_id} "
+                    f"content_item_id={content_item_id} "
+                    "platform=telegram status=draft"
+                ),
+            ],
+        )
+
+    def test_human_mode_unchanged_with_zero_snapshots(self) -> None:
+        completed = self._run_script(["example"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.strip().splitlines(),
+            [
+                "metric_snapshots_found=0",
+                "project_id=example",
+                "snapshots:",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

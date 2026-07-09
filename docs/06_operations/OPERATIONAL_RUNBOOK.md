@@ -550,6 +550,21 @@ If the smoke loop fails (non-zero exit or Python traceback):
 - Single target platform per run (first platform from scenario target_platforms,
   typically `telegram`).
 
+## 9.10. JSON Output Mode
+
+Use `--json` for machine-readable output:
+
+```bash
+python scripts/smoke_loop.py --json
+```
+
+JSON success output contains entity IDs, `export_directory`, `generated_export_files`
+(array), and `entity_statuses` (object). All side effects are identical to human
+mode — the same lifecycle executes, the same artifacts are created.
+
+`--json --help` / `--help --json` prints human-readable USAGE, exits 0, and
+does NOT create runtime artifacts. Help mode always takes priority.
+
 ---
 
 # 10. Inspecting Export Package
@@ -623,6 +638,18 @@ Errors are printed to stderr with `ERROR: ` prefix.
 | Returns success/failure via exit code | Modify any files |
 
 For file-existence validation, use `validate_package.py`.
+
+## 10.8. JSON Output Mode
+
+Use `--json` for machine-readable output:
+
+```bash
+python scripts/inspect_package.py --json <export_package_directory>
+python scripts/inspect_package.py <export_package_directory> --json
+```
+
+JSON success output includes `package_id`, `project_id`, `files` array, and other
+manifest metadata. JSON errors are written to stdout with `status: "error"`.
 
 ---
 
@@ -714,6 +741,19 @@ Content quality (NOT checked by validate_package.py):
 
 Validation here means **structural package readiness** — not content quality
 or brand compliance.
+
+## 11.8. JSON Output Mode
+
+Use `--json` for machine-readable output:
+
+```bash
+python scripts/validate_package.py --json <export_package_directory>
+python scripts/validate_package.py <export_package_directory> --json
+```
+
+JSON success output includes `validation_status`, `package_id`, `files_checked`
+(number), and `ready_for_manual_publication` (boolean). JSON errors are written
+to stdout with `status: "error"`.
 
 ---
 
@@ -823,6 +863,18 @@ intentional — only DRAFT snapshots can accept metric imports.
 | `metric snapshots found=0` | No DRAFT snapshots exist | Run smoke loop to create new ones |
 | `metric snapshot storage is not a directory` | Corrupted storage | Check filesystem |
 | `stored snapshot JSON is not valid JSON` | Corrupted snapshot file | Remove corrupted file or rerun smoke loop |
+
+## 13.8. JSON Output Mode
+
+Use `--json` for machine-readable output:
+
+```bash
+python scripts/find_metric_snapshots.py --json <project_id>
+python scripts/find_metric_snapshots.py <project_id> --json
+```
+
+JSON output includes `metric_snapshots_found` (number) and `snapshots` (array).
+Zero snapshots is still success (exit 0) with `snapshots: []`.
 
 ---
 
@@ -945,6 +997,21 @@ After successful import:
 
 The script accepts UTF-8 BOM JSON files (common in PowerShell-generated
 files). The `encoding="utf-8-sig"` parameter handles this automatically.
+
+## 14.11. JSON Output Mode
+
+Use `--json` for machine-readable output:
+
+```bash
+python scripts/import_manual_metrics.py --json <manual_metrics_json>
+python scripts/import_manual_metrics.py <manual_metrics_json> --json
+```
+
+JSON success output includes `metrics_import_status`, `project_id`,
+`metric_snapshot_id`, and `recorded_keys` (as a JSON array, not a
+comma-separated string). Mutation behaviour is identical to human mode —
+metrics go through `AnalyticsService.record_metrics()` with the same
+DRAFT→RECORDED transition and `clicks`→`link_clicks` normalization.
 
 ---
 

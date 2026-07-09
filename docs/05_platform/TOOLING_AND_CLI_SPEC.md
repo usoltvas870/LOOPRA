@@ -276,11 +276,11 @@ scripts/
 
 | Tool | Purpose | Type | R/W | Uses Services? | Input | Output | Exit Codes |
 |---|---|---|---|---|---|---|---|
-| `smoke_loop.py` | Run full Foundation MVP lifecycle end-to-end | Lifecycle execution | Write | Yes (LoopOrchestrator + repositories for summary) | `LOOPRA_SMOKE_PROJECT_ID` env (primary), `CONTENT_PLANT_SMOKE_PROJECT_ID` (fallback), or `"example"` default | Printed summary to stdout; artifacts on disk | 0 = success; exception exit on failure |
-| `inspect_package.py` | Display contents of an ExportPackage | Inspection | Read-only | No | `<export_package_directory>` CLI arg | Human-readable display of package metadata and file listing | 0 = success; 1 = error |
-| `validate_package.py` | Validate ExportPackage structure | Validation | Read-only | No | `<export_package_directory>` CLI arg | Validation report (pass/fail with details) | 0 = success; 1 = error |
-| `find_metric_snapshots.py` | List DRAFT MetricSnapshot records for a project | Query | Read-only | No | `<project_id>` CLI arg | Count and listing of draft snapshots | 0 = success; 1 = error |
-| `import_manual_metrics.py` | Import manual metrics into a draft MetricSnapshot | Mutation | Write | Yes (`AnalyticsService.record_metrics()`) | `<manual_metrics_json>` CLI arg file path | Confirmation of import with recorded keys | 0 = success; 1 = error |
+| `smoke_loop.py` | Run full Foundation MVP lifecycle end-to-end | Lifecycle execution | Write | Yes (LoopOrchestrator + repositories for summary) | `LOOPRA_SMOKE_PROJECT_ID` env (primary), `CONTENT_PLANT_SMOKE_PROJECT_ID` (fallback), or `"example"` default; optional `--json` flag | Printed summary to stdout or JSON to stdout; artifacts on disk | 0 = success; exception exit on failure (human mode), 1 (JSON mode error) |
+| `inspect_package.py` | Display contents of an ExportPackage | Inspection | Read-only | No | `<export_package_directory>` CLI arg; optional `--json` flag | Human-readable key=value display or JSON object | 0 = success; 1 = error |
+| `validate_package.py` | Validate ExportPackage structure | Validation | Read-only | No | `<export_package_directory>` CLI arg; optional `--json` flag | Human-readable validation report or JSON object | 0 = success; 1 = error |
+| `find_metric_snapshots.py` | List DRAFT MetricSnapshot records for a project | Query | Read-only | No | `<project_id>` CLI arg; optional `--json` flag | Human-readable count and listing or JSON object | 0 = success; 1 = error |
+| `import_manual_metrics.py` | Import manual metrics into a draft MetricSnapshot | Mutation | Write | Yes (`AnalyticsService.record_metrics()`) | `<manual_metrics_json>` CLI arg file path; optional `--json` flag | Human-readable confirmation or JSON object | 0 = success; 1 = error |
 
 ---
 
@@ -432,6 +432,60 @@ The operator reads the traceback, fixes the issue, reruns.
 - The script must not be relied upon for production operations — it is a smoke
   test tool.
 - --help and -h flags are supported and exit 0 without side effects.
+- --json flag is supported for machine-readable output.
+- --json --help and --help --json print help text and exit 0 without side effects.
+- Unknown flags are rejected with an error.
+
+## 7.11. JSON Output Mode
+
+Invocation:
+
+```bash
+python scripts/smoke_loop.py --json
+```
+
+Success JSON shape:
+
+```json
+{
+  "status": "success",
+  "project_id": "example",
+  "idea_id": "idea_xxx",
+  "scenario_id": "scenario_xxx",
+  "content_item_id": "content_xxx",
+  "export_package_id": "export_xxx",
+  "publication_id": "publication_xxx",
+  "metric_snapshot_id": "metric_xxx",
+  "export_directory": "<absolute path>",
+  "generated_export_files": ["body.txt", "caption_telegram.txt", "manifest.json", "manual_publication_checklist.txt", "metadata.json", "title.txt"],
+  "entity_statuses": {
+    "idea": "scripted",
+    "scenario": "approved",
+    "content_item": "exported",
+    "export_package": "ready",
+    "publication": "published",
+    "metric_snapshot": "draft"
+  }
+}
+```
+
+Error JSON shape (JSON mode only):
+
+```json
+{
+  "status": "error",
+  "error_type": "FileNotFoundError",
+  "message": "Generic smoke project config not found for project_id 'missing': ..."
+}
+```
+
+Notes:
+- JSON mode executes the same lifecycle as human mode — all side effects are
+  identical.
+- Lifecycle errors in JSON mode produce structured JSON errors to stdout with
+  exit code 1 (instead of Python tracebacks on stderr).
+- In human mode, lifecycle errors continue to propagate as Python tracebacks.
+- `--json --help` prints USAGE and exits 0 without executing the lifecycle.
 
 ---
 
@@ -529,6 +583,52 @@ Errors are printed to stderr with `ERROR: ` prefix.
   not content quality or publication readiness.
 - **Does not validate whether files listed in manifest actually exist on disk.**
   That is the responsibility of `validate_package.py`.
+- --help and -h flags are supported and exit 0 without side effects.
+- --json flag is supported for machine-readable output.
+- Unknown flags are rejected with an error.
+
+## 8.9. JSON Output Mode
+
+Supported forms:
+
+```bash
+python scripts/inspect_package.py --json <export_package_directory>
+python scripts/inspect_package.py <export_package_directory> --json
+```
+
+Success JSON shape:
+
+```json
+{
+  "status": "success",
+  "package_id": "export_xxx",
+  "project_id": "example",
+  "content_item_id": "content_xxx",
+  "scenario_id": "scenario_xxx",
+  "content_format": "text_social_post",
+  "target_platform": "telegram",
+  "export_package_status": "ready",
+  "manual_publication_only": true,
+  "files": [
+    {"name": "title.txt", "role": "title"}
+  ]
+}
+```
+
+Error JSON shape (JSON mode only):
+
+```json
+{
+  "status": "error",
+  "error_type": "validation_error",
+  "message": "manifest.json is missing required fields: scenario_id"
+}
+```
+
+Notes:
+- JSON mode writes output to stdout and keeps stderr empty.
+- Human-mode errors continue to print to stderr with `ERROR:` prefix.
+- `--json --help` and `--help --json` print USAGE and exit 0 (no JSON).
 
 ---
 
@@ -608,6 +708,47 @@ Errors printed to stderr with `ERROR: ` prefix.
   brand compliance, production QA, strategy alignment.
 - "Validation" here means "is the package structurally correct for manual
   publication" — not "is this content approved for publishing".
+- --help and -h flags are supported and exit 0 without side effects.
+- --json flag is supported for machine-readable output.
+- Unknown flags are rejected with an error.
+
+## 9.9. JSON Output Mode
+
+Supported forms:
+
+```bash
+python scripts/validate_package.py --json <export_package_directory>
+python scripts/validate_package.py <export_package_directory> --json
+```
+
+Success JSON shape:
+
+```json
+{
+  "status": "success",
+  "validation_status": "ok",
+  "package_id": "export_xxx",
+  "project_id": "example",
+  "target_platform": "telegram",
+  "files_checked": 6,
+  "ready_for_manual_publication": true
+}
+```
+
+Error JSON shape (JSON mode only):
+
+```json
+{
+  "status": "error",
+  "error_type": "validation_error",
+  "message": "expected package file not found: caption_telegram.txt"
+}
+```
+
+Notes:
+- JSON mode writes output to stdout and keeps stderr empty.
+- Human-mode errors continue to print to stderr with `ERROR:` prefix.
+- `--json --help` and `--help --json` print USAGE and exit 0 (no JSON).
 
 ---
 
@@ -705,6 +846,63 @@ filtering, cross-entity joins or access control.
   target status. Other statuses are ignored.
 - **Not a generic query tool.** Only finds draft snapshots. No status filter args,
   no metric value queries, no cross-snapshot aggregation.
+- --help and -h flags are supported and exit 0 without side effects.
+- --json flag is supported for machine-readable output.
+- Unknown flags are rejected with an error.
+
+## 10.10. JSON Output Mode
+
+Supported forms:
+
+```bash
+python scripts/find_metric_snapshots.py --json <project_id>
+python scripts/find_metric_snapshots.py <project_id> --json
+```
+
+Success JSON shape (with snapshots):
+
+```json
+{
+  "status": "success",
+  "project_id": "example",
+  "metric_snapshots_found": 1,
+  "snapshots": [
+    {
+      "metric_snapshot_id": "metric_xxx",
+      "publication_id": "publication_xxx",
+      "content_item_id": "content_xxx",
+      "platform": "telegram",
+      "status": "draft"
+    }
+  ]
+}
+```
+
+Success JSON shape (zero snapshots — still success, exit 0):
+
+```json
+{
+  "status": "success",
+  "project_id": "example",
+  "metric_snapshots_found": 0,
+  "snapshots": []
+}
+```
+
+Error JSON shape (JSON mode only):
+
+```json
+{
+  "status": "error",
+  "error_type": "validation_error",
+  "message": "Project config not found for project_id 'missing_project'"
+}
+```
+
+Notes:
+- JSON mode writes output to stdout and keeps stderr empty.
+- Human-mode errors continue to print to stderr with `ERROR:` prefix.
+- `--json --help` and `--help --json` print USAGE and exit 0 (no JSON).
 
 ---
 
@@ -831,6 +1029,50 @@ saves, clicks, published_url`. Only keys actually present in the input appear.
   original source type from creation.
 - **No metric aggregation.** The tool does not update earlier snapshots, compute
   trends or produce aggregate analytics summaries.
+- --help and -h flags are supported and exit 0 without side effects.
+- --json flag is supported for machine-readable output.
+- Unknown flags are rejected with an error.
+
+## 11.10. JSON Output Mode
+
+Supported forms:
+
+```bash
+python scripts/import_manual_metrics.py --json <manual_metrics_json>
+python scripts/import_manual_metrics.py <manual_metrics_json> --json
+```
+
+Success JSON shape:
+
+```json
+{
+  "status": "success",
+  "metrics_import_status": "ok",
+  "project_id": "example",
+  "metric_snapshot_id": "metric_xxx",
+  "recorded_keys": ["views", "likes", "comments", "shares", "saves", "clicks", "published_url"]
+}
+```
+
+Error JSON shape (JSON mode only):
+
+```json
+{
+  "status": "error",
+  "error_type": "validation_error",
+  "message": "Unknown metric keys: follows"
+}
+```
+
+Notes:
+- JSON mode mutates state identically to human mode — same
+  `AnalyticsService.record_metrics()` call, same DRAFT→RECORDED transition,
+  same `clicks`→`link_clicks` normalization, same `published_url`→Publication
+  update.
+- JSON mode `recorded_keys` is a JSON array (not a comma-separated string).
+- JSON mode writes output to stdout and keeps stderr empty.
+- Human-mode errors continue to print to stderr with `ERROR:` prefix.
+- `--json --help` and `--help --json` print USAGE and exit 0 (no JSON).
 
 ---
 
@@ -850,14 +1092,13 @@ saves, clicks, published_url`. Only keys actually present in the input appear.
 | Aspect | Standard | Current Compliance |
 |---|---|---|
 | Human-readable summary | Key=value lines on stdout, structured enough for grep/awk. | All tools comply (key=value format). |
-| Structured for future parsing | Consistent field naming, predictable line order. | Partial. Field order is consistent within each tool but format is not machine-optimized. |
-| Clear success/failure | Success prints structured summary to stdout. Failure prints `ERROR: <message>` to stderr. | All tools comply. |
+| Structured for machine parsing | Consistent field naming, predictable line order. Optional `--json` output mode for machine-readable structured output. | All tools support `--json` for structured JSON output. |
+| Clear success/failure | Success prints structured summary to stdout. Failure prints `ERROR: <message>` to stderr (human mode) or JSON error to stdout (json mode). | All tools comply. |
 | Exit codes | 0 = success; non-zero = failure. | All tools comply. Exit code 1 used for all error types (no differentiated error codes). |
-| Error messages | Descriptive message on stderr indicating what went wrong. | All tools comply. |
+| Error messages | Descriptive message on stderr indicating what went wrong (human mode). In JSON mode, errors are written to stdout as structured JSON. | All tools comply. |
 
 ## 12.3. Current Limitations
 
-- No `--json` output mode for machine-readable structured output.
 - No `--quiet` or `--verbose` flags.
 - No standardized CLI framework (tools use ad-hoc `sys.argv` parsing).
 - Exit codes are not differentiated (1 for all errors — no distinction between
@@ -953,8 +1194,16 @@ Each tool may encounter these error categories:
 
 ## 14.3. Current Error Propagation
 
-- All tools catch errors, print `ERROR: <message>` to stderr, and exit with code 1.
-- No structured error payloads. No error codes in machine-readable format.
+- All tools catch errors.
+- In human mode (default, no `--json`): errors are printed to stderr with
+  `ERROR: <message>` prefix and the tool exits with code 1.
+- In JSON mode (`--json` flag): errors are written to stdout as structured JSON
+  objects (`{"status": "error", "error_type": "...", "message": "..."}`) and the
+  tool exits with code 1. Stderr is empty for user-facing errors.
+- `smoke_loop.py` in human mode: unhandled service errors propagate as Python
+  tracebacks to stderr and exit with a system-dependent non-zero code. In JSON
+  mode, lifecycle errors produce structured JSON errors to stdout with exit
+  code 1.
 - Domain-level errors from services (e.g., `AnalyticsValidationError`,
   `PublishingValidationError`) carry descriptive messages that tools relay to the
   user.
@@ -964,11 +1213,14 @@ Each tool may encounter these error categories:
 Future tools should include:
 
 - Differentiated exit codes (1 = input error, 2 = file not found, 3 = validation
-  failure, 4 = service error, etc.).
-- Optional `--json` output mode returning structured error objects:
+  failure, 4 = service error, etc.). Currently all tools use exit code 1 for all
+  error types.
+- Enhanced `--json` error objects with detailed `error_code` and `details`
+  payloads:
   ```json
   {"status": "error", "error_code": "snapshot_not_draft", "message": "...", "details": {...}}
   ```
+  Current JSON errors use a simpler format: `{"status": "error", "error_type": "...", "message": "..."}`.
 - `--quiet` mode suppressing stdout, returning only exit code.
 
 ---
@@ -988,11 +1240,16 @@ Future tools should include:
 - All tools use exit code 1 for every error type. No differentiation between
   "invalid input", "file not found", "domain validation failure" and "service
   error".
-- `smoke_loop.py` does not catch exceptions — unhandled service errors print
-  full Python tracebacks and exit with a system-dependent non-zero code.
-- No tool currently supports `--version`, `--json` or `--quiet` flags. `--help` / `-h` is supported on all tools.
+- `smoke_loop.py` in human mode does not catch exceptions — unhandled service
+  errors print full Python tracebacks and exit with a system-dependent non-zero
+  code. In JSON mode, errors are caught and produced as structured JSON.
+- No tool currently supports `--version` or `--quiet` flags.
+- `--help` / `-h` is supported on all tools.
+- `--json` is supported on all 5 tools for structured machine-readable output
+  (success and error). Default output mode is human-readable key=value lines.
 - Stdout format is key=value lines, which is grep-friendly but not a guaranteed
   contract for machine parsing (field order may change across versions).
+  Use `--json` for machine parsing.
 
 ## 15.3. Future Standard
 
@@ -1007,7 +1264,13 @@ Exit codes (future):
 
 Output modes (future):
     --format human  (default, key=value lines as current)
-    --format json   (structured JSON output for machine consumption)
+    --format json   (alias for --json; structured JSON output for machine consumption)
+    --quiet         (suppress stdout, exit code only)
+
+Current state:
+    --json          (implemented on all 5 tools; structured JSON to stdout)
+    --format        (future/conceptual; not yet implemented)
+    --quiet         (future/conceptual; not yet implemented)
 ```
 
 ---

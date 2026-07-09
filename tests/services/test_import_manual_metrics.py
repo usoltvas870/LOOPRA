@@ -419,6 +419,187 @@ class ImportManualMetricsScriptTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         self.assertIn("Usage", completed.stdout)
 
+    # ------------------------------------------------------------------
+    # JSON output mode
+    # ------------------------------------------------------------------
+
+    def test_json_success_produces_valid_json_with_expected_fields(self) -> None:
+        _, _, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"views": 100, "likes": 12, "comments": 3},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["metrics_import_status"], "ok")
+        self.assertEqual(result["project_id"], "example")
+        self.assertEqual(result["metric_snapshot_id"], metric_snapshot_id)
+        self.assertEqual(result["recorded_keys"], ["views", "likes", "comments"])
+
+    def test_json_success_has_empty_stderr(self) -> None:
+        _, _, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"views": 1},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stderr, "")
+
+    def test_json_success_still_records_metrics_and_transitions_snapshot(self) -> None:
+        _, _, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"views": 42, "clicks": 7, "published_url": "https://example.invalid/json-mode-url"},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        recorded = self.metric_repository.load_metric_snapshot("example", metric_snapshot_id)
+        self.assertEqual(recorded.status, MetricSnapshotStatus.RECORDED)
+        self.assertEqual(recorded.content_metrics.views, 42)
+        self.assertEqual(recorded.content_metrics.link_clicks, 7)
+
+    def test_json_success_still_updates_publication_url(self) -> None:
+        _, publication_id, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"published_url": "https://example.invalid/json-pub-update"},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        publication = self.publication_repository.load_publication("example", publication_id)
+        self.assertEqual(publication.published_url, "https://example.invalid/json-pub-update")
+
+    def test_json_error_produces_valid_json_error_object(self) -> None:
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": "metric_missing",
+                "metrics": {"views": 1},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "validation_error")
+        self.assertIn("metric_snapshot_id 'metric_missing' not found", result["message"])
+
+    def test_json_error_has_empty_stderr(self) -> None:
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": "metric_missing",
+                "metrics": {"views": 1},
+            }
+        )
+
+        completed = self._run_script(["--json", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stderr, "")
+
+    def test_json_with_help_prints_usage_not_json(self) -> None:
+        for args in (["--json", "--help"], ["--help", "--json"]):
+            with self.subTest(args=args):
+                completed = self._run_script(args)
+
+                self.assertEqual(completed.returncode, 0)
+                self.assertIn("Usage", completed.stdout)
+                self.assertNotIn("{", completed.stdout)
+
+    def test_json_path_before_json_flag_works(self) -> None:
+        _, _, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"views": 5},
+            }
+        )
+
+        completed = self._run_script([str(payload_path), "--json"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["project_id"], "example")
+
+    def test_unknown_flag_rejected_in_human_mode(self) -> None:
+        payload_path = self._write_json({"project_id": "example", "metric_snapshot_id": "metric_1", "metrics": {"views": 1}})
+
+        completed = self._run_script(["--unknown", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("unknown option", completed.stderr)
+        self.assertIn("--unknown", completed.stderr)
+
+    def test_unknown_flag_rejected_in_json_mode(self) -> None:
+        payload_path = self._write_json({"project_id": "example", "metric_snapshot_id": "metric_1", "metrics": {"views": 1}})
+
+        completed = self._run_script(["--json", "--unknown", str(payload_path)])
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "validation_error")
+        self.assertIn("unknown option", result["message"])
+        self.assertEqual(completed.stderr, "")
+
+    def test_human_mode_unchanged_with_valid_metrics(self) -> None:
+        _, _, metric_snapshot_id = self._create_draft_metric_snapshot()
+        payload_path = self._write_json(
+            {
+                "project_id": "example",
+                "metric_snapshot_id": metric_snapshot_id,
+                "metrics": {"views": 100, "likes": 12, "comments": 3, "shares": 1, "saves": 2, "clicks": 5, "published_url": "https://example.invalid/human-unchanged"},
+            }
+        )
+
+        completed = self._run_script([str(payload_path)])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.strip().splitlines(),
+            [
+                "metrics_import_status=ok",
+                "project_id=example",
+                f"metric_snapshot_id={metric_snapshot_id}",
+                "recorded_keys=views,likes,comments,shares,saves,clicks,published_url",
+            ],
+        )
+
+    def test_human_error_unchanged_for_missing_file(self) -> None:
+        completed = self._run_script([str(self.projects_root / "does_not_exist.json")])
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("manual metrics JSON file does not exist", completed.stderr)
+        self.assertIn("ERROR:", completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

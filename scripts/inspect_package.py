@@ -35,6 +35,11 @@ def _error(message: str) -> int:
     return 1
 
 
+def _error_json(message: str) -> int:
+    print(json.dumps({"status": "error", "error_type": "validation_error", "message": message}, indent=2))
+    return 1
+
+
 def _validate_manifest(manifest: object) -> dict[str, object]:
     if not isinstance(manifest, dict):
         raise ValueError("manifest.json must contain a JSON object")
@@ -92,37 +97,72 @@ def _build_summary_lines(manifest: dict[str, object]) -> list[str]:
     return lines
 
 
+def _build_json_success(manifest: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": "success",
+        "package_id": manifest["package_id"],
+        "project_id": manifest["project_id"],
+        "content_item_id": manifest["content_item_id"],
+        "scenario_id": manifest["scenario_id"],
+        "content_format": manifest["content_format"],
+        "target_platform": manifest["target_platform"],
+        "export_package_status": manifest["status"],
+        "manual_publication_only": manifest["manual_publication_only"],
+        "files": [{"name": f["name"], "role": f["role"]} for f in manifest["files"]],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+
     if "--help" in args or "-h" in args:
         print(USAGE)
         return 0
 
-    if len(args) != 1:
+    valid_flags = {"--help", "-h", "--json"}
+    flags = [a for a in args if a.startswith("-")]
+    positional_args = [a for a in args if not a.startswith("-")]
+    unknown_flags = [f for f in flags if f not in valid_flags]
+    json_mode = "--json" in args
+
+    if unknown_flags:
+        message = f"unknown option: {unknown_flags[0]}"
+        if json_mode:
+            return _error_json(message)
+        return _error(message)
+
+    if len(positional_args) != 1:
+        if json_mode:
+            return _error_json("usage: python scripts/inspect_package.py [--json] <export_package_directory>")
         return _error("usage: python scripts/inspect_package.py <export_package_directory>")
 
-    export_package_dir = Path(args[0]).expanduser()
+    emit_error = _error_json if json_mode else _error
+
+    export_package_dir = Path(positional_args[0]).expanduser()
     if not export_package_dir.exists():
-        return _error(f"export package directory does not exist: {export_package_dir}")
+        return emit_error(f"export package directory does not exist: {export_package_dir}")
     if not export_package_dir.is_dir():
-        return _error(f"export package directory is not a directory: {export_package_dir}")
+        return emit_error(f"export package directory is not a directory: {export_package_dir}")
 
     manifest_path = export_package_dir / "manifest.json"
     if not manifest_path.exists():
-        return _error(f"manifest.json not found in export package directory: {export_package_dir}")
+        return emit_error(f"manifest.json not found in export package directory: {export_package_dir}")
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        return _error(f"manifest.json is not valid JSON: {exc}")
+        return emit_error(f"manifest.json is not valid JSON: {exc}")
 
     try:
         validated_manifest = _validate_manifest(manifest)
     except ValueError as exc:
-        return _error(str(exc))
+        return emit_error(str(exc))
 
-    for line in _build_summary_lines(validated_manifest):
-        print(line)
+    if json_mode:
+        print(json.dumps(_build_json_success(validated_manifest), indent=2))
+    else:
+        for line in _build_summary_lines(validated_manifest):
+            print(line)
 
     return 0
 

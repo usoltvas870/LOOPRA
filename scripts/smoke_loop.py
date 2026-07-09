@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -45,6 +46,11 @@ Environment variables:
 
 Example:
   python scripts/smoke_loop.py"""
+
+
+def _error_json(message: str) -> int:
+    print(json.dumps({"status": "error", "error_type": "validation_error", "message": message}, indent=2))
+    return 1
 
 
 def _resolve_project_id() -> str:
@@ -188,48 +194,131 @@ def _build_smoke_summary(
     ]
 
 
+def _build_json_summary(
+    *,
+    project_id: str,
+    projects_root: Path,
+    result: dict[str, str],
+    idea_repository: FileSystemIdeaRepository,
+    scenario_repository: FileSystemScenarioRepository,
+    content_repository: FileSystemContentItemRepository,
+    export_repository: FileSystemExportPackageRepository,
+    publication_repository: FileSystemPublicationRepository,
+    metric_repository: FileSystemMetricSnapshotRepository,
+) -> dict[str, object]:
+    idea = idea_repository.load_idea(project_id, result["idea_id"])
+    scenario = scenario_repository.load_scenario(project_id, result["scenario_id"])
+    content_item = content_repository.load_content_item(project_id, result["content_item_id"])
+    export_package = export_repository.load_export_package(project_id, result["export_package_id"])
+    publication = publication_repository.load_publication(project_id, result["publication_id"])
+    metric_snapshot = metric_repository.load_metric_snapshot(project_id, result["metric_snapshot_id"])
+
+    export_dir = projects_root / project_id / "exports" / export_package.export_package_id
+    generated_export_files = sorted(path.name for path in export_dir.iterdir() if path.is_file())
+
+    return {
+        "status": "success",
+        "project_id": project_id,
+        "idea_id": idea.idea_id,
+        "scenario_id": scenario.scenario_id,
+        "content_item_id": content_item.content_item_id,
+        "export_package_id": export_package.export_package_id,
+        "publication_id": publication.publication_id,
+        "metric_snapshot_id": metric_snapshot.metric_snapshot_id,
+        "export_directory": str(export_dir),
+        "generated_export_files": generated_export_files,
+        "entity_statuses": {
+            "idea": idea.status.value,
+            "scenario": scenario.status.value,
+            "content_item": content_item.status.value,
+            "export_package": export_package.status.value,
+            "publication": publication.status.value,
+            "metric_snapshot": metric_snapshot.status.value,
+        },
+    }
+
+
 def main() -> int:
-    if set(sys.argv[1:]) & {"--help", "-h"}:
+    args = list(sys.argv[1:])
+
+    if "--help" in args or "-h" in args:
         print(USAGE)
         return 0
 
+    valid_flags = {"--help", "-h", "--json"}
+    flags = [a for a in args if a.startswith("-")]
+    unknown_flags = [f for f in flags if f not in valid_flags]
+    json_mode = "--json" in args
+
+    if unknown_flags:
+        message = f"unknown option: {unknown_flags[0]}"
+        if json_mode:
+            return _error_json(message)
+        print(f"ERROR: {message}", file=sys.stderr)
+        return 1
+
     project_id = _resolve_project_id()
     projects_root = _resolve_runtime_projects_root()
-    _ensure_runtime_project(project_id, projects_root)
 
-    (
-        loop_orchestrator,
-        idea_service,
-        idea_repository,
-        scenario_repository,
-        content_repository,
-        export_repository,
-        publication_repository,
-        metric_repository,
-    ) = _build_loop_context(projects_root)
+    try:
+        _ensure_runtime_project(project_id, projects_root)
 
-    idea = idea_service.create_idea(
-        project_id,
-        title="Foundation smoke loop",
-        description="Run the smallest project-agnostic LOOPRA loop from idea to draft metrics.",
-        funnel_stage="trust",
-    )
-    result = loop_orchestrator.run_minimal_loop(project_id, idea.idea_id)
+        (
+            loop_orchestrator,
+            idea_service,
+            idea_repository,
+            scenario_repository,
+            content_repository,
+            export_repository,
+            publication_repository,
+            metric_repository,
+        ) = _build_loop_context(projects_root)
 
-    for line in _build_smoke_summary(
-        project_id=project_id,
-        projects_root=projects_root,
-        result=result,
-        idea_repository=idea_repository,
-        scenario_repository=scenario_repository,
-        content_repository=content_repository,
-        export_repository=export_repository,
-        publication_repository=publication_repository,
-        metric_repository=metric_repository,
-    ):
-        print(line)
+        idea = idea_service.create_idea(
+            project_id,
+            title="Foundation smoke loop",
+            description="Run the smallest project-agnostic LOOPRA loop from idea to draft metrics.",
+            funnel_stage="trust",
+        )
+        result = loop_orchestrator.run_minimal_loop(project_id, idea.idea_id)
 
-    return 0
+        if json_mode:
+            summary = _build_json_summary(
+                project_id=project_id,
+                projects_root=projects_root,
+                result=result,
+                idea_repository=idea_repository,
+                scenario_repository=scenario_repository,
+                content_repository=content_repository,
+                export_repository=export_repository,
+                publication_repository=publication_repository,
+                metric_repository=metric_repository,
+            )
+            print(json.dumps(summary, indent=2))
+        else:
+            for line in _build_smoke_summary(
+                project_id=project_id,
+                projects_root=projects_root,
+                result=result,
+                idea_repository=idea_repository,
+                scenario_repository=scenario_repository,
+                content_repository=content_repository,
+                export_repository=export_repository,
+                publication_repository=publication_repository,
+                metric_repository=metric_repository,
+            ):
+                print(line)
+
+        return 0
+    except Exception as exc:
+        if json_mode:
+            print(json.dumps({
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            }, indent=2))
+            return 1
+        raise
 
 
 if __name__ == "__main__":

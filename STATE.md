@@ -100,16 +100,56 @@ Summary:
 -   Help mode exits with code 0.
 -   Help mode has no side effects.
 -   Normal CLI output contract remains unchanged.
--   --json output mode is NOT implemented and remains a future
-    Stage 1 follow-up.
 
 Verification:
 
--   tests: 120/120 OK
+-   tests: 120/120 OK (at time of commit)
 -   smoke_loop normal mode: PASS
 -   inspect_package.py: PASS
 -   validate_package.py: PASS
 -   working tree clean after commit
+
+## CLI JSON Output Mode
+
+Status:
+COMPLETE
+
+Summary:
+
+-   --json output mode is now implemented on all 5 Foundation MVP CLI
+    scripts: smoke_loop.py, inspect_package.py, validate_package.py,
+    find_metric_snapshots.py, import_manual_metrics.py.
+-   Human-readable output remains default and unchanged.
+-   --help / -h wins over --json and remains side-effect-free.
+-   JSON success output goes to stdout; stderr is empty.
+-   JSON error output goes to stdout (JSON mode) or stderr with
+    ERROR: prefix (human mode). Exit codes unchanged (0/1).
+-   Unknown flags are rejected in both modes.
+-   smoke_loop.py --json still executes the full Foundation MVP
+    lifecycle and creates the same runtime artifacts as human mode.
+-   Lifecycle errors in smoke_loop.py --json produce structured JSON
+    errors (instead of Python tracebacks).
+-   import_manual_metrics.py --json mutates through AnalyticsService,
+    not direct JSON writes.
+-   Env var semantics unchanged (LOOPRA_* primary, CONTENT_PLANT_*
+    legacy fallback).
+-   Stage 2 NOT started. No API/UI/DB/agents/connectors introduced.
+
+Verification:
+
+-   tests: 173/173 OK
+-   all 5 scripts --json success: PASS
+-   all 5 scripts --help and --json --help: PASS (side-effect-free)
+-   unknown flag rejection in both modes: PASS
+-   smoke_loop.py --json lifecycle artifact creation: PASS
+-   import_manual_metrics.py --json mutation through service: PASS
+
+Docs updated:
+
+-   docs/05_platform/TOOLING_AND_CLI_SPEC.md — JSON output mode
+    documented for all 5 scripts
+-   docs/06_operations/OPERATIONAL_RUNBOOK.md — JSON output mode
+    added to each tool section
 
 ## Operational Acceptance Run
 
@@ -229,7 +269,6 @@ Stage 1 Foundation Hardening — small bounded improvements
 
 Current objectives:
 
--   optional JSON output mode design review;
 -   operational docs consistency checks;
 -   maintain architecture boundaries;
 -   no Stage 2 until explicitly approved.
@@ -241,6 +280,8 @@ Completed in this phase:
 -   operational acceptance run passed;
 -   CLI --help/-h support added to all 5 scripts. smoke_loop.py --help is
     now side-effect-free.
+-   CLI --json output mode added to all 5 scripts (design review,
+    staged implementation, full test verification, documentation).
 
 -----------------------------------------------------------------------
 
@@ -298,9 +339,7 @@ Always preserve:
 Stage 1 Foundation Hardening can continue with small bounded
 improvements only:
 
-1.  Optional JSON output mode design review and implementation
-    (only after explicit approval).
-2.  Operational docs consistency checks.
+1.  Operational docs consistency checks.
 
 Do not start Stage 2 (Content Intelligence) without explicit
 Architecture Gate approval.

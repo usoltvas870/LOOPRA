@@ -63,7 +63,9 @@ This document defines:
 - service tests — Projects, Ideas, Scenarios, Production, Publishing, Analytics;
 - runtime loop tests — LoopOrchestrator, smoke loop;
 - CLI/script tests — smoke_loop.py, inspect_package.py, validate_package.py,
-  find_metric_snapshots.py, import_manual_metrics.py;
+  find_metric_snapshots.py, import_manual_metrics.py; including JSON output
+  mode tests (success JSON, error JSON, help precedence, unknown flags,
+  lifecycle preservation, mutation semantics);
 - export package validation — structural checks, manifest validation;
 - manual metrics validation — JSON payload, metric keys, transitions;
 - configuration validation — project.yaml required fields, brand fields, aliases;
@@ -217,11 +219,11 @@ python -m unittest tests.services.test_loop_engineering
 | `tests/services/test_projects.py` | ProjectService, BrandProfileService, project config validation, required fields, invalid project IDs, project-agnostic markers | Services — Projects | Current |
 | `tests/services/test_ideas.py` | IdeaService, ScenarioService — create, approve, reject, archive, scenario generation, QA, project scoping | Services — Ideas/Scenarios | Current |
 | `tests/services/test_loop_engineering.py` | ProductionLifecycleService, PublishingService, AnalyticsService, LoopOrchestrator — full lifecycle, export package creation, publication, metrics, dual-recording rejection | Services — Production/Publishing/Analytics, Runtime | Current |
-| `tests/services/test_smoke_loop.py` | smoke_loop.py subprocess execution — stdout parsing, entity statuses, export file listing | CLI/Script + Runtime | Current |
-| `tests/services/test_inspect_package.py` | inspect_package.py manifest reading, display, error handling (missing args, missing dir, missing manifest, invalid JSON, missing fields, absolute paths) | CLI/Script — Inspection | Current |
-| `tests/services/test_validate_package.py` | validate_package.py structural validation, manifest checks, file existence, metadata, manual_publication_only, status, error conditions | CLI/Script — Validation | Current |
-| `tests/services/test_find_metric_snapshots.py` | find_metric_snapshots.py snapshot listing, DRAFT filtering, error handling (missing project, invalid JSON, missing fields, non-directory storage), env var override | CLI/Script — Query | Current |
-| `tests/services/test_import_manual_metrics.py` | import_manual_metrics.py JSON parsing, validation, service call, clicks→link_clicks normalization, published_url→Publication update, BOM handling, error conditions | CLI/Script — Mutation | Current |
+| `tests/services/test_smoke_loop.py` | smoke_loop.py subprocess execution — stdout parsing, entity statuses, export file listing; JSON output mode tests (success JSON, error JSON, help precedence, lifecycle preservation, unknown flags) | CLI/Script + Runtime | Current |
+| `tests/services/test_inspect_package.py` | inspect_package.py manifest reading, display, error handling; JSON output mode tests (success JSON, error JSON, help precedence, unknown flags, flag position) | CLI/Script — Inspection | Current |
+| `tests/services/test_validate_package.py` | validate_package.py structural validation, manifest checks, file existence, metadata, manual_publication_only, status, error conditions; JSON output mode tests (success JSON, error JSON, help precedence, unknown flags) | CLI/Script — Validation | Current |
+| `tests/services/test_find_metric_snapshots.py` | find_metric_snapshots.py snapshot listing, DRAFT filtering, error handling, env var override; JSON output mode tests (success JSON with/without snapshots, error JSON, help precedence, unknown flags) | CLI/Script — Query | Current |
+| `tests/services/test_import_manual_metrics.py` | import_manual_metrics.py JSON parsing, validation, service call, clicks→link_clicks normalization, published_url→Publication update, BOM handling, error conditions; JSON output mode tests (success JSON, mutation preservation, error JSON, help precedence, unknown flags) | CLI/Script — Mutation | Current |
 | `tests/services/test_manual_metrics_workflow.py` | End-to-end manual metrics workflow: smoke loop → find snapshots → import metrics → verify recording | CLI/Script + Runtime | Current |
 
 ---
@@ -402,7 +404,7 @@ Covered in `test_loop_engineering.py` (Section 6.3). The
 
 ## 7.2. Smoke Loop Tests
 
-**File:** `tests/services/test_smoke_loop.py:15-58`
+**File:** `tests/services/test_smoke_loop.py:15-240`
 
 This is a **subprocess-level test** — it runs `python scripts/smoke_loop.py`
 in a subprocess with isolated `LOOPRA_SMOKE_PROJECTS_ROOT` (or legacy `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`) pointing to
@@ -422,10 +424,23 @@ a temp directory.
 | Export directory exists | The export output directory is on disk. |
 | Generated export files match expected list | All 6 files: body.txt, caption_telegram.txt, manifest.json, manual_publication_checklist.txt, metadata.json, title.txt. |
 
+JSON output mode tests (added in CLI JSON rollout) verify:
+
+- `--json` success produces valid JSON with top-level entity IDs,
+  `generated_export_files` (array), and `entity_statuses` (object).
+- `--json` success has empty stderr.
+- `--json` still creates the same lifecycle artifacts as human mode.
+- `--json` entity statuses match expected states (`content_item`: `exported`).
+- `--json --help` prints USAGE, does not output JSON, does not create artifacts.
+- `--json` respects `LOOPRA_SMOKE_PROJECTS_ROOT` env var.
+- Unknown flags rejected in both human and JSON modes.
+- JSON error for missing/invalid project config returns valid JSON error.
+
 **Why it matters:** This is the **definitive operational acceptance test**. If
 this test fails, the entire Foundation MVP lifecycle is broken. It proves that
 all services, repositories, transitions, and artifact generation work together
-end-to-end.
+end-to-end. The JSON-mode tests additionally verify that the same lifecycle
+works identically with machine-readable output.
 
 ## 7.3. Manual Metrics Workflow Tests
 
@@ -449,7 +464,7 @@ It is the closest current test to a full integration test.
 
 ## 8.1. test_inspect_package.py
 
-**File:** `tests/services/test_inspect_package.py:38-151`
+**File:** `tests/services/test_inspect_package.py:38-260`
 
 Tests `inspect_package.py` via subprocess invocations.
 
@@ -464,6 +479,17 @@ Tests `inspect_package.py` via subprocess invocations.
 | `test_rejects_absolute_paths_in_manifest_files` | Manifest with absolute file path | "must not be an absolute path" | ≠0 |
 | `test_script_files_do_not_contain_project_specific_strings` | Reads script and test files | No project-specific markers found | N/A |
 
+JSON output mode tests (added in CLI JSON rollout) verify:
+
+- `--json` success produces valid JSON with expected fields (`status`, `package_id`, `files` array).
+- `--json` success has empty stderr.
+- `--json` error produces valid JSON error object (`status: "error"`, `error_type: "validation_error"`, `message`).
+- `--json` error has empty stderr.
+- Human-readable success and error output remain unchanged.
+- `--json --help` prints USAGE, does not output JSON.
+- `<dir> --json` works as well as `--json <dir>`.
+- Unknown flags rejected in human mode (stderr) and JSON mode (JSON to stdout).
+
 **Fixture model:** Uses a `_build_manifest()` helper that creates a standard
 valid manifest dict. Tests override individual fields to trigger specific errors.
 Export packages are built in temp directories with only the files needed for
@@ -471,7 +497,7 @@ each test case.
 
 ## 8.2. test_validate_package.py
 
-**File:** `tests/services/test_validate_package.py:52-313`
+**File:** `tests/services/test_validate_package.py:52-430`
 
 Tests `validate_package.py` via subprocess invocations. More extensive than
 inspect tests because validation has stricter rules.
@@ -500,9 +526,20 @@ inspect tests because validation has stricter rules.
 complete package with all required files. Supports parameters to omit specific
 files, provide invalid manifest/override fields, or inject invalid metadata text.
 
+JSON output mode tests (added in CLI JSON rollout) verify:
+
+- `--json` success produces valid JSON (`validation_status`, `package_id`, `files_checked` number, `ready_for_manual_publication` boolean).
+- `--json` success has empty stderr.
+- `--json` error produces valid JSON error object.
+- `--json` error has empty stderr.
+- Human-readable success/error output unchanged.
+- `--json --help` prints USAGE, not JSON.
+- `<dir> --json` works as well as `--json <dir>`.
+- Unknown flags rejected in both modes.
+
 ## 8.3. test_find_metric_snapshots.py
 
-**File:** `tests/services/test_find_metric_snapshots.py:34-366`
+**File:** `tests/services/test_find_metric_snapshots.py:34-540`
 
 Tests `find_metric_snapshots.py` via subprocess invocations. Sets up a full
 lifecycle (idea → scenario → content → export → publication → metric snapshot)
@@ -522,9 +559,20 @@ programmatically, then tests the script's ability to find and list snapshots.
 | `test_respects_content_plant_projects_root_override` | `CONTENT_PLANT_PROJECTS_ROOT` env var (legacy fallback) points to alternate root → script uses it. |
 | `test_new_script_does_not_introduce_project_specific_marker_strings` | Script text has no project-specific markers. |
 
+JSON output mode tests (added in CLI JSON rollout) verify:
+
+- `--json` success with draft snapshots produces valid JSON (`snapshots` array, `metric_snapshots_found` number).
+- `--json` success with zero snapshots produces `snapshots: []`, exit 0.
+- `--json` error produces valid JSON error object.
+- `--json` error and success have empty stderr.
+- Human-readable success/error unchanged.
+- `--json --help` prints USAGE, not JSON.
+- `<project_id> --json` works as well as `--json <project_id>`.
+- Unknown flags rejected in both modes.
+
 ## 8.4. test_import_manual_metrics.py
 
-**File:** `tests/services/test_import_manual_metrics.py:34-402`
+**File:** `tests/services/test_import_manual_metrics.py:34-550`
 
 Tests `import_manual_metrics.py` via subprocess invocations. Tests the most
 mutation-heavy CLI tool — it imports JSON, validates structure, calls service,
@@ -550,6 +598,19 @@ and records metrics.
 | `test_accepts_clicks_and_records_link_clicks` | `clicks: 7` → stored as `link_clicks: 7`. |
 | `test_accepts_published_url_and_updates_related_publication` | `published_url` only (no numeric metrics) → Publication updated, snapshot transitioned. |
 | `test_new_script_does_not_introduce_project_specific_marker_strings` | Script text is project-agnostic. |
+
+JSON output mode tests (added in CLI JSON rollout) verify:
+
+- `--json` success produces valid JSON (`metrics_import_status`, `recorded_keys` as array).
+- `--json` success has empty stderr.
+- `--json` still records metrics and transitions MetricSnapshot DRAFT→RECORDED.
+- `--json` still updates Publication URL identically to human mode.
+- `--json` error produces valid JSON error object.
+- `--json` error has empty stderr.
+- Human-readable success/error output unchanged.
+- `--json --help` prints USAGE, not JSON.
+- `<json_path> --json` works as well as `--json <json_path>`.
+- Unknown flags rejected in both modes.
 
 ---
 
@@ -872,7 +933,7 @@ aspect of correctness.
 | **2. Service precondition validation** | Service classes (`projects.py`, `ideas.py`, `production.py`, `publishing.py`, `analytics.py`) | `test_projects.py`, `test_ideas.py`, `test_loop_engineering.py` | Structured pre/post-condition specification; formal contract testing |
 | **3. Runtime sequence validation** | `LoopOrchestrator` | `test_loop_engineering.py` (LoopOrchestratorTests) | Mid-flow resume testing; partial execution; retry validation |
 | **4. Artifact validation** | `inspect_package.py`, `validate_package.py` | `test_inspect_package.py`, `test_validate_package.py` | Brand compliance checks; platform-specific preflight; media validation |
-| **5. CLI input validation** | Script main() functions | All script test files | `--help` output; differentiated exit codes; `--json` output mode |
+| **5. CLI input validation** | Script main() functions | All script test files (human + JSON mode) | Differentiated exit codes; `--quiet` flag; `--format` aliases |
 | **6. Manual workflow validation** | Smoke loop + find + import scripts | `test_manual_metrics_workflow.py` | Multi-project workflows; partial workflow resume |
 | **7. Future: Integration validation** | Future connector tests | Not implemented | Mocked external APIs; platform connector contract tests; DB repository tests |
 | **8. Future: Agent safety validation** | Agent boundary tests | Not implemented | Storage mutation prevention; service bypass prevention; cross-project access prevention; approval gate enforcement |

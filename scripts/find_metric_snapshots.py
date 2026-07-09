@@ -46,6 +46,11 @@ def _error(message: str) -> int:
     return 1
 
 
+def _error_json(message: str) -> int:
+    print(json.dumps({"status": "error", "error_type": "validation_error", "message": message}, indent=2))
+    return 1
+
+
 def _resolve_projects_root() -> Path:
     override = (
         os.environ.get("LOOPRA_PROJECTS_ROOT")
@@ -134,26 +139,65 @@ def _format_snapshot_line(snapshot: MetricSnapshot) -> str:
     )
 
 
+def _build_json_success(project_id: str, snapshots: list[MetricSnapshot]) -> dict[str, object]:
+    return {
+        "status": "success",
+        "project_id": project_id,
+        "metric_snapshots_found": len(snapshots),
+        "snapshots": [
+            {
+                "metric_snapshot_id": s.metric_snapshot_id,
+                "publication_id": s.publication_id,
+                "content_item_id": s.content_item_id,
+                "platform": s.platform.value,
+                "status": s.status.value,
+            }
+            for s in snapshots
+        ],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+
     if "--help" in args or "-h" in args:
         print(USAGE)
         return 0
 
-    if len(args) != 1:
+    valid_flags = {"--help", "-h", "--json"}
+    flags = [a for a in args if a.startswith("-")]
+    positional_args = [a for a in args if not a.startswith("-")]
+    unknown_flags = [f for f in flags if f not in valid_flags]
+    json_mode = "--json" in args
+
+    if unknown_flags:
+        message = f"unknown option: {unknown_flags[0]}"
+        if json_mode:
+            return _error_json(message)
+        return _error(message)
+
+    if len(positional_args) != 1:
+        if json_mode:
+            return _error_json("usage: python scripts/find_metric_snapshots.py [--json] <project_id>")
         return _error("usage: python scripts/find_metric_snapshots.py <project_id>")
 
-    project_id = args[0]
+    emit_error = _error_json if json_mode else _error
+    project_id = positional_args[0]
+
     try:
         draft_snapshots = _find_draft_metric_snapshots(project_id, _resolve_projects_root())
     except (FileNotFoundError, InvalidProjectIdError, OSError, ValueError) as exc:
-        return _error(str(exc))
+        return emit_error(str(exc))
 
-    print(f"metric_snapshots_found={len(draft_snapshots)}")
-    print(f"project_id={project_id}")
-    print("snapshots:")
-    for snapshot in draft_snapshots:
-        print(f"- {_format_snapshot_line(snapshot)}")
+    if json_mode:
+        print(json.dumps(_build_json_success(project_id, draft_snapshots), indent=2))
+    else:
+        print(f"metric_snapshots_found={len(draft_snapshots)}")
+        print(f"project_id={project_id}")
+        print("snapshots:")
+        for snapshot in draft_snapshots:
+            print(f"- {_format_snapshot_line(snapshot)}")
+
     return 0
 
 

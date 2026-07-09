@@ -318,6 +318,124 @@ class ValidatePackageScriptTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         self.assertIn("Usage", completed.stdout)
 
+    # ------------------------------------------------------------------
+    # JSON output mode
+    # ------------------------------------------------------------------
+
+    def test_json_success_produces_valid_json_with_expected_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+            self._write_valid_export_package(export_dir)
+
+            completed = self._run_script("--json", str(export_dir))
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["validation_status"], "ok")
+            self.assertEqual(result["package_id"], "export_001")
+            self.assertEqual(result["project_id"], "example")
+            self.assertEqual(result["target_platform"], "telegram")
+            self.assertEqual(result["files_checked"], 6)
+            self.assertIs(result["ready_for_manual_publication"], True)
+
+    def test_json_success_has_empty_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+            self._write_valid_export_package(export_dir)
+
+            completed = self._run_script("--json", str(export_dir))
+
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stderr, "")
+
+    def test_json_error_produces_valid_json_error_object(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+            # No manifest.json — triggers error
+
+            completed = self._run_script("--json", str(export_dir))
+
+            self.assertEqual(completed.returncode, 1)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["error_type"], "validation_error")
+            self.assertIn("manifest.json not found", result["message"])
+
+    def test_json_error_has_empty_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+
+            completed = self._run_script("--json", str(export_dir))
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertEqual(completed.stderr, "")
+
+    def test_json_with_help_prints_usage_not_json(self) -> None:
+        for args in (("--json", "--help"), ("--help", "--json")):
+            with self.subTest(args=args):
+                completed = self._run_script(*args)
+
+                self.assertEqual(completed.returncode, 0)
+                self.assertIn("Usage", completed.stdout)
+                self.assertNotIn("{", completed.stdout)
+
+    def test_dir_before_json_flag_works(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+            self._write_valid_export_package(export_dir)
+
+            completed = self._run_script(str(export_dir), "--json")
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["package_id"], "export_001")
+
+    def test_unknown_flag_rejected_in_human_mode(self) -> None:
+        completed = self._run_script("--unknown", "some_dir")
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unknown option", completed.stderr)
+        self.assertIn("--unknown", completed.stderr)
+
+    def test_unknown_flag_rejected_in_json_mode(self) -> None:
+        completed = self._run_script("--json", "--unknown", "some_dir")
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "validation_error")
+        self.assertIn("unknown option", result["message"])
+        self.assertEqual(completed.stderr, "")
+
+    def test_human_mode_unchanged_with_valid_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "export_001"
+            export_dir.mkdir()
+            self._write_valid_export_package(export_dir)
+
+            completed = self._run_script(str(export_dir))
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout.splitlines(),
+                [
+                    "validation_status=ok",
+                    "package_id=export_001",
+                    "project_id=example",
+                    "target_platform=telegram",
+                    "files_checked=6",
+                    "ready_for_manual_publication=true",
+                ],
+            )
+            self.assertEqual(completed.stderr, "")
+
 
 if __name__ == "__main__":
     unittest.main()
