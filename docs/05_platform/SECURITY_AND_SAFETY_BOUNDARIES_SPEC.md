@@ -517,8 +517,9 @@ Configuration layers (see `CONFIGURATION_AND_ENVIRONMENT_SPEC.md`):
 ```
 Source config (canonical)     →  projects/{project_id}/project.yaml
 Runtime config (derived)      →  ProjectConfig model, validated on load
-Environment variables         →  Override runtime paths only (CONTENT_PLANT_SMOKE_PROJECTS_ROOT,
-                                 CONTENT_PLANT_PROJECTS_ROOT, CONTENT_PLANT_SMOKE_PROJECT_ID)
+Environment variables         →  Override runtime paths only (LOOPRA_SMOKE_PROJECTS_ROOT primary,
+                                 LOOPRA_PROJECTS_ROOT primary, LOOPRA_SMOKE_PROJECT_ID primary;
+                                 CONTENT_PLANT_* legacy fallback)
 ```
 
 ## 10.2. Configuration Safety Rules

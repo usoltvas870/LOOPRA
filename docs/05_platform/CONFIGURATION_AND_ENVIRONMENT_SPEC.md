@@ -53,7 +53,7 @@ This document describes:
 
 - Project configuration (`projects/{project_id}/project.yaml`).
 - Runtime configuration (factory function `projects_root`, env var overrides).
-- Environment variables (current `CONTENT_PLANT_*` historical naming).
+- Environment variables (current `LOOPRA_*` primary naming, with `CONTENT_PLANT_*` legacy fallback).
 - Configuration source hierarchy and precedence rules.
 - Configuration validation (required fields, pydantic models, service validation).
 - Local / dev / test / smoke modes.
@@ -157,10 +157,11 @@ Artifacts / State (export packages, metric snapshots)
    (constant) or explicitly set in the configuration model. No hidden defaults
    that change behaviour silently.
 
-7. **Historical names must be documented until migrated.** Current env var
-   names use the `CONTENT_PLANT_*` prefix (historical working name). They
-   remain operational. Future migration to `LOOPRA_*` must be documented,
-   versioned and backward-compatible.
+7. **Historical names must be documented until migrated.** Env var names
+   use `LOOPRA_*` as the primary prefix. `CONTENT_PLANT_*` names remain
+   operational as legacy fallback. Migration is complete — `LOOPRA_*` vars
+   are checked first; `CONTENT_PLANT_*` vars serve as fallback if `LOOPRA_*`
+   is not set.
 
 8. **Tests must isolate config roots.** Test suites use temporary directories
    and explicit `projects_root` overrides. No test pollutes the source
@@ -189,7 +190,7 @@ precedence:
 2. Canonical project.yaml at projects/{project_id}/project.yaml
 3. Runtime copied project.yaml at storage/smoke_projects/{project_id}/project.yaml
    (same content as canonical copy, used as the runtime config source)
-4. Environment variables (CONTENT_PLANT_*)
+4. Environment variables (LOOPRA_* primary, CONTENT_PLANT_* fallback)
 5. Factory function projects_root parameter (programmatic override)
 6. Test-provided projects_root via temp directories
 
@@ -610,41 +611,36 @@ Runtime config must never override project identity.
 
 | Env Var | Used By | Default | Purpose | Status |
 |---|---|---|---|---|
-| `CONTENT_PLANT_SMOKE_PROJECT_ID` | `scripts/smoke_loop.py:36` | `"example"` | Project ID to use for the smoke loop | Current (historical naming) |
-| `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` | `scripts/smoke_loop.py:41` | `{REPO_ROOT}/storage/smoke_projects` | Root directory for runtime smoke project storage | Current (historical naming) |
-| `CONTENT_PLANT_PROJECTS_ROOT` | `scripts/find_metric_snapshots.py:34`, `scripts/import_manual_metrics.py:39` | `PROJECTS_ROOT` (`{REPO_ROOT}/projects`) | Override projects root directory | Current (historical naming) |
+| `LOOPRA_SMOKE_PROJECT_ID` (fallback `CONTENT_PLANT_SMOKE_PROJECT_ID`) | `scripts/smoke_loop.py:36` | `"example"` | Project ID to use for the smoke loop | Current (LOOPRA_* primary) |
+| `LOOPRA_SMOKE_PROJECTS_ROOT` (fallback `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`) | `scripts/smoke_loop.py:41` | `{REPO_ROOT}/storage/smoke_projects` | Root directory for runtime smoke project storage | Current (LOOPRA_* primary) |
+| `LOOPRA_PROJECTS_ROOT` (fallback `CONTENT_PLANT_PROJECTS_ROOT`) | `scripts/find_metric_snapshots.py:34`, `scripts/import_manual_metrics.py:39` | `PROJECTS_ROOT` (`{REPO_ROOT}/projects`) | Override projects root directory | Current (LOOPRA_* primary) |
 
 ## 9.2. Detailed Env Var Contracts
 
-### `CONTENT_PLANT_SMOKE_PROJECT_ID`
+### `LOOPRA_SMOKE_PROJECT_ID` (fallback `CONTENT_PLANT_SMOKE_PROJECT_ID`)
 
 - **File:** `scripts/smoke_loop.py:35-37`
 - **Purpose:** Select which project to run the smoke loop for.
 - **Default:** `"example"`
-- **Resolution:** `os.environ.get("CONTENT_PLANT_SMOKE_PROJECT_ID", DEFAULT_PROJECT_ID).strip()`
-  Falls back to `DEFAULT_PROJECT_ID` if env var is empty string after stripping.
+- **Resolution:** If `LOOPRA_SMOKE_PROJECT_ID` is set → use it. Else if `CONTENT_PLANT_SMOKE_PROJECT_ID` is set → use it. Else → use default.
 - **Validation:** The resolved `project_id` must correspond to a directory under
   `REPO_ROOT / "projects"` containing a valid `project.yaml`. Absent or invalid
   config raises `FileNotFoundError`.
-- **Migration note:** Uses `CONTENT_PLANT_*` historical prefix. Must be
-  aliased to `LOOPRA_SMOKE_PROJECT_ID` in future without breaking existing
-  usage.
+- **Migration note:** `LOOPRA_*` is primary; `CONTENT_PLANT_*` is legacy fallback.
 
-### `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`
+### `LOOPRA_SMOKE_PROJECTS_ROOT` (fallback `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`)
 
 - **File:** `scripts/smoke_loop.py:40-44`
 - **Purpose:** Override the runtime directory where smoke project config is
   copied and artifacts are stored.
 - **Default:** `{REPO_ROOT}/storage/smoke_projects`
-- **Resolution:** If env var is set and non-empty, treat as a filesystem path
-  (expanded via `Path.expanduser().resolve()`). If not set, use the default.
+- **Resolution:** If `LOOPRA_SMOKE_PROJECTS_ROOT` is set → use it. Else if `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` is set → use it. Else → use default.
 - **Effect:** Controls where `_ensure_runtime_project()` copies the source
   `project.yaml` and where all subsequent runtime entities and exports are
   written.
-- **Migration note:** Uses `CONTENT_PLANT_*` historical prefix. Must be
-  aliased to `LOOPRA_SMOKE_PROJECTS_ROOT`.
+- **Migration note:** `LOOPRA_*` is primary; `CONTENT_PLANT_*` is legacy fallback.
 
-### `CONTENT_PLANT_PROJECTS_ROOT`
+### `LOOPRA_PROJECTS_ROOT` (fallback `CONTENT_PLANT_PROJECTS_ROOT`)
 
 - **File:**
   - `scripts/find_metric_snapshots.py:33-37`
@@ -652,12 +648,10 @@ Runtime config must never override project identity.
 - **Purpose:** Override the projects root directory used by
   `find_metric_snapshots.py` and `import_manual_metrics.py`.
 - **Default:** `PROJECTS_ROOT` (`{REPO_ROOT}/projects`)
-- **Resolution:** If env var is set and non-empty, treat as a filesystem path
-  (expanded via `Path.expanduser().resolve()`). If not set, use `PROJECTS_ROOT`.
+- **Resolution:** If `LOOPRA_PROJECTS_ROOT` is set → use it. Else if `CONTENT_PLANT_PROJECTS_ROOT` is set → use it. Else → use default.
 - **Effect:** Controls which `projects/` directory the tools read from when
   validating project existence and reading/writing metric snapshots.
-- **Migration note:** Uses `CONTENT_PLANT_*` historical prefix. Must be
-  aliased to `LOOPRA_PROJECTS_ROOT`.
+- **Migration note:** `LOOPRA_*` is primary; `CONTENT_PLANT_*` is legacy fallback.
 
 ## 9.3. Env Vars NOT Present in Current MVP
 
@@ -666,7 +660,7 @@ The following are confirmed absent:
 - No `.env` file in the repository root (`trend-radar/.env` and
   `video-assembler/.env.example` belong to sub-projects, not LOOPRA core).
 - No `.env.example` in the repository root.
-- No `LOOPRA_*` env vars defined or used.
+- `LOOPRA_*` env vars now exist as primary; `CONTENT_PLANT_*` vars remain as legacy fallback.
 - No `DATABASE_URL`, `SECRET_KEY`, `API_KEY` or deployment-related env vars.
 - No feature flag env vars.
 - No log level env var.
@@ -691,19 +685,18 @@ This ensures tests are fully isolated from source directories and other tests.
 
 ## 10.1. Current State
 
-All env vars currently use the `CONTENT_PLANT_*` prefix — the historical
-working name of the project. These names are operational and must not be
-broken.
+All env vars use `LOOPRA_*` as the primary prefix. `CONTENT_PLANT_*` remains
+operational as legacy fallback for backward compatibility.
 
 ## 10.2. Future LOOPRA Naming Convention
 
 When migration occurs:
 
-| Current Name | Future Canonical Name | Migration Rule |
-|---|---|---|
-| `CONTENT_PLANT_PROJECTS_ROOT` | `LOOPRA_PROJECTS_ROOT` | Support both; prefer new; document old as deprecated |
-| `CONTENT_PLANT_SMOKE_PROJECT_ID` | `LOOPRA_SMOKE_PROJECT_ID` | Support both; prefer new; document old as deprecated |
-| `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` | `LOOPRA_SMOKE_PROJECTS_ROOT` | Support both; prefer new; document old as deprecated |
+| Current Name | Current Canonical Name | Migration Status |
+|---|---|---|---|
+| `CONTENT_PLANT_PROJECTS_ROOT` (legacy) | `LOOPRA_PROJECTS_ROOT` (primary) | Complete — LOOPRA_* checked first |
+| `CONTENT_PLANT_SMOKE_PROJECT_ID` (legacy) | `LOOPRA_SMOKE_PROJECT_ID` (primary) | Complete — LOOPRA_* checked first |
+| `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` (legacy) | `LOOPRA_SMOKE_PROJECTS_ROOT` (primary) | Complete — LOOPRA_* checked first |
 
 ### Migration Rules
 
@@ -1321,7 +1314,7 @@ When deployment configuration is introduced:
 
 | Migration | From | To | Status |
 |---|---|---|---|
-| Env var naming | `CONTENT_PLANT_*` | `LOOPRA_*` | Planned, not started |
+| Env var naming | `CONTENT_PLANT_*` | `LOOPRA_*` (primary) with `CONTENT_PLANT_*` fallback | Complete |
 | Internal variable naming | `CONTENT_PLANT_ROOT` | `LOOPRA_ROOT` | Planned, not started |
 | Code defaults constant | `CONTENT_PLANT_ROOT` in `loader.py` | Neutral name | Planned |
 | Filesystem config → DB config | `project.yaml` | DB-backed project records | Future |
@@ -1418,10 +1411,10 @@ raise `InvalidProjectIdError`.
        │  Committed to Git. Defines project identity, brand, channels.
 
 2. smoke_loop.py resolves project_id:
-       │  CONTENT_PLANT_SMOKE_PROJECT_ID env var → "example" default
+       │  LOOPRA_SMOKE_PROJECT_ID env var → CONTENT_PLANT_SMOKE_PROJECT_ID fallback → "example" default
        │
 3. smoke_loop.py resolves runtime projects_root:
-       │  CONTENT_PLANT_SMOKE_PROJECTS_ROOT env var → storage/smoke_projects default
+       │  LOOPRA_SMOKE_PROJECTS_ROOT env var → CONTENT_PLANT_SMOKE_PROJECTS_ROOT fallback → storage/smoke_projects default
        │
 4. smoke_loop.py copies project.yaml from source to runtime:
        │  projects/{project_id}/project.yaml → storage/smoke_projects/{project_id}/project.yaml
@@ -1458,8 +1451,8 @@ raise `InvalidProjectIdError`.
         │  Creates snapshot scoped to project_id
 
 11. Post-loop tools resolve projects_root independently:
-        │  find_metric_snapshots.py: CONTENT_PLANT_PROJECTS_ROOT → PROJECTS_ROOT default
-        │  import_manual_metrics.py: CONTENT_PLANT_PROJECTS_ROOT → PROJECTS_ROOT default
+         │  find_metric_snapshots.py: LOOPRA_PROJECTS_ROOT → CONTENT_PLANT_PROJECTS_ROOT fallback → PROJECTS_ROOT default
+         │  import_manual_metrics.py: LOOPRA_PROJECTS_ROOT → CONTENT_PLANT_PROJECTS_ROOT fallback → PROJECTS_ROOT default
         │  inspect_package.py, validate_package.py: no projects_root needed
         │      (operate directly on export directory path)
 ```

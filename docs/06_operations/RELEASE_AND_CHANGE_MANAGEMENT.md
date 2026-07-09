@@ -467,10 +467,10 @@ python scripts/inspect_package.py <export_directory>
 python scripts/validate_package.py <export_directory>
 
 # Metric snapshot discovery — locate DRAFT snapshots
-$env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
+$env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
 
 # Manual metrics import — DRAFT → RECORDED transition
-$env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/import_manual_metrics.py metrics.json
+$env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/import_manual_metrics.py metrics.json
 ```
 
 ### 9.3. When Tests Are Optional
@@ -508,7 +508,7 @@ required:
 5. python scripts/smoke_loop.py
 6. python scripts/inspect_package.py <export_directory>
 7. python scripts/validate_package.py <export_directory>
-8. $env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
+8. $env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
 9. Create metrics.json and import: python scripts/import_manual_metrics.py metrics.json
 10. git status --short
 11. Produce Operational Acceptance Report

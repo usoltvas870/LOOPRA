@@ -896,7 +896,7 @@ ACTIVE CONSTRAINTS:
   - Orchestrator Agent is future/conceptual — not implemented.
 
 CURRENT ENVIRONMENT:
-  - Env vars: CONTENT_PLANT_* (historical naming, not yet renamed).
+  - Env vars: LOOPRA_* primary, CONTENT_PLANT_* legacy fallback (W3 resolved).
   - Tests: Python unittest, run from repo root.
   - Scripts: scripts/smoke_loop.py, scripts/inspect_package.py, etc.
 
@@ -1071,7 +1071,7 @@ implementation of unsupported features and degrades architecture integrity.
 | Metrics | manual collection + import | `import_manual_metrics.py` |
 | Autonomy | copilot mode only | No autonomous agent code exists |
 | Content format | text_social_post only | `content_format` enum constraint |
-| Env vars | CONTENT_PLANT_* prefix | `smoke_loop.py` env var usage |
+| Env vars | LOOPRA_* primary, CONTENT_PLANT_* fallback | `smoke_loop.py` env var usage |
 | Test framework | unittest (standard library) | `tests/` directory |
 
 ### Future/Conceptual Language (Marked Explicitly)

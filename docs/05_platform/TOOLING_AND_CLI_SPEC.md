@@ -276,7 +276,7 @@ scripts/
 
 | Tool | Purpose | Type | R/W | Uses Services? | Input | Output | Exit Codes |
 |---|---|---|---|---|---|---|---|
-| `smoke_loop.py` | Run full Foundation MVP lifecycle end-to-end | Lifecycle execution | Write | Yes (LoopOrchestrator + repositories for summary) | `CONTENT_PLANT_SMOKE_PROJECT_ID` env or `"example"` default | Printed summary to stdout; artifacts on disk | 0 = success; exception exit on failure |
+| `smoke_loop.py` | Run full Foundation MVP lifecycle end-to-end | Lifecycle execution | Write | Yes (LoopOrchestrator + repositories for summary) | `LOOPRA_SMOKE_PROJECT_ID` env (primary), `CONTENT_PLANT_SMOKE_PROJECT_ID` (fallback), or `"example"` default | Printed summary to stdout; artifacts on disk | 0 = success; exception exit on failure |
 | `inspect_package.py` | Display contents of an ExportPackage | Inspection | Read-only | No | `<export_package_directory>` CLI arg | Human-readable display of package metadata and file listing | 0 = success; 1 = error |
 | `validate_package.py` | Validate ExportPackage structure | Validation | Read-only | No | `<export_package_directory>` CLI arg | Validation report (pass/fail with details) | 0 = success; 1 = error |
 | `find_metric_snapshots.py` | List DRAFT MetricSnapshot records for a project | Query | Read-only | No | `<project_id>` CLI arg | Count and listing of draft snapshots | 0 = success; 1 = error |
@@ -304,18 +304,19 @@ No CLI arguments. Configuration via environment variables:
 
 | Env Variable | Default | Description |
 |---|---|---|
-| `CONTENT_PLANT_SMOKE_PROJECT_ID` | `"example"` | Project ID to use for the smoke loop |
-| `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` | `REPO_ROOT/storage/smoke_projects` | Root directory for runtime smoke project storage |
+| `LOOPRA_SMOKE_PROJECT_ID` (primary) | `"example"` | Project ID to use for the smoke loop |
+| `CONTENT_PLANT_SMOKE_PROJECT_ID` (legacy fallback) | — | Legacy fallback if LOOPRA_SMOKE_PROJECT_ID is not set |
+| `LOOPRA_SMOKE_PROJECTS_ROOT` (primary) | `REPO_ROOT/storage/smoke_projects` | Root directory for runtime smoke project storage |
+| `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` (legacy fallback) | — | Legacy fallback if LOOPRA_SMOKE_PROJECTS_ROOT is not set |
 
 ## 7.3. Inputs
 
-1. **Project ID:** Resolved from `CONTENT_PLANT_SMOKE_PROJECT_ID` env var,
-   defaulting to `"example"`.
+1. **Project ID:** Resolved from `LOOPRA_SMOKE_PROJECT_ID` env var (primary), falling back to `CONTENT_PLANT_SMOKE_PROJECT_ID` (legacy), defaulting to `"example"`.
 2. **Project config:** Copied from `projects/{project_id}/project.yaml` to
    `storage/smoke_projects/{project_id}/project.yaml` at execution start.
 3. **Idea parameters (hardcoded):**
    - `title = "Foundation smoke loop"`
-   - `description = "Run the smallest project-agnostic Content Plant loop from idea to draft metrics."`
+   - `description = "Run the smallest project-agnostic LOOPRA loop from idea to draft metrics."`
    - `funnel_stage = "trust"`
    - All other `IdeaService.create_idea()` parameters use defaults.
 
@@ -423,8 +424,7 @@ The operator reads the traceback, fixes the issue, reruns.
   `storage/smoke_projects/`.
 - The publication URL is a placeholder (`https://example.invalid/...`). The smoke
   loop simulates publication, it does not publish to any real platform.
-- The script uses `CONTENT_PLANT_*` environment variable names (historical name;
-  not yet renamed to LOOPRA).
+- The script uses `LOOPRA_*` environment variable names as primary, with `CONTENT_PLANT_*` as legacy fallback.
 - The script bypasses `build_loop_orchestrator()` and constructs services inline
   for direct repository access in the summary section.
 - All mutations go through services. Repository access is read-only during
@@ -630,7 +630,7 @@ python scripts/find_metric_snapshots.py <project_id>
 | Input | Source | Required | Constraints |
 |---|---|---|---|
 | `project_id` | CLI arg 1 | Yes | Must reference a valid project |
-| `CONTENT_PLANT_PROJECTS_ROOT` | Env var (optional) | No | Override projects root directory |
+| `LOOPRA_PROJECTS_ROOT` (primary, fallback: `CONTENT_PLANT_PROJECTS_ROOT`) | Env var (optional) | No | Override projects root directory |
 
 ## 10.4. Execution Flow
 
@@ -773,7 +773,7 @@ Instead, it updates the related `Publication` record's `published_url` field.
 3. Validate payload structure:
    - Must be a JSON object
    - Must contain project_id, metric_snapshot_id, metrics (all non-empty)
-4. Resolve projects root (CONTENT_PLANT_PROJECTS_ROOT env or default)
+4. Resolve projects root (LOOPRA_PROJECTS_ROOT env primary, CONTENT_PLANT_PROJECTS_ROOT fallback, or default)
 5. Build AnalyticsService via build_analytics_service()
 6. Call AnalyticsService.record_metrics(project_id, metric_snapshot_id, metrics)
    - Validates metric keys are in SUPPORTED_MANUAL_METRIC_KEYS
@@ -862,7 +862,7 @@ saves, clicks, published_url`. Only keys actually present in the input appear.
 - No standardized CLI framework (tools use ad-hoc `sys.argv` parsing).
 - Exit codes are not differentiated (1 for all errors — no distinction between
   invalid input, missing file, validation failure, or service error).
-- Environment variable names use `CONTENT_PLANT_*` prefix (historical naming).
+- Environment variable names: `LOOPRA_*` primary with `CONTENT_PLANT_*` legacy fallback for backward compatibility.
 
 ---
 
@@ -1027,7 +1027,7 @@ actions.
 2. Human runs:
        python scripts/smoke_loop.py
    Or with explicit project:
-       CONTENT_PLANT_SMOKE_PROJECT_ID=myproject python scripts/smoke_loop.py
+       LOOPRA_SMOKE_PROJECT_ID=myproject python scripts/smoke_loop.py
 3. Tool copies project config to runtime storage
 4. Tool creates an Idea, runs the full loop, prints entity IDs and statuses
 5. Human verifies all status lines show valid terminal states
@@ -1410,7 +1410,7 @@ These are the known limitations of the current MVP tooling layer:
 | No queue/worker model | Long-running operations block the CLI | Future worker execution for media rendering, connector calls |
 | No standardized exit code taxonomy | All errors use exit code 1 | Differentiate exit codes by error category |
 | No integrated command registry | No way to discover available tools programmatically | Implement a tool registry with metadata |
-| `CONTENT_PLANT_*` env var naming | Historical naming not yet updated to LOOPRA branding | Rename to `LOOPRA_*` in future |
+| `LOOPRA_*` env var naming | Migration complete — LOOPRA_* is primary, CONTENT_PLANT_* is legacy fallback | N/A |
 | `smoke_loop.py` bypasses `build_loop_orchestrator()` | Duplicated service wiring logic | Use factory function; separate summary logic from execution |
 | `find_metric_snapshots.py` bypasses `AnalyticsService` for listing | Direct filesystem access instead of service query | Add `list_by_status` to AnalyticsService and use it |
 | No idempotency in smoke loop | Every run creates new entities with new IDs; artifacts accumulate | Add cleanup flag or timestamped subdirectories |

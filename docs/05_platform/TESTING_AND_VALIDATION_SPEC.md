@@ -405,7 +405,7 @@ Covered in `test_loop_engineering.py` (Section 6.3). The
 **File:** `tests/services/test_smoke_loop.py:15-58`
 
 This is a **subprocess-level test** — it runs `python scripts/smoke_loop.py`
-in a subprocess with isolated `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` pointing to
+in a subprocess with isolated `LOOPRA_SMOKE_PROJECTS_ROOT` (or legacy `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`) pointing to
 a temp directory.
 
 **What is tested:**
@@ -519,7 +519,7 @@ programmatically, then tests the script's ability to find and list snapshots.
 | `test_returns_error_when_stored_snapshot_json_is_invalid` | Corrupted JSON → exit 1, "stored snapshot JSON is not valid JSON". |
 | `test_returns_error_when_required_snapshot_fields_are_missing` | Snapshot JSON missing `publication_id` → exit 1, "missing required fields". |
 | `test_recorded_metric_snapshots_are_not_listed` | After `record_metrics()`, snapshot is RECORDED → not listed (only DRAFT snapshots). |
-| `test_respects_content_plant_projects_root_override` | `CONTENT_PLANT_PROJECTS_ROOT` env var points to alternate root → script uses it. |
+| `test_respects_content_plant_projects_root_override` | `CONTENT_PLANT_PROJECTS_ROOT` env var (legacy fallback) points to alternate root → script uses it. |
 | `test_new_script_does_not_introduce_project_specific_marker_strings` | Script text has no project-specific markers. |
 
 ## 8.4. test_import_manual_metrics.py
@@ -672,7 +672,7 @@ Tests verify the following configuration validation behaviours:
 | Invalid project ID | `test_projects.py:test_invalid_project_id_is_rejected` | `../example`, empty, uppercase, spaces → `InvalidProjectIdError` |
 | Alias normalization | Implicitly tested | Tests use legacy keys (`project_id`, `project_name`, `project_slug`, `default_language`) which are normalized |
 | Project root isolation | All service tests | Tests use `tempfile.TemporaryDirectory()` with explicit `projects_root` |
-| Env var overrides | `test_find_metric_snapshots.py:test_respects_content_plant_projects_root_override` | `CONTENT_PLANT_PROJECTS_ROOT` env var overrides script behaviour |
+| Env var overrides | `test_find_metric_snapshots.py:test_respects_content_plant_projects_root_override`, `test_respects_loopra_projects_root_override` | `LOOPRA_PROJECTS_ROOT` (primary) and `CONTENT_PLANT_PROJECTS_ROOT` (legacy) env var overrides script behaviour |
 | Brand profile construction | `test_projects.py:test_brand_profile_can_be_built_from_project_config` | Name, status, brand_values, tone_of_voice correctly derived from config |
 
 ## 11.2. Config Validation Layers in Tests
@@ -720,7 +720,7 @@ class LoopEngineeringFixture(unittest.TestCase):
 | Temporary project roots | `tempfile.TemporaryDirectory()` used in all service test setUp methods |
 | Entity JSON written under temp dirs | All entity operations write to `{temp_dir}/data/` |
 | No source project pollution | Source `projects/example/project.yaml` is read (template), never written |
-| No `storage/smoke_projects/` pollution | Smoke loop test uses temp dir for `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` |
+| No `storage/smoke_projects/` pollution | Smoke loop test uses temp dir for `LOOPRA_SMOKE_PROJECTS_ROOT` (or legacy `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`) |
 | Cleanup after test | `tearDown` calls `temp_dir.cleanup()` |
 | No cross-project writes | Tests create two projects ("example" and "second") and verify scoping |
 
@@ -755,7 +755,8 @@ All current tests follow these isolation rules:
    `test_task_3_files_do_not_contain...`).
 
 3. **Do not write to `storage/smoke_projects/`.** Smoke loop tests override
-   `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` to point to a temp directory.
+   `LOOPRA_SMOKE_PROJECTS_ROOT` (or legacy `CONTENT_PLANT_SMOKE_PROJECTS_ROOT`)
+   to point to a temp directory.
 
 4. **Do not rely on global storage.** Every repository and service receives an
    explicit `projects_root`. No test uses the default `PROJECTS_ROOT` constant
@@ -771,8 +772,10 @@ All current tests follow these isolation rules:
    assertions (pattern matching only), and explicit project fixtures.
 
 8. **Subprocess tests use isolated env vars.** Tests that run scripts as
-   subprocesses set `CONTENT_PLANT_PROJECTS_ROOT` and
-   `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` in a copy of `os.environ`.
+   subprocesses set `LOOPRA_PROJECTS_ROOT` and `LOOPRA_SMOKE_PROJECTS_ROOT`
+   (with `CONTENT_PLANT_*` as legacy fallback) in a copy of `os.environ`.
+
+9. **W3 resolved:** `LOOPRA_*` env vars are primary, `CONTENT_PLANT_*` are legacy fallback.
 
 ---
 

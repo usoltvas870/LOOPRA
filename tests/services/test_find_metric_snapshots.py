@@ -184,6 +184,50 @@ class FindMetricSnapshotsScriptTests(unittest.TestCase):
         recorded = self.metric_repository.load_metric_snapshot("example", metric_snapshot_id)
         self.assertEqual(recorded.status, MetricSnapshotStatus.RECORDED)
 
+    def test_respects_loopra_projects_root_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override_root = Path(temp_dir) / "override_projects_root"
+            self._write_project_fixture("override_example", projects_root=override_root)
+            (
+                analytics_service,
+                metric_repository,
+            ) = self._build_services_for_projects_root(override_root)
+            _, publication_id, metric_snapshot_id = self._create_draft_metric_snapshot_for_services(
+                analytics_service,
+                override_root,
+            )
+            content_item_id = metric_repository.load_metric_snapshot(
+                "override_example",
+                metric_snapshot_id,
+            ).content_item_id
+
+            env = os.environ.copy()
+            env["LOOPRA_PROJECTS_ROOT"] = str(override_root)
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "override_example"],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout.strip().splitlines(),
+                [
+                    "metric_snapshots_found=1",
+                    "project_id=override_example",
+                    "snapshots:",
+                    (
+                        f"- metric_snapshot_id={metric_snapshot_id} "
+                        f"publication_id={publication_id} "
+                        f"content_item_id={content_item_id} "
+                        "platform=telegram status=draft"
+                    ),
+                ],
+            )
+
     def test_respects_content_plant_projects_root_override(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             override_root = Path(temp_dir) / "override_projects_root"

@@ -31,7 +31,11 @@ def _error(message: str) -> int:
 
 
 def _resolve_projects_root() -> Path:
-    override = os.environ.get("CONTENT_PLANT_PROJECTS_ROOT", "").strip()
+    override = (
+        os.environ.get("LOOPRA_PROJECTS_ROOT")
+        or os.environ.get("CONTENT_PLANT_PROJECTS_ROOT")
+        or ""
+    ).strip()
     if not override:
         return PROJECTS_ROOT
     return Path(override).expanduser().resolve()

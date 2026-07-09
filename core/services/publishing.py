@@ -218,7 +218,7 @@ class PublishingService:
                 f"[ ] Review caption_{target_platform.value}.txt",
                 "[ ] Confirm metadata.json matches the intended publication context",
                 "[ ] Publish manually in the target channel",
-                "[ ] Record the final publication URL in Content Plant",
+                "[ ] Record the final publication URL in LOOPRA",
             ]
         )
 

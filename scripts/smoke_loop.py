@@ -33,12 +33,20 @@ DEFAULT_RUNTIME_PROJECTS_ROOT = REPO_ROOT / "storage" / "smoke_projects"
 
 
 def _resolve_project_id() -> str:
-    project_id = os.environ.get("CONTENT_PLANT_SMOKE_PROJECT_ID", DEFAULT_PROJECT_ID).strip()
+    project_id = (
+        os.environ.get("LOOPRA_SMOKE_PROJECT_ID")
+        or os.environ.get("CONTENT_PLANT_SMOKE_PROJECT_ID")
+        or DEFAULT_PROJECT_ID
+    ).strip()
     return project_id or DEFAULT_PROJECT_ID
 
 
 def _resolve_runtime_projects_root() -> Path:
-    override = os.environ.get("CONTENT_PLANT_SMOKE_PROJECTS_ROOT", "").strip()
+    override = (
+        os.environ.get("LOOPRA_SMOKE_PROJECTS_ROOT")
+        or os.environ.get("CONTENT_PLANT_SMOKE_PROJECTS_ROOT")
+        or ""
+    ).strip()
     if not override:
         return DEFAULT_RUNTIME_PROJECTS_ROOT
     return Path(override).expanduser().resolve()
@@ -184,7 +192,7 @@ def main() -> int:
     idea = idea_service.create_idea(
         project_id,
         title="Foundation smoke loop",
-        description="Run the smallest project-agnostic Content Plant loop from idea to draft metrics.",
+        description="Run the smallest project-agnostic LOOPRA loop from idea to draft metrics.",
         funnel_stage="trust",
     )
     result = loop_orchestrator.run_minimal_loop(project_id, idea.idea_id)

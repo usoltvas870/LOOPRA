@@ -1,1 +1,1 @@
-"""Test package for Content Plant."""
+"""Test package for LOOPRA."""

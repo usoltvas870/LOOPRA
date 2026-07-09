@@ -154,12 +154,21 @@ The audit was performed using the following methods:
 
 ### Warnings (Non-Blocking)
 
-1. W3 — **Historical `CONTENT_PLANT_*` env var naming** — Widely used in code and documented in platform/operations docs. Documents correctly identify this as historical naming requiring migration. Not a documentation defect, but a code-level naming debt tracked for future cleanup.
-2. W4 — **Content Plant string in smoke_loop.py code** — `scripts/smoke_loop.py:187` contains `description="...Content Plant loop..."` as a description string. Documented in TOOLING_AND_CLI_SPEC.md as code behavior. Minor branding debt.
+**No remaining non-blocking warnings.**
+
+### Resolved Warnings (Post-Audit Resolution)
+
+1. W3 — **Historical `CONTENT_PLANT_*` env var naming** — RESOLVED. Code and docs updated: `LOOPRA_*` env vars are now primary; `CONTENT_PLANT_*` are legacy fallback only. Resolution logic: check `LOOPRA_*` first; if not set, fall back to `CONTENT_PLANT_*`; if neither set, use default. Updated scripts: `smoke_loop.py`, `find_metric_snapshots.py`, `import_manual_metrics.py`. Updated docs: `CONFIGURATION_AND_ENVIRONMENT_SPEC.md`, `TOOLING_AND_CLI_SPEC.md`, `OPERATIONAL_RUNBOOK.md`, `SECURITY_AND_SAFETY_BOUNDARIES_SPEC.md`, `TESTING_AND_VALIDATION_SPEC.md`, `AGENT_OPERATING_MODEL.md`, `RELEASE_AND_CHANGE_MANAGEMENT.md`.
+
+2. W4 — **Content Plant string in smoke_loop.py description** — RESOLVED. `scripts/smoke_loop.py:187` description string updated from "Content Plant" to "LOOPRA".
 
 ### Recommended Next Action
 
-Proceed to next implementation phase. Remaining warnings are code-level naming debt (env var naming, code description string) — Stage 1 Foundation Hardening tasks already tracked in roadmap.
+**W3/W4 resolved.** Proceed to next implementation phase. All warnings from the v1.0 audit have been addressed.
+
+Stage 1 Foundation Hardening is complete regarding W3 and W4:
+- Env var migration to `LOOPRA_*` (addresses W3).
+- Code-level naming cleanup (addresses W4).
 
 ---
 
@@ -455,10 +464,12 @@ The following warnings from the original v1.0 audit have been resolved and are n
 
 ## 19. Known Warnings / Non-Blocking Issues
 
-| # | Issue | Severity | Affected Files | Recommended Follow-Up | Blocks Next Phase? |
-|---|---|---|---|---|---|
-| W3 | Historical `CONTENT_PLANT_*` env var naming in code and docs | LOW | `CONFIGURATION_AND_ENVIRONMENT_SPEC.md`, `TOOLING_AND_CLI_SPEC.md`, `OPERATIONAL_RUNBOOK.md`, `RELEASE_AND_CHANGE_MANAGEMENT.md`, `AGENT_OPERATING_MODEL.md`, `SECURITY_AND_SAFETY_BOUNDARIES_SPEC.md`, `TESTING_AND_VALIDATION_SPEC.md` | Migrate to `LOOPRA_*` naming (tracked in roadmap Stage 1). Docs are accurate about current state. | No |
-| W4 | Content Plant string in `smoke_loop.py:187` description parameter | LOW | `TOOLING_AND_CLI_SPEC.md:318` documents this; `scripts/smoke_loop.py:187` | Update description string to use "LOOPRA" | No |
+**No remaining warnings.** W3 and W4 were resolved during Stage 1 Foundation Hardening.
+
+| # | Issue | Severity | Status |
+|---|---|---|---|
+| W3 | Historical `CONTENT_PLANT_*` env var naming in code and docs | LOW | RESOLVED — `LOOPRA_*` primary, `CONTENT_PLANT_*` legacy fallback |
+| W4 | Content Plant string in `smoke_loop.py:187` description parameter | LOW | RESOLVED — Description updated to "LOOPRA" |
 
 ---
 
@@ -485,10 +496,12 @@ None. All previously open documentation warnings (W1, W2, W5, W6, W7) have been 
 
 ### Remaining Follow-Up Tasks (Future Stages)
 
-| # | Task | Priority | Effort | Related Warnings |
-|---|---|---|---|---|
-| 1 | Migrate `CONTENT_PLANT_*` env vars to `LOOPRA_*` in code and docs | LOW (Stage 1) | Medium | W3 |
-| 2 | Update `smoke_loop.py` description string from "Content Plant" to "LOOPRA" | LOW (Stage 1) | Minimal | W4 |
+**None.** All previously identified warnings (W3, W4) have been resolved during Stage 1 Foundation Hardening.
+
+| # | Task | Priority | Effort | Related Warnings | Status |
+|---|---|---|---|---|---|
+| 1 | Migrate `CONTENT_PLANT_*` env vars to `LOOPRA_*` in code and docs | LOW (Stage 1) | Medium | W3 | Complete |
+| 2 | Update `smoke_loop.py` description string from "Content Plant" to "LOOPRA" | LOW (Stage 1) | Minimal | W4 | Complete |
 
 ---
 
@@ -496,11 +509,11 @@ None. All previously open documentation warnings (W1, W2, W5, W6, W7) have been 
 
 ### Documentation Readiness
 
-**READY WITH WARNINGS.**
+**READY.** All warnings resolved.
 
 ### Can Move to Next Phase?
 
-**Yes.** No critical blockers exist. All previously open documentation warnings (W1, W2, W5, W6, W7) have been resolved. Only two warnings remain — both are code-level naming debt (W3: `CONTENT_PLANT_*` env vars, W4: `smoke_loop.py` description string). Neither is a documentation blocker.
+**Yes.** No open warnings remain. W3 (`CONTENT_PLANT_*` env vars) and W4 (`smoke_loop.py` description string) have been resolved during Stage 1 Foundation Hardening.
 
 ### Recommended Next Phase
 

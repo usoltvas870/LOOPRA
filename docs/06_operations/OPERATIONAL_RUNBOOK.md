@@ -238,11 +238,12 @@ version control by `.gitignore` (`storage/*`).
 
 ## 6.1. Current Environment Variables
 
-All current environment variables use the `CONTENT_PLANT_*` prefix — the
-historical working name of LOOPRA. These names remain operational. `LOOPRA_*`
-aliases are future/conceptual and not yet implemented.
+All environment variables use `LOOPRA_*` as the primary prefix.
+`CONTENT_PLANT_*` names remain operational as legacy fallback for backward
+compatibility. `LOOPRA_*` vars are checked first; if not set, `CONTENT_PLANT_*`
+vars serve as fallback.
 
-### CONTENT_PLANT_SMOKE_PROJECT_ID
+### LOOPRA_SMOKE_PROJECT_ID (primary)
 
 | Property | Value |
 |----------|-------|
@@ -250,10 +251,11 @@ aliases are future/conceptual and not yet implemented.
 | **Default** | `"example"` |
 | **Used by** | `scripts/smoke_loop.py` |
 | **When to use** | When testing a non-default project via smoke loop |
-| **Example** | `$env:CONTENT_PLANT_SMOKE_PROJECT_ID="nura"; python scripts/smoke_loop.py` |
+| **Example** | `$env:LOOPRA_SMOKE_PROJECT_ID="nura"; python scripts/smoke_loop.py` |
 | **Fallback** | If env var is empty string after stripping, falls back to `"example"` |
+| **Legacy** | `CONTENT_PLANT_SMOKE_PROJECT_ID` is the legacy fallback |
 
-### CONTENT_PLANT_SMOKE_PROJECTS_ROOT
+### LOOPRA_SMOKE_PROJECTS_ROOT (primary)
 
 | Property | Value |
 |----------|-------|
@@ -261,9 +263,10 @@ aliases are future/conceptual and not yet implemented.
 | **Default** | `{REPO_ROOT}/storage/smoke_projects` |
 | **Used by** | `scripts/smoke_loop.py` |
 | **When to use** | When you need smoke artifacts in a different location |
-| **Example** | `$env:CONTENT_PLANT_SMOKE_PROJECTS_ROOT="C:\temp\smoke"; python scripts/smoke_loop.py` |
+| **Example** | `$env:LOOPRA_SMOKE_PROJECTS_ROOT="C:\temp\smoke"; python scripts/smoke_loop.py` |
+| **Legacy** | `CONTENT_PLANT_SMOKE_PROJECTS_ROOT` is the legacy fallback |
 
-### CONTENT_PLANT_PROJECTS_ROOT
+### LOOPRA_PROJECTS_ROOT (primary)
 
 | Property | Value |
 |----------|-------|
@@ -271,21 +274,23 @@ aliases are future/conceptual and not yet implemented.
 | **Default** | `{REPO_ROOT}/projects` |
 | **Used by** | `scripts/find_metric_snapshots.py`, `scripts/import_manual_metrics.py` |
 | **When to use** | When metric snapshots are under `storage/smoke_projects/` (runtime) rather than `projects/` (source). This is the normal case — smoke loop writes snapshots under `storage/smoke_projects/`, not under source `projects/`. |
-| **Example** | `$env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example` |
+| **Example** | `$env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example` |
+| **Legacy** | `CONTENT_PLANT_PROJECTS_ROOT` is the legacy fallback |
 
-## 6.2. Important Note on CONTENT_PLANT_PROJECTS_ROOT
+## 6.2. Important Note on LOOPRA_PROJECTS_ROOT
 
 The smoke loop writes all runtime artifacts (including metric snapshots) under
 `storage/smoke_projects/{project_id}/`. When running `find_metric_snapshots.py`
 or `import_manual_metrics.py` after a smoke loop, you must point
-`CONTENT_PLANT_PROJECTS_ROOT` to `storage/smoke_projects`, otherwise the tools
+`LOOPRA_PROJECTS_ROOT` to `storage/smoke_projects` (or use the legacy fallback
+`CONTENT_PLANT_PROJECTS_ROOT`), otherwise the tools
 will look in `projects/` (source config directory) and find no metrics.
 
 ## 6.3. Environment Variables Not Present
 
 The following are confirmed absent in the current MVP:
 
-- No `LOOPRA_*` env vars (future only)
+- `LOOPRA_*` env vars are now active as primary (see Section 6.1)
 - No `.env` file at the repository root
 - No `DATABASE_URL`, `SECRET_KEY`, `API_KEY`
 - No `LOOPRA_ENV` or deployment mode env vars
@@ -397,7 +402,7 @@ operationally sound.
    → Verifies all required files exist, package is structurally valid.
 
 8. FIND DRAFT METRIC SNAPSHOTS
-   $env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"
+   $env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"
    python scripts/find_metric_snapshots.py example
    → Locates draft snapshots ready for metric import.
 
@@ -405,7 +410,7 @@ operationally sound.
    Write a metrics.json file with project_id, metric_snapshot_id, and metrics.
 
 10. IMPORT MANUAL METRICS
-    $env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"
+    $env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"
     python scripts/import_manual_metrics.py metrics.json
     → Records metrics; snapshot transitions DRAFT → RECORDED.
 
@@ -421,8 +426,8 @@ operationally sound.
 
 - Step 5 (smoke loop) creates new entities with new IDs on every run.
   Previous smoke artifacts remain under `storage/smoke_projects/`.
-- Step 8 and 10 require `CONTENT_PLANT_PROJECTS_ROOT` pointing to
-  `storage/smoke_projects` — otherwise tools look in source `projects/`.
+- Step 8 and 10 require `LOOPRA_PROJECTS_ROOT` pointing to
+  `storage/smoke_projects` (or the legacy `CONTENT_PLANT_PROJECTS_ROOT`) — otherwise tools look in source `projects/`.
 - Smoke loop uses placeholder publication URL (`https://example.invalid/...`).
   This is correct — publication is simulated in the smoke loop.
 - The manual metrics JSON in step 9 must reference a real `metric_snapshot_id`
@@ -453,9 +458,9 @@ python scripts/smoke_loop.py
 | Aspect | Value |
 |--------|-------|
 | Default project | `example` (from `projects/example/project.yaml`) |
-| Override project | `$env:CONTENT_PLANT_SMOKE_PROJECT_ID="other_project"` |
+| Override project | `$env:LOOPRA_SMOKE_PROJECT_ID="other_project"` |
 | Runtime storage | `storage/smoke_projects/{project_id}/` |
-| Override storage | `$env:CONTENT_PLANT_SMOKE_PROJECTS_ROOT="<path>"` |
+| Override storage | `$env:LOOPRA_SMOKE_PROJECTS_ROOT="<path>"` |
 | Idea title | `"Foundation smoke loop"` (hardcoded) |
 | Funnel stage | `"trust"` (hardcoded) |
 | Content format | `text_social_post` (default) |
@@ -782,7 +787,7 @@ python scripts/find_metric_snapshots.py <project_id>
 
 | Env Var | Purpose |
 |---------|---------|
-| `CONTENT_PLANT_PROJECTS_ROOT` | Override projects root. Set to `storage/smoke_projects` if snapshots were created by smoke loop. |
+| `LOOPRA_PROJECTS_ROOT` | Override projects root. Set to `storage/smoke_projects` if snapshots were created by smoke loop. (Legacy: `CONTENT_PLANT_PROJECTS_ROOT`) |
 
 Default is `{REPO_ROOT}/projects` — but smoke loop writes to
 `storage/smoke_projects/`. You typically need to override this.
@@ -790,7 +795,7 @@ Default is `{REPO_ROOT}/projects` — but smoke loop writes to
 ## 13.4. Full Command with Env Var
 
 ```bash
-$env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
+$env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/find_metric_snapshots.py example
 ```
 
 ## 13.5. Expected Output
@@ -812,7 +817,7 @@ intentional — only DRAFT snapshots can accept metric imports.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Project config not found` | Wrong `project_id` or wrong `CONTENT_PLANT_PROJECTS_ROOT` | Verify project_id and env var |
+| `Project config not found` | Wrong `project_id` or wrong `LOOPRA_PROJECTS_ROOT` | Verify project_id and env var |
 | `metric snapshots found=0` | No DRAFT snapshots exist | Run smoke loop to create new ones |
 | `metric snapshot storage is not a directory` | Corrupted storage | Check filesystem |
 | `stored snapshot JSON is not valid JSON` | Corrupted snapshot file | Remove corrupted file or rerun smoke loop |
@@ -837,7 +842,7 @@ python scripts/import_manual_metrics.py <manual_metrics_json>
 
 | Env Var | Purpose |
 |---------|---------|
-| `CONTENT_PLANT_PROJECTS_ROOT` | Override projects root. Set to `storage/smoke_projects` if snapshot was created by smoke loop. |
+| `LOOPRA_PROJECTS_ROOT` | Override projects root. Set to `storage/smoke_projects` if snapshot was created by smoke loop. (Legacy: `CONTENT_PLANT_PROJECTS_ROOT`) |
 
 ## 14.4. Input JSON Format
 
@@ -893,7 +898,7 @@ The input JSON file must contain:
 ## 14.6. Full Command with Env Var
 
 ```bash
-$env:CONTENT_PLANT_PROJECTS_ROOT="storage/smoke_projects"; python scripts/import_manual_metrics.py metrics.json
+$env:LOOPRA_PROJECTS_ROOT="storage/smoke_projects"; python scripts/import_manual_metrics.py metrics.json
 ```
 
 ## 14.7. Expected Output (Success)
@@ -932,7 +937,7 @@ After successful import:
 | `... must be an integer` | Non-integer value (float, string) | Use integer values |
 | `... must be a non-negative integer` | Negative value | Use >= 0 values |
 | `MetricSnapshot ... is not in DRAFT status` | Snapshot already RECORDED | Find another DRAFT snapshot or create new via smoke loop |
-| `Project config not found` | Wrong project_id or env var | Verify project_id and CONTENT_PLANT_PROJECTS_ROOT |
+| `Project config not found` | Wrong project_id or env var | Verify project_id and LOOPRA_PROJECTS_ROOT |
 
 ## 14.10. BOM Handling
 
@@ -960,7 +965,7 @@ files). The `encoding="utf-8-sig"` parameter handles this automatically.
 | `metadata.json is not valid JSON` | Corrupted metadata | `python -c "import json; json.load(open('<path>'))"` | Rerun smoke loop | Yes |
 | `manual_publication_only must be true` | Manifest field is `false` | Check manifest in text editor | Should never happen in current MVP — rerun smoke loop | Yes |
 | `status must be one of: ready` | Package not in READY state | Check manifest status field | Rerun prepare_export or smoke loop | Yes |
-| `metric_snapshots_found=0` | No DRAFT snapshots or wrong `CONTENT_PLANT_PROJECTS_ROOT` | Verify env var; check `storage/smoke_projects/{project_id}/data/metric_snapshots/` | Run smoke loop to create new snapshots; set correct env var | Yes |
+| `metric_snapshots_found=0` | No DRAFT snapshots or wrong `LOOPRA_PROJECTS_ROOT` | Verify env var; check `storage/smoke_projects/{project_id}/data/metric_snapshots/` | Run smoke loop to create new snapshots; set correct env var | Yes |
 | `Unknown metric keys: ...` in metrics import | Unsupported key in JSON | Check keys against supported list | Remove unknown keys from JSON | Yes (fix JSON) |
 | `MetricSnapshot ... is not in DRAFT status` | Snapshot already RECORDED | Run `find_metric_snapshots.py` for a DRAFT snapshot | Use a DRAFT snapshot; create new via smoke loop | Yes (use DRAFT) |
 | `stored snapshot JSON is not valid JSON` | Corrupted snapshot file | Inspect file in `data/metric_snapshots/` | Remove corrupted file; rerun smoke loop | Yes (after cleanup) |
@@ -1286,7 +1291,8 @@ All are marked **future/conceptual** and belong to later LOOPRA evolution phases
    is allowed but should be intentional. Do not delete source directories.
 7. **No cross-project path usage.** Every operation is scoped to one
    `project_id`. Do not access or modify another project's data.
-8. **Use env vars carefully.** CONTENT_PLANT_PROJECTS_ROOT affects which
+8. **Use env vars carefully.** LOOPRA_PROJECTS_ROOT (or the legacy
+   `CONTENT_PLANT_PROJECTS_ROOT`) affects which
    directory metric tools read from. Misconfiguration leads to "not found"
    errors.
 9. **Do not commit runtime artifacts.** `storage/*` is gitignored. Verify
@@ -1317,7 +1323,7 @@ Before running any operation or making any change, the operator should answer:
 | **Are metrics being recorded into DRAFT snapshot?** | Metrics only go into DRAFT snapshots. RECORDED snapshots cannot accept imports. |
 | **Are only intended files changing?** | Check `git status` before and after. |
 | **Is any future-only capability being assumed?** | No API, UI, DB, autoposting, connectors, or agents exist. |
-| **Is env var CONTENT_PLANT_PROJECTS_ROOT set correctly?** | For metric tools after smoke loop, point to `storage/smoke_projects`. |
+| **Is env var LOOPRA_PROJECTS_ROOT set correctly?** | For metric tools after smoke loop, point to `storage/smoke_projects`. (Legacy `CONTENT_PLANT_PROJECTS_ROOT` also accepted.) |
 
 ---
 
@@ -1343,7 +1349,7 @@ These are honest acknowledgements of what the current MVP does not support:
 | No entity relationship queries | Each entity is loaded individually |
 | No metric aggregation or trends | AnalyticsService stubs only |
 | Only `text_social_post` format | No carousel, video, image or multi-format support |
-| Historical `CONTENT_PLANT_*` env var names | Names reflect previous project identity |
+| Historical `CONTENT_PLANT_*` env var names | Legacy fallback names; `LOOPRA_*` is now primary (see Section 6.1) |
 
 ---
 

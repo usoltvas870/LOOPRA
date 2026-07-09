@@ -28,30 +28,50 @@ class SmokeLoopScriptTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            stdout_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-            output = dict(line.split("=", 1) for line in stdout_lines)
+            self._assert_smoke_output(completed)
 
-            self.assertEqual(output["project_id"], "example")
-            self.assertEqual(output["scenario_status"], "approved")
-            self.assertEqual(output["content_item_status"], "exported")
-            self.assertEqual(output["export_package_status"], "ready")
-            self.assertEqual(output["publication_status"], "published")
-            self.assertEqual(output["metric_snapshot_status"], "draft")
+    def test_script_uses_loopra_smoke_projects_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_projects_root = Path(temp_dir) / "smoke_projects"
+            env = os.environ.copy()
+            env["LOOPRA_SMOKE_PROJECTS_ROOT"] = str(runtime_projects_root)
 
-            export_dir = Path(output["export_directory"])
-            self.assertTrue(export_dir.exists())
-            self.assertEqual(
-                output["generated_export_files"].split(","),
-                [
-                    "body.txt",
-                    "caption_telegram.txt",
-                    "manifest.json",
-                    "manual_publication_checklist.txt",
-                    "metadata.json",
-                    "title.txt",
-                ],
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH)],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
             )
+
+            self._assert_smoke_output(completed)
+
+    def _assert_smoke_output(self, completed: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        stdout_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+        output = dict(line.split("=", 1) for line in stdout_lines)
+
+        self.assertEqual(output["project_id"], "example")
+        self.assertEqual(output["scenario_status"], "approved")
+        self.assertEqual(output["content_item_status"], "exported")
+        self.assertEqual(output["export_package_status"], "ready")
+        self.assertEqual(output["publication_status"], "published")
+        self.assertEqual(output["metric_snapshot_status"], "draft")
+
+        export_dir = Path(output["export_directory"])
+        self.assertTrue(export_dir.exists())
+        self.assertEqual(
+            output["generated_export_files"].split(","),
+            [
+                "body.txt",
+                "caption_telegram.txt",
+                "manifest.json",
+                "manual_publication_checklist.txt",
+                "metadata.json",
+                "title.txt",
+            ],
+        )
 
 
 if __name__ == "__main__":
