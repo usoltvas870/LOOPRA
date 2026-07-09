@@ -31,7 +31,7 @@ Use these documents together for the current baseline:
 
 - `STATE.md`
 - `AGENTS.md`
-- `docs/00_foundation/PLATFORM_OVERVIEW.md`
+- `docs/02_architecture/PLATFORM_OVERVIEW.md`
 - `docs/00_foundation/DATA_MODEL.md`
 
 If older or broader pipeline descriptions conflict with this loop, follow the current minimal foundation baseline.
@@ -191,3 +191,66 @@ Version: 0.3
 Updated: 2026-07-08  
 Project: LOOPRA  
 Current pipeline scope: local/manual helper-supported foundation MVP
+
+---
+
+## 11. Future LOOPRA Content Cycle
+
+The future LOOPRA content cycle expands the current Foundation MVP.
+
+The current Foundation MVP provides reliable execution primitives.
+The future Intelligence Layer provides autonomous decision making and
+optimization.
+
+Future full cycle:
+
+```text
+Market Signal
+↓
+Trend Intelligence
+↓
+Content Insight
+↓
+Idea Generation
+↓
+Scenario Creation
+↓
+Production
+↓
+Distribution
+↓
+Analytics
+↓
+Learning Memory
+↓
+Optimization
+↓
+Next Cycle
+```
+
+Current Foundation MVP loop:
+
+```text
+Idea
+→ Scenario
+→ ContentItem
+→ ExportPackage
+→ Publication
+→ MetricSnapshot
+```
+
+This current loop remains the active execution lifecycle baseline.
+
+---
+
+## 12. Pipeline Evolution Principle
+
+LOOPRA evolves from a deterministic production pipeline into a
+self-learning marketing operating system.
+
+The current Foundation provides reliable execution primitives.
+
+Future Intelligence Modules provide analysis, decisions and continuous
+improvement.
+
+Each stage of evolution is validated before the next begins.

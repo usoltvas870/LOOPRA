@@ -51,11 +51,11 @@ Current source-of-truth docs:
 ```text
 STATE.md
 AGENTS.md
-docs/00_foundation/PLATFORM_OVERVIEW.md
+docs/02_architecture/PLATFORM_OVERVIEW.md
 docs/00_foundation/MVP_SCOPE.md
 docs/00_foundation/DATA_MODEL.md
 docs/02_architecture/PIPELINES_SPEC.md
-docs/04_production/CONTENT_FORMATS_OVERVIEW.md
+docs/04_production/CONTENT_TYPES_SPEC.md
 docs/00_foundation/WORKSPACE_AND_PROJECT_MODEL.md
 ```
 

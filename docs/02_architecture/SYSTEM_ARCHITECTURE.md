@@ -864,6 +864,52 @@ STATE.md                                           — Current project state
 
 ---
 
+## 28. Future Detailed Specifications
+
+This section defines the roadmap for future LOOPRA specification
+documents. These documents do not yet exist. They are listed here as
+architectural direction only.
+
+No future module should be implemented without its approved
+specification document.
+
+### 28.1. Intelligence Layer Specifications
+
+Future documents under `docs/03_intelligence/`:
+
+- `TREND_INTELLIGENCE_SPEC.md` — market signal analysis and trend detection
+- `CONTENT_INTELLIGENCE_SPEC.md` — pattern recognition and content insight generation
+- `AGENT_SYSTEM_SPEC.md` — Orchestrator Agent design, decision model and execution
+- `LEARNING_MEMORY_SPEC.md` — long-term memory, pattern retention and retrieval
+
+### 28.2. Production Specifications
+
+Future documents under `docs/04_production/`:
+
+- `CONTENT_OPERATING_SYSTEM_SPEC.md` — autonomous content cycle execution
+- `CONTENT_TYPES_SPEC.md` — supported content formats and their properties
+- `PRODUCTION_PIPELINE_SPEC.md` — content production workflow and quality gates
+- `QA_SYSTEM_SPEC.md` — automated quality assurance rules and checks
+
+### 28.3. Platform Specifications
+
+Future documents under `docs/05_platform/`:
+
+- `PUBLISHING_SYSTEM_SPEC.md` — multi-platform publishing and scheduling
+- `ANALYTICS_SYSTEM_SPEC.md` — metrics collection, aggregation and analysis
+- `INTEGRATIONS_SPEC.md` — external service and platform integrations
+
+### 28.4. Specification Governance
+
+Architecture documents define system boundaries.
+
+Detailed specifications define implementation behaviour.
+
+No future module should be implemented without its approved
+specification document.
+
+---
+
 ## Final Statement
 
 LOOPRA is an Autonomous Marketing Operating System.

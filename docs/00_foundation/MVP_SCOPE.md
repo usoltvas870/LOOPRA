@@ -147,8 +147,8 @@ The current foundation MVP can be considered aligned when:
 
 ## 10. Status
 
-Status: Draft  
-Version: 0.3  
-Updated: 2026-07-08  
+Status: Active  
+Version: v1.0  
+Updated: 2026-07-09  
 Project: LOOPRA  
 Current MVP scope: minimal local/manual foundation baseline
