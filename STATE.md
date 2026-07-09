@@ -83,6 +83,34 @@ Resolution order:
 
 LOOPRA_* → CONTENT_PLANT_* → default
 
+## CLI Help Support
+
+Commit:
+4cec363 — feat: add help support to CLI scripts
+
+Status:
+COMPLETE
+
+Summary:
+
+-   --help/-h supported by all current Foundation MVP CLI scripts:
+    smoke_loop.py, inspect_package.py, validate_package.py,
+    find_metric_snapshots.py, import_manual_metrics.py.
+-   smoke_loop.py --help is now safe and does not execute the lifecycle.
+-   Help mode exits with code 0.
+-   Help mode has no side effects.
+-   Normal CLI output contract remains unchanged.
+-   --json output mode is NOT implemented and remains a future
+    Stage 1 follow-up.
+
+Verification:
+
+-   tests: 120/120 OK
+-   smoke_loop normal mode: PASS
+-   inspect_package.py: PASS
+-   validate_package.py: PASS
+-   working tree clean after commit
+
 ## Operational Acceptance Run
 
 Stage 1 Foundation Hardening Operational Acceptance: PASS
@@ -201,8 +229,7 @@ Stage 1 Foundation Hardening — small bounded improvements
 
 Current objectives:
 
--   CLI output consistency review;
--   optional JSON output mode assessment;
+-   optional JSON output mode design review;
 -   operational docs consistency checks;
 -   maintain architecture boundaries;
 -   no Stage 2 until explicitly approved.
@@ -211,7 +238,9 @@ Completed in this phase:
 
 -   documentation baseline finalized and committed;
 -   naming cleanup: LOOPRA_* primary, Content Plant removed from runtime;
--   operational acceptance run passed.
+-   operational acceptance run passed;
+-   CLI --help/-h support added to all 5 scripts. smoke_loop.py --help is
+    now side-effect-free.
 
 -----------------------------------------------------------------------
 
@@ -269,9 +298,9 @@ Always preserve:
 Stage 1 Foundation Hardening can continue with small bounded
 improvements only:
 
-1.  CLI output consistency review.
-2.  Optional JSON output mode assessment.
-3.  Operational docs consistency checks.
+1.  Optional JSON output mode design review and implementation
+    (only after explicit approval).
+2.  Operational docs consistency checks.
 
 Do not start Stage 2 (Content Intelligence) without explicit
 Architecture Gate approval.
