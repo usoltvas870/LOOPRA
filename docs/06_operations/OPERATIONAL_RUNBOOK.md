@@ -453,6 +453,8 @@ Project → Idea → Scenario → ContentItem → ExportPackage → Publication 
 python scripts/smoke_loop.py
 ```
 
+`--help` / `-h` on the smoke loop exits 0 and does NOT execute the lifecycle.
+
 ## 9.3. Default Behaviour
 
 | Aspect | Value |
@@ -1415,6 +1417,12 @@ roadmap.
 | `scripts/validate_package.py` | Validate ExportPackage structure |
 | `scripts/find_metric_snapshots.py` | List DRAFT MetricSnapshot records |
 | `scripts/import_manual_metrics.py` | Import manual metrics into DRAFT snapshot |
+
+All scripts support `--help` / `-h` for usage information.
+
+| Flag | Purpose | Example |
+|------|---------|---------|
+| `--help` | Show usage and exit. Supported on all 5 scripts. | `python scripts/smoke_loop.py --help` |
 
 ## 27.2. Core Services
 

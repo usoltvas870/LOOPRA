@@ -146,6 +146,16 @@ class InspectPackageScriptTests(unittest.TestCase):
                 self.assertNotIn(forbidden_project_marker, content)
                 self.assertNotIn(forbidden_brand_variant, content)
 
+    def test_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = self._run_script("--help")
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
+    def test_short_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = self._run_script("-h")
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

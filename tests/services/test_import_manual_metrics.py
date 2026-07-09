@@ -397,6 +397,28 @@ class ImportManualMetricsScriptTests(unittest.TestCase):
         project_dir.mkdir(parents=True, exist_ok=True)
         (project_dir / "project.yaml").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+    def test_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
+    def test_short_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "-h"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

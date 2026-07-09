@@ -17,6 +17,18 @@ REQUIRED_MANIFEST_FIELDS = (
     "files",
 )
 
+USAGE = """\
+Display the contents of a LOOPRA ExportPackage.
+
+Usage:
+  python scripts/inspect_package.py [--help | -h] <export_package_directory>
+
+Arguments:
+  export_package_directory    Path to the export package directory
+
+Example:
+  python scripts/inspect_package.py storage/smoke_projects/example/exports/export_abc123"""
+
 
 def _error(message: str) -> int:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -82,6 +94,10 @@ def _build_summary_lines(manifest: dict[str, object]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--help" in args or "-h" in args:
+        print(USAGE)
+        return 0
+
     if len(args) != 1:
         return _error("usage: python scripts/inspect_package.py <export_package_directory>")
 

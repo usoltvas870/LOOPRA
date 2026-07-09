@@ -31,6 +31,21 @@ from core.services import (
 DEFAULT_PROJECT_ID = "example"
 DEFAULT_RUNTIME_PROJECTS_ROOT = REPO_ROOT / "storage" / "smoke_projects"
 
+USAGE = """\
+Run the smallest LOOPRA Foundation MVP lifecycle smoke loop.
+
+Usage:
+  python scripts/smoke_loop.py [--help | -h]
+
+Environment variables:
+  LOOPRA_SMOKE_PROJECT_ID         Project ID to use (default: example)
+  LOOPRA_SMOKE_PROJECTS_ROOT      Runtime storage root (default: storage/smoke_projects)
+  CONTENT_PLANT_SMOKE_PROJECT_ID  Legacy fallback for LOOPRA_SMOKE_PROJECT_ID
+  CONTENT_PLANT_SMOKE_PROJECTS_ROOT  Legacy fallback for LOOPRA_SMOKE_PROJECTS_ROOT
+
+Example:
+  python scripts/smoke_loop.py"""
+
 
 def _resolve_project_id() -> str:
     project_id = (
@@ -174,6 +189,10 @@ def _build_smoke_summary(
 
 
 def main() -> int:
+    if set(sys.argv[1:]) & {"--help", "-h"}:
+        print(USAGE)
+        return 0
+
     project_id = _resolve_project_id()
     projects_root = _resolve_runtime_projects_root()
     _ensure_runtime_project(project_id, projects_root)

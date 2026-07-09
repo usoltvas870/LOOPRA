@@ -405,6 +405,25 @@ class FindMetricSnapshotsScriptTests(unittest.TestCase):
         project_dir.mkdir(parents=True, exist_ok=True)
         (project_dir / "project.yaml").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+    def _run_help_script(self, help_flag: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), help_flag],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = self._run_help_script("--help")
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
+    def test_short_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = self._run_help_script("-h")
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

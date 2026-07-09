@@ -29,6 +29,22 @@ SUCCESS_KEY_ORDER = (
     "published_url",
 )
 
+USAGE = """\
+Import manually collected performance metrics into a DRAFT MetricSnapshot.
+
+Usage:
+  python scripts/import_manual_metrics.py [--help | -h] <manual_metrics_json>
+
+Arguments:
+  manual_metrics_json    Path to a JSON file with project_id, metric_snapshot_id, and metrics
+
+Environment variables:
+  LOOPRA_PROJECTS_ROOT              Override projects root directory
+  CONTENT_PLANT_PROJECTS_ROOT        Legacy fallback for LOOPRA_PROJECTS_ROOT
+
+Example:
+  python scripts/import_manual_metrics.py metrics.json"""
+
 
 def _error(message: str) -> int:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -90,6 +106,10 @@ def _build_recorded_keys(metrics: dict[str, Any]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--help" in args or "-h" in args:
+        print(USAGE)
+        return 0
+
     if len(args) != 1:
         return _error("usage: python scripts/import_manual_metrics.py <manual_metrics_json>")
 

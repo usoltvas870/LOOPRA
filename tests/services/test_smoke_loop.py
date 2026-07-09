@@ -47,6 +47,48 @@ class SmokeLoopScriptTests(unittest.TestCase):
 
             self._assert_smoke_output(completed)
 
+    def test_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+        self.assertIn("smoke_loop.py", completed.stdout)
+
+    def test_short_help_flag_prints_usage_and_exits_zero(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "-h"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("Usage", completed.stdout)
+        self.assertIn("smoke_loop.py", completed.stdout)
+
+    def test_help_does_not_create_runtime_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_projects_root = Path(temp_dir) / "smoke_projects"
+            env = os.environ.copy()
+            env["LOOPRA_SMOKE_PROJECTS_ROOT"] = str(runtime_projects_root)
+
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--help"],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            self.assertFalse(runtime_projects_root.exists())
+
     def _assert_smoke_output(self, completed: subprocess.CompletedProcess[str]) -> None:
         self.assertEqual(completed.returncode, 0, completed.stderr)
         stdout_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]

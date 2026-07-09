@@ -18,6 +18,18 @@ REQUIRED_MANIFEST_FIELDS = (
 )
 READY_EXPORT_PACKAGE_STATUSES = ("ready",)
 
+USAGE = """\
+Validate a LOOPRA ExportPackage structure and required files.
+
+Usage:
+  python scripts/validate_package.py [--help | -h] <export_package_directory>
+
+Arguments:
+  export_package_directory    Path to the export package directory
+
+Example:
+  python scripts/validate_package.py storage/smoke_projects/example/exports/export_abc123"""
+
 
 def _error(message: str) -> int:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -134,6 +146,10 @@ def _build_summary_lines(manifest: dict[str, object]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--help" in args or "-h" in args:
+        print(USAGE)
+        return 0
+
     if len(args) != 1:
         return _error("usage: python scripts/validate_package.py <export_package_directory>")
 

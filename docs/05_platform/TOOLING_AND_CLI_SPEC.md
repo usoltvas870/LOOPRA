@@ -431,6 +431,7 @@ The operator reads the traceback, fixes the issue, reruns.
   summary generation.
 - The script must not be relied upon for production operations — it is a smoke
   test tool.
+- --help and -h flags are supported and exit 0 without side effects.
 
 ---
 
@@ -842,7 +843,7 @@ saves, clicks, published_url`. Only keys actually present in the input appear.
 | Input file paths | Explicit CLI argument. Paths expanded with `expanduser()`. | All tools comply. |
 | `project_id` | Explicit CLI argument or environment variable with documented default. | `smoke_loop.py` uses env var. `find_metric_snapshots.py` uses CLI arg. Both comply. |
 | JSON payloads | File path to a JSON file. Tool validates structure, types and required fields. | `import_manual_metrics.py` complies. |
-| No hidden defaults | Every default is documented in the tool's help text or contract. | Partial. `smoke_loop.py` defaults to `"example"` project. Env vars are documented in code comments but not as a `--help` flag. No `--help` output exists on any current tool. |
+| No hidden defaults | Every default is documented in the tool's help text or contract. | Partial. `smoke_loop.py` defaults to `"example"` project. Env vars are documented in code comments. `--help` / `-h` flags are supported on all tools. |
 
 ## 12.2. Output Standards
 
@@ -856,7 +857,6 @@ saves, clicks, published_url`. Only keys actually present in the input appear.
 
 ## 12.3. Current Limitations
 
-- No `--help` flag or usage text beyond ad-hoc error messages.
 - No `--json` output mode for machine-readable structured output.
 - No `--quiet` or `--verbose` flags.
 - No standardized CLI framework (tools use ad-hoc `sys.argv` parsing).
@@ -990,7 +990,7 @@ Future tools should include:
   error".
 - `smoke_loop.py` does not catch exceptions — unhandled service errors print
   full Python tracebacks and exit with a system-dependent non-zero code.
-- No tool currently supports `--help`, `--version`, `--json` or `--quiet` flags.
+- No tool currently supports `--version`, `--json` or `--quiet` flags. `--help` / `-h` is supported on all tools.
 - Stdout format is key=value lines, which is grep-friendly but not a guaranteed
   contract for machine parsing (field order may change across versions).
 
@@ -1403,7 +1403,7 @@ These are the known limitations of the current MVP tooling layer:
 | Limitation | Impact | Future Direction |
 |---|---|---|
 | Tools are human-oriented | Output format is optimized for human reading, not machine parsing | Add `--json` output mode |
-| No `--help` or `--version` flags | Operator discovers usage only from error messages or documentation | Add argparse-based CLI with standard flags |
+| `--help` / `-h` flags | Now supported on all 5 CLI tools | N/A |
 | No standardized JSON output mode | Machine consumers must parse key=value lines | Add `--format json` |
 | No common CLI framework | Each tool has ad-hoc argument parsing | Consider `argparse` or `click` |
 | No persisted RuntimeExecutionContext | No way to track execution state across tool invocations | Implement execution context persistence |

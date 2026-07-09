@@ -24,6 +24,22 @@ REQUIRED_SNAPSHOT_FIELDS = (
     "status",
 )
 
+USAGE = """\
+Find and list DRAFT MetricSnapshot records for a LOOPRA project.
+
+Usage:
+  python scripts/find_metric_snapshots.py [--help | -h] <project_id>
+
+Arguments:
+  project_id    Project identifier (e.g. example)
+
+Environment variables:
+  LOOPRA_PROJECTS_ROOT              Override projects root directory
+  CONTENT_PLANT_PROJECTS_ROOT        Legacy fallback for LOOPRA_PROJECTS_ROOT
+
+Example:
+  python scripts/find_metric_snapshots.py example"""
+
 
 def _error(message: str) -> int:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -120,6 +136,10 @@ def _format_snapshot_line(snapshot: MetricSnapshot) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--help" in args or "-h" in args:
+        print(USAGE)
+        return 0
+
     if len(args) != 1:
         return _error("usage: python scripts/find_metric_snapshots.py <project_id>")
 
