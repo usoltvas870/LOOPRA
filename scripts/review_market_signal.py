@@ -2,26 +2,24 @@ from __future__ import annotations
 
 import sys
 
-from _intelligence_cli import dump_success, error, load_json_arg, parse_common, service
+from _intelligence_cli import dump_success, error, parse_common, service
 
 USAGE = """\
-Import one manual MarketSignal.
+Mark one MarketSignal as reviewed.
 
 Usage:
-  python scripts/import_market_signal.py [--help | -h] [--json] '<payload_json>'
+  python scripts/review_market_signal.py [--help | -h] [--json] <project_id> <market_signal_id>
 """
 
 
 def main() -> int:
-    parsed = parse_common(sys.argv[1:], USAGE, 1)
+    parsed = parse_common(sys.argv[1:], USAGE, 2)
     if isinstance(parsed, int):
         return parsed
 
     json_mode, args = parsed
     try:
-        payload = load_json_arg(args[0])
-        project_id = str(payload.pop("project_id"))
-        signal = service().create_market_signal(project_id, **payload)
+        signal = service().review_market_signal(args[0], args[1])
         return dump_success(
             {"market_signal": signal.model_dump(mode="json")},
             json_mode,

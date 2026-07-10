@@ -1577,12 +1577,17 @@ Autonomous Marketing Operating System.
 
 ---
 
-## Current Stage 2 Slice 1 Test Coverage
+## Current Stage 2 Slice 2 Hardening Coverage
 
-Stage 2 Slice 1 adds tests for:
+Stage 2 Slice 2 retains the Slice 1 end-to-end coverage and adds explicit tests for:
 
-- Intelligence domain models and status transitions;
-- Content Intelligence service storage, cross-project rejection and opportunity-to-Idea conversion;
-- CLI help, JSON mode, unknown flag rejection and workflow behaviour;
-- integration from `ContentOpportunity` to valid `Idea` consumable by `ScenarioService`;
-- NURA project-scoped validation without NURA-specific core branching.
+- the domain invariant that `CONVERTED` requires a non-empty `idea_id`;
+- market-signal review and trend-pattern activation;
+- reject, defer and archive opportunity lifecycle methods;
+- get/list/status-filter behavior for all three Intelligence entity types;
+- missing-entity errors, cross-project isolation and duplicate-conversion rejection;
+- per-script `--help`, `--json --help`, human/JSON unknown-option behavior, success paths and operational error paths;
+- integration from `ContentOpportunity` to a valid `Idea` consumable by `ScenarioService`;
+- project-scoped validation without project-specific core branching.
+
+This coverage validates deterministic manual Content Intelligence only. It does not validate autonomous intelligence, external integrations, scraping, connectors, API/UI/DB behavior, Orchestrator behavior or Learning Memory.

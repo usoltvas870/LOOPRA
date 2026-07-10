@@ -87,6 +87,24 @@ class IntelligenceDomainModelTests(unittest.TestCase):
                 score=-0.1,
             )
 
+    def test_converted_content_opportunity_requires_non_empty_idea_id(self) -> None:
+        opportunity = ContentOpportunity(
+            content_opportunity_id="opportunity_1",
+            workspace_id="internal",
+            project_id="example",
+            trend_pattern_id="trend_1",
+            title="Create a reflective explanation post",
+            summary="Use trend evidence as a recommendation only.",
+        ).transition_to(ContentOpportunityStatus.APPROVED)
+
+        for idea_id in (None, "", "   "):
+            with self.subTest(idea_id=idea_id):
+                with self.assertRaisesRegex(ValueError, "requires a non-empty idea_id"):
+                    opportunity.transition_to(ContentOpportunityStatus.CONVERTED, idea_id=idea_id)
+
+        converted = opportunity.transition_to(ContentOpportunityStatus.CONVERTED, idea_id="  idea_1  ")
+        self.assertEqual(converted.idea_id, "idea_1")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,10 +5,10 @@ import sys
 from _intelligence_cli import dump_success, error, parse_common, service
 
 USAGE = """\
-Approve one ContentOpportunity for possible Idea conversion.
+Archive one ContentOpportunity.
 
 Usage:
-  python scripts/approve_content_opportunity.py [--help | -h] [--json] <project_id> <content_opportunity_id>
+  python scripts/archive_content_opportunity.py [--help | -h] [--json] <project_id> <content_opportunity_id>
 """
 
 
@@ -19,7 +19,7 @@ def main() -> int:
 
     json_mode, args = parsed
     try:
-        opportunity = service().approve_content_opportunity(args[0], args[1])
+        opportunity = service().archive_content_opportunity(args[0], args[1])
         return dump_success(
             {"content_opportunity": opportunity.model_dump(mode="json")},
             json_mode,

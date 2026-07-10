@@ -5,10 +5,10 @@ import sys
 from _intelligence_cli import dump_success, error, parse_common, service
 
 USAGE = """\
-Approve one ContentOpportunity for possible Idea conversion.
+Activate one TrendPattern.
 
 Usage:
-  python scripts/approve_content_opportunity.py [--help | -h] [--json] <project_id> <content_opportunity_id>
+  python scripts/activate_trend_pattern.py [--help | -h] [--json] <project_id> <trend_pattern_id>
 """
 
 
@@ -19,13 +19,13 @@ def main() -> int:
 
     json_mode, args = parsed
     try:
-        opportunity = service().approve_content_opportunity(args[0], args[1])
+        pattern = service().activate_trend_pattern(args[0], args[1])
         return dump_success(
-            {"content_opportunity": opportunity.model_dump(mode="json")},
+            {"trend_pattern": pattern.model_dump(mode="json")},
             json_mode,
             [
-                f"content_opportunity_id={opportunity.content_opportunity_id}",
-                f"status={opportunity.status.value}",
+                f"trend_pattern_id={pattern.trend_pattern_id}",
+                f"status={pattern.status.value}",
             ],
         )
     except Exception as exc:

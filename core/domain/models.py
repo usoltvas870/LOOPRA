@@ -181,9 +181,12 @@ class ContentOpportunity(ProjectScopedModel):
             next_status=next_status,
             transitions=CONTENT_OPPORTUNITY_STATUS_TRANSITIONS,
         )
+        if next_status == ContentOpportunityStatus.CONVERTED and not (idea_id and idea_id.strip()):
+            raise ValueError("ContentOpportunity transition to 'converted' requires a non-empty idea_id")
+
         update: dict[str, Any] = {"status": next_status, "updated_at": utc_now()}
         if idea_id is not None:
-            update["idea_id"] = idea_id
+            update["idea_id"] = idea_id.strip()
         return validated_model_copy(self, **update)
 
 

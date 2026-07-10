@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from core.domain import (
-    ContentFormat,
     ContentOpportunity,
     ContentOpportunityStatus,
     Idea,
@@ -13,7 +12,6 @@ from core.domain import (
     TrendPattern,
     TrendPatternStatus,
 )
-from core.domain.models import utc_now
 from core.services._storage import FileSystemProjectModelRepository, build_entity_id
 from core.services.ideas import IdeaService, VALID_FUNNEL_STAGES
 from core.services.projects import ProjectService
@@ -102,6 +100,11 @@ class ContentIntelligenceService:
     def get_market_signal(self, project_id: str, market_signal_id: str) -> MarketSignal:
         self._project_service.get_project(project_id)
         return self._market_signals.load_market_signal(project_id, market_signal_id)
+
+    def review_market_signal(self, project_id: str, market_signal_id: str) -> MarketSignal:
+        signal = self.get_market_signal(project_id, market_signal_id)
+        reviewed = signal.transition_to(MarketSignalStatus.REVIEWED)
+        return self._market_signals.save_market_signal(reviewed)
 
     def create_trend_pattern(self, project_id: str, *, market_signal_ids: Sequence[str], **payload: object) -> TrendPattern:
         project = self._project_service.get_project(project_id)

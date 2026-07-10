@@ -1829,17 +1829,22 @@ The tooling document is aligned when:
 
 ---
 
-## Current Stage 2 Slice 1 CLI Tools
+## Current Stage 2 Slice 2 CLI Tools
 
 Content Intelligence Foundation CLI tools:
 
 ```bash
 python scripts/import_market_signal.py [--json] '<payload_json>'
+python scripts/review_market_signal.py [--json] <project_id> <market_signal_id>
 python scripts/create_trend_pattern.py [--json] '<payload_json>'
+python scripts/activate_trend_pattern.py [--json] <project_id> <trend_pattern_id>
 python scripts/create_content_opportunity.py [--json] '<payload_json>'
 python scripts/list_content_opportunities.py [--json] <project_id> [status]
 python scripts/approve_content_opportunity.py [--json] <project_id> <content_opportunity_id>
+python scripts/reject_content_opportunity.py [--json] <project_id> <content_opportunity_id>
+python scripts/defer_content_opportunity.py [--json] <project_id> <content_opportunity_id>
+python scripts/archive_content_opportunity.py [--json] <project_id> <content_opportunity_id>
 python scripts/create_idea_from_opportunity.py [--json] <project_id> <content_opportunity_id>
 ```
 
-All support `--help`/`-h`, human-readable default output, JSON success/error output with `--json`, and unknown flag rejection.
+All support `--help`/`-h`, human-readable default output, JSON success/error output with `--json`, help precedence over JSON mode, and unknown flag rejection. Lifecycle scripts are thin wrappers over `ContentIntelligenceService`; they do not mutate stored JSON directly.

@@ -1560,16 +1560,29 @@ before concluding.
 
 ---
 
-## Stage 2 Slice 1 Manual Content Intelligence Runbook
+## Stage 2 Slice 2 Manual Content Intelligence Runbook
 
 Current manual flow:
 
 ```bash
 python scripts/import_market_signal.py --json '<market_signal_payload>'
+python scripts/review_market_signal.py --json <project_id> <market_signal_id>
 python scripts/create_trend_pattern.py --json '<trend_pattern_payload>'
+python scripts/activate_trend_pattern.py --json <project_id> <trend_pattern_id>
 python scripts/create_content_opportunity.py --json '<content_opportunity_payload>'
+python scripts/list_content_opportunities.py --json <project_id> [status]
 python scripts/approve_content_opportunity.py --json <project_id> <content_opportunity_id>
 python scripts/create_idea_from_opportunity.py --json <project_id> <content_opportunity_id>
 ```
+
+Alternative opportunity outcomes use the same project-scoped service path:
+
+```bash
+python scripts/reject_content_opportunity.py --json <project_id> <content_opportunity_id>
+python scripts/defer_content_opportunity.py --json <project_id> <content_opportunity_id>
+python scripts/archive_content_opportunity.py --json <project_id> <content_opportunity_id>
+```
+
+Run only transitions allowed by the current entity status. A converted opportunity requires the `Idea` created by the service path and cannot be converted twice.
 
 Operators must provide market/trend inputs manually. Do not treat this flow as autonomous trend collection or autonomous content creation.

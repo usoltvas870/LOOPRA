@@ -382,3 +382,38 @@ Verification:
 - full test suite: 181/181 OK
 - smoke_loop human mode: PASS
 - smoke_loop JSON mode: PASS
+
+-----------------------------------------------------------------------
+
+# Stage 2 Slice 2 - Content Intelligence Hardening
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- `ContentOpportunity` conversion now requires a non-empty `idea_id` at the domain transition boundary.
+- `MarketSignal` review has an explicit deterministic service and CLI path.
+- Existing trend activation and opportunity reject/defer/archive lifecycle paths have dedicated CLIs.
+- Intelligence CLI scripts follow the readable Foundation CLI style and retain human/JSON/help/unknown-option contracts.
+- Get/list/status-filter, missing-entity, cross-project, duplicate-conversion and lifecycle tests are explicit.
+
+Verification:
+
+- domain intelligence tests: 4/4 OK
+- service intelligence tests: 9/9 OK
+- CLI intelligence tests: 4/4 OK
+- domain suite: 18/18 OK
+- services suite: 172/172 OK
+- full test suite: 190/190 OK
+- smoke_loop human mode: PASS
+- smoke_loop JSON mode: PASS
+
+Boundaries preserved:
+
+- This slice hardens manual deterministic Content Intelligence; full Stage 2 is not complete.
+- Future slices remain gated.
+- No autonomous intelligence, external integrations, scraping or connectors exist.
+- No API, UI or database exists.
+- No Orchestrator Agent or Learning Memory exists.
+- The Foundation MVP execution chain remains unchanged.

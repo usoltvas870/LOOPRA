@@ -1455,13 +1455,15 @@ designed to remain stable through the platform's evolution.
 
 ---
 
-## Current Stage 2 Slice 1 Service Contract
+## Current Stage 2 Slice 2 Hardened Service Contract
 
 `ContentIntelligenceService` owns current Content Intelligence mutations:
 
-- create/list/get `MarketSignal`;
+- create/list/get/review `MarketSignal`;
 - create/list/get/activate `TrendPattern`;
 - create/list/get/approve/reject/defer/archive `ContentOpportunity`;
 - convert approved `ContentOpportunity` to `Idea` through `IdeaService.create_idea()`.
 
-Scripts must call this service layer and must not write intelligence JSON directly.
+List operations may filter by the entity status enum. Get/list/mutation operations remain project-scoped, and missing or cross-project identifiers are rejected by the existing project/repository boundaries. Duplicate opportunity conversion is rejected after the first conversion.
+
+Scripts must call this service layer and must not write intelligence JSON directly. This remains a deterministic manual capability; it does not introduce autonomous decisions, external providers, scraping or connectors.

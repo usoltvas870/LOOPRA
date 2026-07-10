@@ -14,7 +14,11 @@ from core.services import build_content_intelligence_service
 
 
 def resolve_projects_root() -> Path:
-    override = (os.environ.get("LOOPRA_PROJECTS_ROOT") or os.environ.get("CONTENT_PLANT_PROJECTS_ROOT") or "").strip()
+    override = (
+        os.environ.get("LOOPRA_PROJECTS_ROOT")
+        or os.environ.get("CONTENT_PLANT_PROJECTS_ROOT")
+        or ""
+    ).strip()
     return Path(override).expanduser().resolve() if override else PROJECTS_ROOT
 
 
