@@ -133,7 +133,7 @@ Summary:
     not direct JSON writes.
 -   Env var semantics unchanged (LOOPRA_* primary, CONTENT_PLANT_*
     legacy fallback).
--   Stage 2 NOT started. No API/UI/DB/agents/connectors introduced.
+-   Stage 2 Slice 1 — Content Intelligence Foundation is IMPLEMENTED + VERIFIED. Full Stage 2 is NOT complete. No API/UI/DB/runtime agent/Orchestrator/connectors/autoposting/Learning Memory introduced.
 
 Verification:
 
@@ -271,7 +271,7 @@ Current objectives:
 
 -   operational docs consistency checks;
 -   maintain architecture boundaries;
--   no Stage 2 until explicitly approved.
+-   no further Stage 2 slices until explicitly approved.
 
 Completed in this phase:
 
@@ -297,7 +297,7 @@ Current phase does NOT include:
 -   SaaS infrastructure;
 -   external publishing integrations;
 -   autonomous agent swarm;
--   Stage 2 Content Intelligence;
+-   further Stage 2 slices beyond Slice 1;
 -   connector development;
 -   autoposting.
 
@@ -341,8 +341,8 @@ improvements only:
 
 1.  Operational docs consistency checks.
 
-Do not start Stage 2 (Content Intelligence) without explicit
-Architecture Gate approval.
+Do not start further Stage 2 slices without explicit bounded
+scope/gate approval.
 
 -----------------------------------------------------------------------
 
@@ -379,6 +379,6 @@ Verification:
 
 - domain tests: PASS
 - service tests: PASS
-- full test suite: PASS
+- full test suite: 181/181 OK
 - smoke_loop human mode: PASS
 - smoke_loop JSON mode: PASS
