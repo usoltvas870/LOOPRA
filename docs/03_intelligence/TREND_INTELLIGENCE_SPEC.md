@@ -1516,3 +1516,16 @@ verified market understanding — filtered through brand context,
 grounded in evidence and continuously improved through learning.
 
 This is the foundation of autonomous marketing intelligence.
+
+---
+
+## Current Implementation — Stage 2 Slice 1
+
+The current implemented Trend Intelligence capability is intentionally narrow:
+
+- manual `MarketSignal` import;
+- deterministic `TrendPattern` creation from project-scoped signal IDs;
+- local filesystem storage under each project;
+- no scraping, connectors, background workers or external API calls.
+
+This is a foundation for future trend intelligence, not autonomous market monitoring.

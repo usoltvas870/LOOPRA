@@ -1557,3 +1557,19 @@ validate. No autoposting.**
 
 Operate within these boundaries. Do not assume future capabilities. Verify
 before concluding.
+
+---
+
+## Stage 2 Slice 1 Manual Content Intelligence Runbook
+
+Current manual flow:
+
+```bash
+python scripts/import_market_signal.py --json '<market_signal_payload>'
+python scripts/create_trend_pattern.py --json '<trend_pattern_payload>'
+python scripts/create_content_opportunity.py --json '<content_opportunity_payload>'
+python scripts/approve_content_opportunity.py --json <project_id> <content_opportunity_id>
+python scripts/create_idea_from_opportunity.py --json <project_id> <content_opportunity_id>
+```
+
+Operators must provide market/trend inputs manually. Do not treat this flow as autonomous trend collection or autonomous content creation.

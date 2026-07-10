@@ -1908,3 +1908,28 @@ accumulated experience and continuously improved through learning.
 This is the intelligence that transforms LOOPRA from a deterministic
 production pipeline into a self-learning autonomous marketing operating
 system.
+
+---
+
+## Current Implementation — Stage 2 Slice 1
+
+The current implemented Content Intelligence capability is a deterministic, manual foundation:
+
+```text
+MarketSignal -> TrendPattern -> ContentOpportunity -> optional Idea
+```
+
+Implemented behaviour:
+
+- project-scoped `ContentOpportunity` records;
+- approval/rejection/defer/archive lifecycle;
+- approved-opportunity conversion to a Foundation MVP `Idea`;
+- CLI support with human-readable and `--json` output modes.
+
+Current boundaries:
+
+- Content Intelligence recommends; it does not autonomously decide.
+- It does not generate final content.
+- It does not publish.
+- It does not call external APIs or scrape platforms.
+- Full Content Intelligence, Orchestrator Agent and Learning Memory remain future scope.

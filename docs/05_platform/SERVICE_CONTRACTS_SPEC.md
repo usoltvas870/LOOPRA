@@ -1452,3 +1452,16 @@ service contracts.
 This specification is the contractual blueprint for every operation the LOOPRA
 Foundation MVP performs — grounded in real code, verified by real tests, and
 designed to remain stable through the platform's evolution.
+
+---
+
+## Current Stage 2 Slice 1 Service Contract
+
+`ContentIntelligenceService` owns current Content Intelligence mutations:
+
+- create/list/get `MarketSignal`;
+- create/list/get/activate `TrendPattern`;
+- create/list/get/approve/reject/defer/archive `ContentOpportunity`;
+- convert approved `ContentOpportunity` to `Idea` through `IdeaService.create_idea()`.
+
+Scripts must call this service layer and must not write intelligence JSON directly.

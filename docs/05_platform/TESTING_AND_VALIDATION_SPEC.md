@@ -1574,3 +1574,15 @@ foundation, never replaces it.
 Tests verify. Validation checks. Architecture specifications define the source
 of truth. Together, they ensure LOOPRA remains a reliable, project-agnostic
 Autonomous Marketing Operating System.
+
+---
+
+## Current Stage 2 Slice 1 Test Coverage
+
+Stage 2 Slice 1 adds tests for:
+
+- Intelligence domain models and status transitions;
+- Content Intelligence service storage, cross-project rejection and opportunity-to-Idea conversion;
+- CLI help, JSON mode, unknown flag rejection and workflow behaviour;
+- integration from `ContentOpportunity` to valid `Idea` consumable by `ScenarioService`;
+- NURA project-scoped validation without NURA-specific core branching.

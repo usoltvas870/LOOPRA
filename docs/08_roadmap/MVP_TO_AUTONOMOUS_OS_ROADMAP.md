@@ -926,3 +926,19 @@ No Jira/Linear/issue tracker is assumed. Current tracking is document-driven.
 | Date | 2026-07-09 |
 | Project | LOOPRA -- Autonomous Marketing Operating System |
 | Layer | Roadmap Layer -- MVP to Autonomous OS Roadmap |
+
+---
+
+## Stage 2 Progress Update
+
+Stage 2 has begun with Slice 1: Content Intelligence Foundation. Implemented scope is limited to manual, deterministic, filesystem-first records and approved opportunity-to-Idea conversion.
+
+Not yet implemented:
+
+- external trend collection;
+- autonomous Content Intelligence;
+- Orchestrator Agent runtime;
+- Learning Memory;
+- API/UI/database/platform automation.
+
+Recommended next slice: deterministic review/listing improvements and richer validation around ContentOpportunity evidence and project configuration fit.

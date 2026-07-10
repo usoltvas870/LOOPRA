@@ -362,3 +362,35 @@ Version: v1.0
 Updated: 2026-07-09  
 Project: LOOPRA  
 Current model scope: minimal foundation entity baseline
+
+---
+
+## 5. Current Stage 2 Slice 1 Intelligence Entities
+
+Stage 2 Slice 1 adds a bounded Content Intelligence Foundation outside the Foundation MVP execution chain. The Foundation MVP chain remains:
+
+```text
+Project context -> Idea -> Scenario -> ContentItem -> ExportPackage -> Publication -> MetricSnapshot
+```
+
+Current implemented Intelligence records are project-scoped and filesystem-first:
+
+```text
+MarketSignal -> TrendPattern -> ContentOpportunity -> optional Idea
+```
+
+### 5.1. MarketSignal
+
+A `MarketSignal` is a manually supplied observation of external market, content or audience behaviour. It stores source metadata, audience/platform/format hints, tags, confidence and status. It does not scrape or call external services.
+
+### 5.2. TrendPattern
+
+A `TrendPattern` is a deterministic interpretation of one or more project-scoped `MarketSignal` records. Cross-project signal references are rejected by service/repository boundaries.
+
+### 5.3. ContentOpportunity
+
+A `ContentOpportunity` is a recommendation for what content could be created from a trend pattern. It can be approved, rejected, deferred, archived or converted. It recommends only; it does not create content, publish or decide autonomously.
+
+### 5.4. Opportunity to Idea
+
+Only an approved `ContentOpportunity` can be converted into an `Idea`. Conversion uses the existing Idea service path rather than direct JSON writes, preserving the Foundation MVP lifecycle.

@@ -35,6 +35,12 @@ from .publishing import (
 )
 
 __all__ = [
+    "build_content_intelligence_service",
+    "FileSystemTrendPatternRepository",
+    "FileSystemMarketSignalRepository",
+    "FileSystemContentOpportunityRepository",
+    "ContentIntelligenceValidationError",
+    "ContentIntelligenceService",
     "AnalyticsService",
     "AnalyticsValidationError",
     "BrandProfileService",
@@ -62,3 +68,12 @@ __all__ = [
     "ScenarioStudioValidationError",
     "WorkspaceService",
 ]
+
+from .intelligence import (
+    ContentIntelligenceService,
+    ContentIntelligenceValidationError,
+    FileSystemContentOpportunityRepository,
+    FileSystemMarketSignalRepository,
+    FileSystemTrendPatternRepository,
+    build_content_intelligence_service,
+)

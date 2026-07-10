@@ -7,6 +7,7 @@ class DomainModule(StrEnum):
     PRODUCTION_ENGINE = "production_engine"
     PUBLISHING_HUB = "publishing_hub"
     ANALYTICS = "analytics"
+    CONTENT_INTELLIGENCE = "content_intelligence"
 
 
 class WorkspaceStatus(StrEnum):
@@ -119,3 +120,24 @@ class MetricSnapshotStatus(StrEnum):
     DRAFT = "draft"
     RECORDED = "recorded"
     INVALID = "invalid"
+
+
+class MarketSignalStatus(StrEnum):
+    NEW = "new"
+    REVIEWED = "reviewed"
+    ARCHIVED = "archived"
+
+
+class TrendPatternStatus(StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ContentOpportunityStatus(StrEnum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    DEFERRED = "deferred"
+    CONVERTED = "converted"
+    ARCHIVED = "archived"

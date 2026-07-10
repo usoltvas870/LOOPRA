@@ -1145,3 +1145,17 @@ in the current Foundation MVP.
 
 Storage stores state. Services mutate state. Runtime coordinates. Tools inspect.
 Agents decide — but they do not touch storage directly.
+
+---
+
+## Current Stage 2 Slice 1 Storage
+
+Content Intelligence Foundation records are stored locally under the owning project:
+
+```text
+projects/{project_id}/data/market_signals/{market_signal_id}.json
+projects/{project_id}/data/trend_patterns/{trend_pattern_id}.json
+projects/{project_id}/data/content_opportunities/{content_opportunity_id}.json
+```
+
+Runtime copies under `storage/` remain runtime artifacts and must not be committed.

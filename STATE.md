@@ -351,3 +351,34 @@ Architecture Gate approval.
 LOOPRA is being built as an autonomous marketing operating system that
 enables brands to continuously learn, create and improve through
 intelligent growth loops.
+
+-----------------------------------------------------------------------
+
+# Stage 2 Slice 1 — Content Intelligence Foundation
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- Manual `MarketSignal` records can be imported for a project.
+- Manual `TrendPattern` records can be created from project-scoped market signals.
+- Manual `ContentOpportunity` records can be created, approved, rejected, deferred, archived and converted.
+- Approved opportunities can be converted into existing Foundation MVP `Idea` records through `IdeaService.create_idea()`.
+- The implementation remains local/filesystem-first, deterministic, project-scoped and CLI-driven.
+
+Boundaries preserved:
+
+- No API, UI, database, authentication, billing or SaaS infrastructure.
+- No external integrations, scraping, connectors or provider calls.
+- No autoposting, scheduler, background worker or autonomous runtime agent.
+- No Orchestrator Agent or Learning Memory implementation.
+- NURA is used only as a project-scoped validation project.
+
+Verification:
+
+- domain tests: PASS
+- service tests: PASS
+- full test suite: PASS
+- smoke_loop human mode: PASS
+- smoke_loop JSON mode: PASS

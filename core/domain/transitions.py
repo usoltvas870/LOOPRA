@@ -8,6 +8,9 @@ from .enums import (
     ExportPackageStatus,
     IdeaStatus,
     MetricSnapshotStatus,
+    MarketSignalStatus,
+    TrendPatternStatus,
+    ContentOpportunityStatus,
     PublicationStatus,
     RenderJobStatus,
     ScenarioStatus,
@@ -146,6 +149,37 @@ METRIC_SNAPSHOT_STATUS_TRANSITIONS: dict[MetricSnapshotStatus, set[MetricSnapsho
     },
     MetricSnapshotStatus.RECORDED: {MetricSnapshotStatus.INVALID},
     MetricSnapshotStatus.INVALID: {MetricSnapshotStatus.DRAFT},
+}
+
+
+MARKET_SIGNAL_STATUS_TRANSITIONS: dict[MarketSignalStatus, set[MarketSignalStatus]] = {
+    MarketSignalStatus.NEW: {MarketSignalStatus.REVIEWED, MarketSignalStatus.ARCHIVED},
+    MarketSignalStatus.REVIEWED: {MarketSignalStatus.ARCHIVED},
+    MarketSignalStatus.ARCHIVED: set(),
+}
+
+TREND_PATTERN_STATUS_TRANSITIONS: dict[TrendPatternStatus, set[TrendPatternStatus]] = {
+    TrendPatternStatus.DRAFT: {TrendPatternStatus.ACTIVE, TrendPatternStatus.ARCHIVED},
+    TrendPatternStatus.ACTIVE: {TrendPatternStatus.ARCHIVED},
+    TrendPatternStatus.ARCHIVED: set(),
+}
+
+CONTENT_OPPORTUNITY_STATUS_TRANSITIONS: dict[ContentOpportunityStatus, set[ContentOpportunityStatus]] = {
+    ContentOpportunityStatus.DRAFT: {
+        ContentOpportunityStatus.APPROVED,
+        ContentOpportunityStatus.REJECTED,
+        ContentOpportunityStatus.DEFERRED,
+        ContentOpportunityStatus.ARCHIVED,
+    },
+    ContentOpportunityStatus.APPROVED: {
+        ContentOpportunityStatus.CONVERTED,
+        ContentOpportunityStatus.DEFERRED,
+        ContentOpportunityStatus.ARCHIVED,
+    },
+    ContentOpportunityStatus.REJECTED: {ContentOpportunityStatus.ARCHIVED},
+    ContentOpportunityStatus.DEFERRED: {ContentOpportunityStatus.APPROVED, ContentOpportunityStatus.ARCHIVED},
+    ContentOpportunityStatus.CONVERTED: {ContentOpportunityStatus.ARCHIVED},
+    ContentOpportunityStatus.ARCHIVED: set(),
 }
 
 

@@ -10,6 +10,9 @@ from .enums import (
     ContentFormat,
     ContentItemStatus,
     DomainModule,
+    MarketSignalStatus,
+    TrendPatternStatus,
+    ContentOpportunityStatus,
     ExportPackageStatus,
     IdeaStatus,
     MetricSnapshotStatus,
@@ -28,6 +31,9 @@ from .transitions import (
     EXPORT_PACKAGE_STATUS_TRANSITIONS,
     IDEA_STATUS_TRANSITIONS,
     METRIC_SNAPSHOT_STATUS_TRANSITIONS,
+    MARKET_SIGNAL_STATUS_TRANSITIONS,
+    TREND_PATTERN_STATUS_TRANSITIONS,
+    CONTENT_OPPORTUNITY_STATUS_TRANSITIONS,
     PUBLICATION_STATUS_TRANSITIONS,
     RENDER_JOB_STATUS_TRANSITIONS,
     SCENARIO_STATUS_TRANSITIONS,
@@ -99,6 +105,86 @@ class BrandProfile(ProjectScopedModel):
     tone_of_voice: BrandToneOfVoice = Field(default_factory=BrandToneOfVoice)
     content_rules: BrandContentRules = Field(default_factory=BrandContentRules)
     status: BrandProfileStatus = BrandProfileStatus.DRAFT
+
+
+class MarketSignal(ProjectScopedModel):
+    market_signal_id: str = Field(min_length=1)
+    owner_module: Literal[DomainModule.CONTENT_INTELLIGENCE] = DomainModule.CONTENT_INTELLIGENCE
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    source_type: str = Field(default="manual", min_length=1)
+    source_url: str | None = None
+    source_reference: str = ""
+    observed_at: datetime = Field(default_factory=utc_now)
+    audience_hint: str = ""
+    platform_hint: str = ""
+    content_format_hint: str = ""
+    tags: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    status: MarketSignalStatus = MarketSignalStatus.NEW
+
+    def transition_to(self, next_status: MarketSignalStatus) -> "MarketSignal":
+        validate_status_transition(
+            entity_name="MarketSignal",
+            current_status=self.status,
+            next_status=next_status,
+            transitions=MARKET_SIGNAL_STATUS_TRANSITIONS,
+        )
+        return validated_model_copy(self, status=next_status, updated_at=utc_now())
+
+
+class TrendPattern(ProjectScopedModel):
+    trend_pattern_id: str = Field(min_length=1)
+    owner_module: Literal[DomainModule.CONTENT_INTELLIGENCE] = DomainModule.CONTENT_INTELLIGENCE
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    market_signal_ids: list[str] = Field(default_factory=list, min_length=1)
+    affected_audience: str = ""
+    related_platforms: list[str] = Field(default_factory=list)
+    related_formats: list[str] = Field(default_factory=list)
+    relevance_score: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    status: TrendPatternStatus = TrendPatternStatus.DRAFT
+
+    def transition_to(self, next_status: TrendPatternStatus) -> "TrendPattern":
+        validate_status_transition(
+            entity_name="TrendPattern",
+            current_status=self.status,
+            next_status=next_status,
+            transitions=TREND_PATTERN_STATUS_TRANSITIONS,
+        )
+        return validated_model_copy(self, status=next_status, updated_at=utc_now())
+
+
+class ContentOpportunity(ProjectScopedModel):
+    content_opportunity_id: str = Field(min_length=1)
+    owner_module: Literal[DomainModule.CONTENT_INTELLIGENCE] = DomainModule.CONTENT_INTELLIGENCE
+    trend_pattern_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    target_audience: str = ""
+    content_format: ContentFormat = ContentFormat.TEXT_SOCIAL_POST
+    funnel_stage: str = "attention"
+    content_pillar: str = ""
+    strategic_goal: str = ""
+    recommended_angle: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.5, ge=0, le=1)
+    status: ContentOpportunityStatus = ContentOpportunityStatus.DRAFT
+    idea_id: str | None = None
+
+    def transition_to(self, next_status: ContentOpportunityStatus, *, idea_id: str | None = None) -> "ContentOpportunity":
+        validate_status_transition(
+            entity_name="ContentOpportunity",
+            current_status=self.status,
+            next_status=next_status,
+            transitions=CONTENT_OPPORTUNITY_STATUS_TRANSITIONS,
+        )
+        update: dict[str, Any] = {"status": next_status, "updated_at": utc_now()}
+        if idea_id is not None:
+            update["idea_id"] = idea_id
+        return validated_model_copy(self, **update)
 
 
 class ScenarioTextBlock(DomainModel):
