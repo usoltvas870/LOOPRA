@@ -297,7 +297,7 @@ Current phase does NOT include:
 -   SaaS infrastructure;
 -   external publishing integrations;
 -   autonomous agent swarm;
--   further Stage 2 slices beyond Slice 1;
+-   further Stage 2 slices beyond implemented Slices 1 and 2;
 -   connector development;
 -   autoposting.
 

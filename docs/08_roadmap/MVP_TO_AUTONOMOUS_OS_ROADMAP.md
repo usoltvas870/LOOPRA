@@ -931,7 +931,7 @@ No Jira/Linear/issue tracker is assumed. Current tracking is document-driven.
 
 ## Stage 2 Progress Update
 
-Stage 2 has begun with Slice 1: Content Intelligence Foundation. Implemented scope is limited to manual, deterministic, filesystem-first records and approved opportunity-to-Idea conversion.
+Stage 2 has begun with two bounded, implemented slices: Slice 1 (Content Intelligence Foundation) and Slice 2 (Content Intelligence Hardening). Implemented scope is limited to manual, deterministic, filesystem-first records, explicit review and lifecycle paths, and approved opportunity-to-Idea conversion.
 
 Not yet implemented:
 
@@ -941,4 +941,4 @@ Not yet implemented:
 - Learning Memory;
 - API/UI/database/platform automation.
 
-Recommended next slice: deterministic review/listing improvements and richer validation around ContentOpportunity evidence and project configuration fit.
+Further Stage 2 slices remain gated. The current priority remains Stage 1 Foundation Hardening through small bounded improvements such as operational documentation consistency checks.

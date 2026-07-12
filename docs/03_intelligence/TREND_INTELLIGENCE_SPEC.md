@@ -1519,12 +1519,14 @@ This is the foundation of autonomous marketing intelligence.
 
 ---
 
-## Current Implementation — Stage 2 Slice 1
+## Current Implementation — Stage 2 Slices 1 and 2
 
 The current implemented Trend Intelligence capability is intentionally narrow:
 
 - manual `MarketSignal` import;
+- explicit deterministic review of project-scoped market signals;
 - deterministic `TrendPattern` creation from project-scoped signal IDs;
+- explicit activation of trend patterns through the service and CLI lifecycle;
 - local filesystem storage under each project;
 - no scraping, connectors, background workers or external API calls.
 

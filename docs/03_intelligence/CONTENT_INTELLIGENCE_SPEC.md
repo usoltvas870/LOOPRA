@@ -1911,7 +1911,7 @@ system.
 
 ---
 
-## Current Implementation — Stage 2 Slice 1
+## Current Implementation — Stage 2 Slices 1 and 2
 
 The current implemented Content Intelligence capability is a deterministic, manual foundation:
 
@@ -1922,9 +1922,11 @@ MarketSignal -> TrendPattern -> ContentOpportunity -> optional Idea
 Implemented behaviour:
 
 - project-scoped `ContentOpportunity` records;
+- explicit review of manual `MarketSignal` records and activation of `TrendPattern` records;
 - approval/rejection/defer/archive lifecycle;
 - approved-opportunity conversion to a Foundation MVP `Idea`;
-- CLI support with human-readable and `--json` output modes.
+- conversion requires a non-empty `idea_id` at the domain transition boundary;
+- dedicated lifecycle CLIs with human-readable and `--json` output modes.
 
 Current boundaries:
 
