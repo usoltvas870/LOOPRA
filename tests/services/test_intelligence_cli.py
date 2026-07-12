@@ -68,6 +68,11 @@ class ContentIntelligenceCliTests(unittest.TestCase):
                 self.assertEqual(result.stderr, "")
 
     def test_full_manual_lifecycle_covers_every_intelligence_script(self) -> None:
+        empty_list = self._run("list_content_opportunities.py", "example")
+        self.assertEqual(empty_list.returncode, 0, empty_list.stderr)
+        self.assertEqual(empty_list.stdout.strip(), "content_opportunities_found=0")
+        self.assertEqual(empty_list.stderr, "")
+
         signal_result = self._run(
             "import_market_signal.py",
             "--json",

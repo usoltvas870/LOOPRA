@@ -174,6 +174,12 @@ class ContentOpportunity(ProjectScopedModel):
     status: ContentOpportunityStatus = ContentOpportunityStatus.DRAFT
     idea_id: str | None = None
 
+    @model_validator(mode="after")
+    def validate_converted_idea_id(self) -> "ContentOpportunity":
+        if self.status == ContentOpportunityStatus.CONVERTED and not (self.idea_id and self.idea_id.strip()):
+            raise ValueError("Converted ContentOpportunity requires a non-empty idea_id")
+        return self
+
     def transition_to(self, next_status: ContentOpportunityStatus, *, idea_id: str | None = None) -> "ContentOpportunity":
         validate_status_transition(
             entity_name="ContentOpportunity",

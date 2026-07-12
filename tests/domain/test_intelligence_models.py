@@ -105,6 +105,34 @@ class IntelligenceDomainModelTests(unittest.TestCase):
         converted = opportunity.transition_to(ContentOpportunityStatus.CONVERTED, idea_id="  idea_1  ")
         self.assertEqual(converted.idea_id, "idea_1")
 
+        payload = {
+            "content_opportunity_id": "opportunity_1",
+            "workspace_id": "internal",
+            "project_id": "example",
+            "trend_pattern_id": "trend_1",
+            "title": "Create a reflective explanation post",
+            "summary": "Use trend evidence as a recommendation only.",
+        }
+
+        for direct_idea_id in (None, "", "   "):
+            with self.subTest(direct_idea_id=direct_idea_id):
+                with self.assertRaisesRegex(ValidationError, "requires a non-empty idea_id"):
+                    ContentOpportunity(
+                        **payload,
+                        status=ContentOpportunityStatus.CONVERTED,
+                        idea_id=direct_idea_id,
+                    )
+
+        converted = ContentOpportunity(
+            **payload,
+            status=ContentOpportunityStatus.CONVERTED,
+            idea_id="idea_1",
+        )
+        draft = ContentOpportunity(**payload)
+
+        self.assertEqual(converted.idea_id, "idea_1")
+        self.assertIsNone(draft.idea_id)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,13 +25,17 @@ def main() -> int:
     try:
         status = ContentOpportunityStatus(args[1]) if len(args) == 2 else None
         items = service().list_content_opportunities(args[0], status=status)
+        human_lines = [
+            f"content_opportunity_id={item.content_opportunity_id} status={item.status.value}"
+            for item in items
+        ]
+        if not human_lines:
+            human_lines = ["content_opportunities_found=0"]
+
         return dump_success(
             {"content_opportunities": [item.model_dump(mode="json") for item in items]},
             json_mode,
-            [
-                f"content_opportunity_id={item.content_opportunity_id} status={item.status.value}"
-                for item in items
-            ],
+            human_lines,
         )
     except Exception as exc:
         return error(str(exc), json_mode, type(exc).__name__)
