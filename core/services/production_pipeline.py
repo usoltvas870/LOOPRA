@@ -142,40 +142,74 @@ class ProductionPipelineService:
             )
 
         brief = self._brief_repo.load_brief(project_id, render_job.input_snapshot["brief_id"])
+        project_root = resolve_project_dir(project_id)
+
+        render_dir_norm = f"storage/{project_id}/renders/{render_job.render_job_id}"
 
         if brief.content_format in (ContentFormat.SHORT_VERTICAL_VIDEO, ContentFormat.AMBIENT_VERTICAL_VIDEO):
-            artifacts = [
-                ("final_video", "final_video.mp4", "video/mp4", OutputFileType.VIDEO),
-                ("subtitles", "subtitles.srt", "text/srt", OutputFileType.METADATA),
-                ("audio_only", "audio_only.mp3", "audio/mpeg", OutputFileType.AUDIO),
-                ("cover", "cover.png", "image/png", OutputFileType.IMAGE),
-            ]
+            from core.tools.video.renderer import render_narrative_video
+
+            render_output_dir = Path(render_dir_norm)
+            render_result = render_narrative_video(brief, render_output_dir, project_root)
+
+            artifact_map = {
+                "final_video": ("final_video", "final_video.mp4", "video/mp4", OutputFileType.VIDEO),
+                "subtitles": ("subtitles", "subtitles.srt", "text/srt", OutputFileType.METADATA),
+                "audio_only": ("audio_only", "audio_only.mp3", "audio/mpeg", OutputFileType.AUDIO),
+                "cover": ("cover", "cover.png", "image/png", OutputFileType.IMAGE),
+            }
+            created_artifacts: list[tuple[str, str, str, OutputFileType]] = []
+            for key, spec in artifact_map.items():
+                if key in render_result and render_result[key].exists():
+                    suffix, rel_path, mime, file_type = spec
+                    output_file = OutputFile(
+                        output_file_id=build_entity_id("of"),
+                        workspace_id=render_job.workspace_id,
+                        project_id=render_job.project_id,
+                        render_job_id=render_job.render_job_id,
+                        file_type=file_type,
+                        path=str(render_result[key]),
+                        mime_type=mime,
+                    )
+                    self._output_file_repo.save_output_file(output_file)
+                    created_artifacts.append(spec)
+
+            artifact_count = len(created_artifacts)
         elif brief.content_format == ContentFormat.INSTAGRAM_CAROUSEL:
             slide_count = brief.output.slide_count or len(brief.slides) or 1
             artifacts = [
-                (f"slide_{i:02d}", f"carousel/slide_{i:02d}.png", "image/png", OutputFileType.IMAGE)
+                (f"slide_{i:02d}", f"{render_dir_norm}/carousel/slide_{i:02d}.png", "image/png", OutputFileType.IMAGE)
                 for i in range(1, slide_count + 1)
             ]
+            for suffix, rel_path, mime, file_type in artifacts:
+                output_file = OutputFile(
+                    output_file_id=build_entity_id("of"),
+                    workspace_id=render_job.workspace_id,
+                    project_id=render_job.project_id,
+                    render_job_id=render_job.render_job_id,
+                    file_type=file_type,
+                    path=rel_path,
+                    mime_type=mime,
+                )
+                self._output_file_repo.save_output_file(output_file)
+            artifact_count = len(artifacts)
         else:
-            artifacts = [
-                ("text_output", "output.txt", "text/plain", OutputFileType.TEXT),
-            ]
-
-        render_dir = f"storage/{project_id}/renders/{render_job.render_job_id}"
-
-        for suffix, rel_path, mime, file_type in artifacts:
+            render_dir_path = Path(render_dir_norm)
+            render_dir_path.mkdir(parents=True, exist_ok=True)
+            text_path = render_dir_path / "output.txt"
+            text_path.write_text("", encoding="utf-8")
             output_file = OutputFile(
                 output_file_id=build_entity_id("of"),
                 workspace_id=render_job.workspace_id,
                 project_id=render_job.project_id,
                 render_job_id=render_job.render_job_id,
-                file_type=file_type,
-                path=f"{render_dir}/{rel_path}",
-                mime_type=mime,
+                file_type=OutputFileType.TEXT,
+                path=str(text_path),
+                mime_type="text/plain",
             )
             self._output_file_repo.save_output_file(output_file)
+            artifact_count = 1
 
-        artifact_count = len(artifacts)
         snapshot = dict(render_job.input_snapshot)
         snapshot["artifact_count"] = artifact_count
 
