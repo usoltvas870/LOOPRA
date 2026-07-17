@@ -18,6 +18,7 @@ from .enums import (
     MetricSnapshotStatus,
     MetricSourceType,
     OutputFileType,
+    ProductionBriefStatus,
     ProjectStatus,
     PublicationMethod,
     PublicationStatus,
@@ -34,6 +35,7 @@ from .transitions import (
     MARKET_SIGNAL_STATUS_TRANSITIONS,
     TREND_PATTERN_STATUS_TRANSITIONS,
     CONTENT_OPPORTUNITY_STATUS_TRANSITIONS,
+    PRODUCTION_BRIEF_STATUS_TRANSITIONS,
     PUBLICATION_STATUS_TRANSITIONS,
     RENDER_JOB_STATUS_TRANSITIONS,
     SCENARIO_STATUS_TRANSITIONS,
@@ -396,5 +398,141 @@ class MetricSnapshot(ProjectScopedModel):
             current_status=self.status,
             next_status=next_status,
             transitions=METRIC_SNAPSHOT_STATUS_TRANSITIONS,
+        )
+        return validated_model_copy(self, status=next_status, updated_at=utc_now())
+
+
+class ProductionSceneImageAnimation(DomainModel):
+    type: str = "slow_zoom"
+    from_scale: float = Field(default=1.0, ge=1.0, le=2.0)
+    to_scale: float = Field(default=1.08, ge=1.0, le=2.0)
+    easing: str = "cubic-in-out"
+    pan_x_enabled: bool = False
+    pan_y_enabled: bool = False
+
+
+class SceneTextOverlay(DomainModel):
+    text: str = Field(min_length=1)
+    start_sec: float = Field(ge=0.0)
+    duration_sec: float = Field(ge=0.0)
+    font_size: int = Field(default=48, ge=8, le=200)
+    color: str = "#FFFFFF"
+    y_position: float = Field(default=0.15, ge=0.0, le=1.0)
+    phase: str = "single"
+
+
+class ProductionScene(DomainModel):
+    index: int = Field(ge=0)
+    purpose: str = "main"
+    image_source: str = Field(min_length=1)
+    duration_sec: float = Field(ge=0.5)
+    narration_text: str = ""
+    animation: ProductionSceneImageAnimation = Field(default_factory=ProductionSceneImageAnimation)
+    text_overlay: SceneTextOverlay | None = None
+    transition_type: str = "dissolve"
+    transition_duration: float = 0.5
+
+
+class ProductionAudio(DomainModel):
+    voiceover_path: str = ""
+    music_path: str = ""
+    music_volume: float = Field(default=0.15, ge=0.0, le=1.0)
+    ducking_enabled: bool = True
+    ducking_reduction_db: int = Field(default=12, ge=0, le=30)
+    voiceover_enabled: bool = False
+    tts_provider: str | None = None
+    tts_profile: str | None = None
+    tts_text: str | None = None
+
+
+class ProductionSubtitles(DomainModel):
+    enabled: bool = True
+    mode: str = "manual"
+    font_path: str = ""
+    font_size: int = Field(default=50, ge=8, le=200)
+    color: str = "#FFFFFF"
+    stroke_color: str = "#000000"
+    stroke_width: float = Field(default=3.0, ge=0.0, le=10.0)
+    y_position: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class ProductionOutput(DomainModel):
+    aspect_ratio: str = "9:16"
+    resolution_width: int = 1080
+    resolution_height: int = 1920
+    fps: int = 24
+    output_format: str = "mp4"
+    duration_sec: float | None = None
+    slide_count: int | None = None
+    generate_srt: bool = True
+    generate_cover: bool = True
+    generate_audio_only: bool = True
+    generate_preview: bool = False
+
+
+class ProductionBrand(DomainModel):
+    logo_path: str = ""
+    logo_position: str = "top-right"
+    website_text: str = ""
+    website_start_sec: float = 0.0
+    website_duration_sec: float = 0.0
+    watermark_enabled: bool = False
+    colors_primary: str = ""
+    colors_accent: str = ""
+    colors_background_dark: str = ""
+    colors_text_light: str = ""
+    colors_text_muted: str = ""
+    fonts_heading: str = ""
+    fonts_body: str = ""
+    gradient_css: str = ""
+
+
+class ProductionQA(DomainModel):
+    check_resolution: bool = True
+    check_duration: bool = True
+    check_audio: bool = True
+    check_subtitles: bool = True
+    check_slide_count: bool = False
+    safe_zone_top: int = 120
+    safe_zone_bottom: int = 200
+    safe_zone_left: int = 60
+    safe_zone_right: int = 60
+
+
+class ProductionSlide(DomainModel):
+    slide_number: int = Field(ge=1, le=10)
+    template: str = "cover"
+    heading: str = ""
+    subheading: str = ""
+    body: str = ""
+    list_items: list[str] = Field(default_factory=list)
+    cta: str = ""
+    visual_hint: str = ""
+    background: str = "bg_gradient_dark"
+    brand_element: str = ""
+    tone: str = ""
+
+
+class ProductionBrief(ProjectScopedModel):
+    production_brief_id: str = Field(min_length=1)
+    scenario_id: str = Field(min_length=1)
+    content_format: ContentFormat = ContentFormat.TEXT_SOCIAL_POST
+    production_variant: str = ""
+    target_platforms: list[PublishingPlatform] = Field(default_factory=list)
+    scenes: list[ProductionScene] = Field(default_factory=list)
+    audio: ProductionAudio = Field(default_factory=ProductionAudio)
+    subtitles: ProductionSubtitles = Field(default_factory=ProductionSubtitles)
+    output: ProductionOutput = Field(default_factory=ProductionOutput)
+    brand: ProductionBrand = Field(default_factory=ProductionBrand)
+    slides: list[ProductionSlide] = Field(default_factory=list)
+    qa: ProductionQA = Field(default_factory=ProductionQA)
+    status: ProductionBriefStatus = ProductionBriefStatus.DRAFT
+
+    def transition_to(self, next_status: ProductionBriefStatus) -> "ProductionBrief":
+        validate_status_transition(
+            entity_name="ProductionBrief",
+            current_status=self.status,
+            next_status=next_status,
+            transitions=PRODUCTION_BRIEF_STATUS_TRANSITIONS,
         )
         return validated_model_copy(self, status=next_status, updated_at=utc_now())

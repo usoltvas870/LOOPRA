@@ -11,6 +11,7 @@ from .enums import (
     MarketSignalStatus,
     TrendPatternStatus,
     ContentOpportunityStatus,
+    ProductionBriefStatus,
     PublicationStatus,
     RenderJobStatus,
     ScenarioStatus,
@@ -180,6 +181,16 @@ CONTENT_OPPORTUNITY_STATUS_TRANSITIONS: dict[ContentOpportunityStatus, set[Conte
     ContentOpportunityStatus.DEFERRED: {ContentOpportunityStatus.APPROVED, ContentOpportunityStatus.ARCHIVED},
     ContentOpportunityStatus.CONVERTED: {ContentOpportunityStatus.ARCHIVED},
     ContentOpportunityStatus.ARCHIVED: set(),
+}
+
+
+PRODUCTION_BRIEF_STATUS_TRANSITIONS: dict[str, list[str]] = {
+    ProductionBriefStatus.DRAFT: [ProductionBriefStatus.VALIDATED],
+    ProductionBriefStatus.VALIDATED: [ProductionBriefStatus.APPROVED, ProductionBriefStatus.DRAFT],
+    ProductionBriefStatus.APPROVED: [ProductionBriefStatus.IN_PROGRESS, ProductionBriefStatus.DRAFT],
+    ProductionBriefStatus.IN_PROGRESS: [ProductionBriefStatus.COMPLETED],
+    ProductionBriefStatus.COMPLETED: [ProductionBriefStatus.ARCHIVED],
+    ProductionBriefStatus.ARCHIVED: [],
 }
 
 

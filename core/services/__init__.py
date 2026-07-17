@@ -47,13 +47,17 @@ __all__ = [
     "build_analytics_service",
     "build_loop_orchestrator",
     "build_production_lifecycle_service",
+    "build_production_pipeline_service",
     "build_publishing_service",
     "FileSystemContentItemRepository",
     "FileSystemExportPackageRepository",
     "FileSystemIdeaRepository",
     "FileSystemMetricSnapshotRepository",
+    "FileSystemOutputFileRepository",
     "FileSystemProjectRepository",
+    "FileSystemProductionBriefRepository",
     "FileSystemPublicationRepository",
+    "FileSystemRenderJobRepository",
     "FileSystemScenarioRepository",
     "IdeaBankValidationError",
     "IdeaService",
@@ -62,10 +66,14 @@ __all__ = [
     "ProjectService",
     "ProductionLifecycleService",
     "ProductionLifecycleValidationError",
+    "ProductionPipelineService",
+    "ProductionPipelineValidationError",
     "PublishingService",
     "PublishingValidationError",
     "ScenarioService",
     "ScenarioStudioValidationError",
+    "FileTTSService",
+    "TTSService",
     "WorkspaceService",
 ]
 
@@ -77,3 +85,12 @@ from .intelligence import (
     FileSystemTrendPatternRepository,
     build_content_intelligence_service,
 )
+from .production_pipeline import (
+    FileSystemOutputFileRepository,
+    FileSystemProductionBriefRepository,
+    FileSystemRenderJobRepository,
+    ProductionPipelineService,
+    ProductionPipelineValidationError,
+    build_production_pipeline_service,
+)
+from .tts import FileTTSService, TTSService

@@ -41,5 +41,79 @@
         "No medical diagnosis claims."
       ]
     }
+  },
+  "production": {
+    "templates_dir": "projects/nura/templates",
+    "formats": {
+      "short_vertical_video": {
+        "enabled": true,
+        "aspect_ratio": "9:16",
+        "resolution": {"width": 1080, "height": 1920},
+        "fps": 24,
+        "max_duration_sec": 90,
+        "output_format": "mp4"
+      },
+      "ambient_vertical_video": {
+        "enabled": true,
+        "aspect_ratio": "9:16",
+        "resolution": {"width": 1080, "height": 1920},
+        "fps": 24,
+        "default_duration_sec": 15,
+        "output_format": "mp4"
+      },
+      "instagram_carousel": {
+        "enabled": true,
+        "aspect_ratio": "4:5",
+        "resolution": {"width": 1080, "height": 1350},
+        "default_slide_count": 7,
+        "min_slides": 3,
+        "max_slides": 10,
+        "output_format": "png"
+      }
+    },
+    "platforms": {
+      "tiktok": {
+        "safe_zone_top": 130,
+        "safe_zone_bottom": 240,
+        "safe_zone_left": 60,
+        "safe_zone_right": 60,
+        "max_duration_sec": 180
+      },
+      "instagram": {
+        "safe_zone_top": 120,
+        "safe_zone_bottom": 200,
+        "safe_zone_left": 60,
+        "safe_zone_right": 60,
+        "max_duration_sec": 90
+      },
+      "youtube_shorts": {
+        "safe_zone_top": 120,
+        "safe_zone_bottom": 200,
+        "safe_zone_left": 60,
+        "safe_zone_right": 60,
+        "max_duration_sec": 60
+      },
+      "vk": {
+        "safe_zone_top": 100,
+        "safe_zone_bottom": 180,
+        "safe_zone_left": 50,
+        "safe_zone_right": 50,
+        "max_duration_sec": 180
+      }
+    },
+    "brand_assets": {
+      "logo_light": "projects/nura/assets/logo_light.png",
+      "logo_dark": "projects/nura/assets/logo_dark.png",
+      "font_heading": "Cormorant Garamond, Georgia, serif",
+      "font_body": "DM Sans, Arial, sans-serif",
+      "colors": {
+        "primary": "#D97A32",
+        "accent": "#8C6A3B",
+        "background_dark": "#0B0B0B",
+        "text_light": "#F5F0EB",
+        "text_muted": "#A0988C"
+      },
+      "gradient": "radial-gradient(circle at 30% 20%, rgba(217,122,50,0.08), transparent 60%), linear-gradient(135deg, #0B0B0B, #0F1A17)"
+    }
   }
 }

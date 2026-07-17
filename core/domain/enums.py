@@ -33,6 +33,9 @@ class BrandProfileStatus(StrEnum):
 class ContentFormat(StrEnum):
     TEXT_SOCIAL_POST = "text_social_post"
     DIALOG_MINISERIES = "dialog_miniseries"
+    SHORT_VERTICAL_VIDEO = "short_vertical_video"
+    AMBIENT_VERTICAL_VIDEO = "ambient_vertical_video"
+    INSTAGRAM_CAROUSEL = "instagram_carousel"
 
 
 class PublishingPlatform(StrEnum):
@@ -140,4 +143,13 @@ class ContentOpportunityStatus(StrEnum):
     REJECTED = "rejected"
     DEFERRED = "deferred"
     CONVERTED = "converted"
+    ARCHIVED = "archived"
+
+
+class ProductionBriefStatus(StrEnum):
+    DRAFT = "draft"
+    VALIDATED = "validated"
+    APPROVED = "approved"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
     ARCHIVED = "archived"
