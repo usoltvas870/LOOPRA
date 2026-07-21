@@ -45,6 +45,38 @@ It does NOT describe:
 - UI components, API contracts or database schemas;
 - specific AI model providers, prompts or code-level implementation.
 
+## Current Bounded Comic Package Implementation
+
+The currently verified production layer includes one bounded
+`DIALOG_MINISERIES` package flow in addition to the broader blueprint in
+this document:
+
+```text
+ProductionBrief
+→ one ordered comic frame batch
+→ optional Instagram contain adaptation
+→ optional master video
+→ requested TikTok / YouTube Shorts / VK Clips videos
+→ QA of every requested output
+→ comic/manifest.json
+→ atomic OutputFile registration
+→ RenderJob.RENDERED
+```
+
+The current package root is
+`storage/<project_id>/renders/<render_job_id>/comic/`. Instagram reuses
+the completed comic frames and adapts them to 1080x1350 with uniform
+contain; it does not use the `ProductionSlide` renderer and does not crop,
+stretch or redraw text. Platform MP4s continue to use the shared video
+renderer. The schema-versioned manifest records only QA-verified artifacts
+by safe relative path, size, SHA-256, MIME and available media metadata.
+Registration and cleanup are all-or-nothing within the current job.
+
+This implementation is a verified filesystem package, not a ZIP or a
+publishing action. Autopublishing, social APIs, captions/hashtags, teaser
+or reorder logic, animated bubbles and platform-specific music remain out
+of scope.
+
 ---
 
 # 1. Purpose and Scope

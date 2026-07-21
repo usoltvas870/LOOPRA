@@ -11,6 +11,7 @@ from core.domain import (
     OutputFileType,
     ProductionBrief,
     ProductionBriefStatus,
+    PublishingPlatform,
     RenderJob,
     RenderJobStatus,
 )
@@ -61,7 +62,10 @@ class FileSystemOutputFileRepository(FileSystemProjectModelRepository[OutputFile
 
     def list_output_files_by_render_job(self, project_id: str, render_job_id: str) -> list[OutputFile]:
         all_files = self.list_models(project_id)
-        return sorted((f for f in all_files if f.render_job_id == render_job_id), key=lambda item: item.path)
+        return sorted(
+            (f for f in all_files if f.render_job_id == render_job_id),
+            key=lambda item: _comic_output_order_key(item.path),
+        )
 
     def load_output_file(self, project_id: str, output_file_id: str) -> OutputFile:
         return self.load_model(project_id, output_file_id, entity_name="output_file_id")
@@ -223,13 +227,20 @@ class ProductionPipelineService:
             from PIL import Image
 
             from core.tools.comic import (
+                INSTAGRAM_COMIC_PRESET,
                 build_comic_platform_video_brief,
+                build_comic_package_manifest,
                 calculate_brief_video_duration,
+                canonical_comic_platforms,
                 render_comic_frames,
+                render_comic_instagram_carousel,
                 resolve_comic_platform_video_presets,
+                write_comic_package_manifest,
             )
             from core.tools.qa import (
+                check_comic_instagram_output,
                 check_comic_output,
+                check_comic_package_manifest,
                 check_platform_video_package,
                 check_video_output,
             )
@@ -257,7 +268,31 @@ class ProductionPipelineService:
                 if not qa_result.passed:
                     raise RuntimeError("Comic QA failed: " + "; ".join(qa_result.errors))
 
+                instagram_paths: list[Path] = []
+                if PublishingPlatform.INSTAGRAM in brief.target_platforms:
+                    instagram_dir = render_output_dir / "platforms" / INSTAGRAM_COMIC_PRESET.output_slug
+                    background = brief.brand.colors_background_dark.strip() or INSTAGRAM_COMIC_PRESET.background
+                    instagram_paths = render_comic_instagram_carousel(
+                        scene_paths,
+                        instagram_dir,
+                        INSTAGRAM_COMIC_PRESET,
+                        render_job_root=render_job_root,
+                        background=background,
+                    )
+                    instagram_qa_result = check_comic_instagram_output(
+                        instagram_dir,
+                        source_frames=scene_paths,
+                        expected_size=(INSTAGRAM_COMIC_PRESET.width, INSTAGRAM_COMIC_PRESET.height),
+                        filename_width=INSTAGRAM_COMIC_PRESET.filename_width,
+                        render_job_root=render_job_root,
+                    )
+                    if not instagram_qa_result.passed:
+                        raise RuntimeError(
+                            "Comic Instagram QA failed: " + "; ".join(instagram_qa_result.errors)
+                        )
+
                 master_render_result: dict[str, Path] = {}
+                video_qa_by_path = {}
                 if brief.output.generate_comic_master_video:
                     derived_brief = _build_comic_video_brief(brief, scene_paths)
                     video_output_dir = render_output_dir / "video"
@@ -278,9 +313,11 @@ class ProductionPipelineService:
                     )
                     if not video_qa_result.passed:
                         raise RuntimeError("Comic video QA failed: " + "; ".join(video_qa_result.errors))
+                    video_qa_by_path[final_video.resolve()] = video_qa_result
 
-                platform_render_results: list[tuple[str, dict[str, Path]]] = []
+                platform_render_results: list[tuple[PublishingPlatform, str, dict[str, Path]]] = []
                 platform_final_videos: dict[str, Path] = {}
+                platform_videos_by_id: dict[PublishingPlatform, Path] = {}
                 for preset in resolve_comic_platform_video_presets(brief.target_platforms):
                     platform_output_dir = render_output_dir / "platforms" / preset.output_slug
                     platform_brief = build_comic_platform_video_brief(
@@ -317,8 +354,10 @@ class ProductionPipelineService:
                             f"Comic platform video QA failed for {preset.platform.value}: "
                             + "; ".join(video_qa_result.errors)
                         )
-                    platform_render_results.append((preset.output_slug, platform_result))
+                    platform_render_results.append((preset.platform, preset.output_slug, platform_result))
                     platform_final_videos[preset.output_slug] = final_video
+                    platform_videos_by_id[preset.platform] = final_video
+                    video_qa_by_path[final_video.resolve()] = video_qa_result
 
                 if platform_final_videos:
                     package_qa_result = check_platform_video_package(
@@ -329,6 +368,49 @@ class ProductionPipelineService:
                         raise RuntimeError(
                             "Comic platform package QA failed: "
                             + "; ".join(package_qa_result.errors)
+                        )
+
+                manifest_path: Path | None = None
+                if canonical_comic_platforms(brief.target_platforms):
+                    master_artifacts = []
+                    for key, kind in (
+                        ("final_video", "master_video"),
+                        ("cover", "master_cover"),
+                        ("audio_only", "master_audio"),
+                    ):
+                        path = master_render_result.get(key)
+                        if path is not None and path.is_file():
+                            master_artifacts.append((kind, path))
+                    manifest = build_comic_package_manifest(
+                        brief,
+                        render_job,
+                        render_output_dir,
+                        comic_frames=scene_paths,
+                        instagram_slides=instagram_paths,
+                        master_artifacts=master_artifacts,
+                        platform_videos=platform_videos_by_id,
+                        video_metadata=video_qa_by_path,
+                    )
+                    manifest_path = write_comic_package_manifest(
+                        manifest, render_output_dir / "manifest.json"
+                    )
+                    requested_platforms = [
+                        platform.value for platform in canonical_comic_platforms(brief.target_platforms)
+                    ]
+                    manifest_qa_result = check_comic_package_manifest(
+                        manifest_path,
+                        comic_root=render_output_dir,
+                        project_id=brief.project_id,
+                        production_brief_id=brief.production_brief_id,
+                        render_job_id=render_job.render_job_id,
+                        scene_count=len(brief.scenes),
+                        requested_platforms=requested_platforms,
+                        video_metadata=video_qa_by_path,
+                    )
+                    if not manifest_qa_result.passed:
+                        raise RuntimeError(
+                            "Comic package manifest QA failed: "
+                            + "; ".join(manifest_qa_result.errors)
                         )
             except Exception:
                 _cleanup_comic_artifacts(render_output_dir)
@@ -349,6 +431,19 @@ class ProductionPipelineService:
                 )
                 for scene_path in scene_paths
             ]
+            pending_output_files.extend(
+                OutputFile(
+                    output_file_id=build_entity_id("of"),
+                    workspace_id=render_job.workspace_id,
+                    project_id=render_job.project_id,
+                    render_job_id=render_job.render_job_id,
+                    file_type=OutputFileType.IMAGE,
+                    path=str(slide_path),
+                    mime_type="image/png",
+                    size_bytes=slide_path.stat().st_size,
+                )
+                for slide_path in instagram_paths
+            )
             video_artifacts = (
                 ("final_video", "video/mp4", OutputFileType.VIDEO),
                 ("cover", "image/png", OutputFileType.IMAGE),
@@ -369,7 +464,7 @@ class ProductionPipelineService:
                             size_bytes=artifact_path.stat().st_size,
                         )
                     )
-            for _platform_slug, platform_result in platform_render_results:
+            for _platform, _platform_slug, platform_result in platform_render_results:
                 artifact_path = platform_result.get("final_video")
                 if artifact_path is not None and artifact_path.is_file():
                     pending_output_files.append(
@@ -384,6 +479,19 @@ class ProductionPipelineService:
                             size_bytes=artifact_path.stat().st_size,
                         )
                     )
+            if manifest_path is not None:
+                pending_output_files.append(
+                    OutputFile(
+                        output_file_id=build_entity_id("of"),
+                        workspace_id=render_job.workspace_id,
+                        project_id=render_job.project_id,
+                        render_job_id=render_job.render_job_id,
+                        file_type=OutputFileType.METADATA,
+                        path=str(manifest_path),
+                        mime_type="application/json",
+                        size_bytes=manifest_path.stat().st_size,
+                    )
+                )
             saved_output_files: list[OutputFile] = []
             try:
                 for output_file in pending_output_files:
@@ -541,10 +649,53 @@ def _build_comic_video_brief(brief: ProductionBrief, frame_paths: list[Path]) ->
 
 
 def _cleanup_comic_artifacts(comic_dir: Path) -> None:
-    import shutil
-
+    comic_dir = Path(comic_dir)
     for frame_path in comic_dir.glob("scene_*.png"):
         frame_path.unlink(missing_ok=True)
-    for artifact_dir in (comic_dir / "video", comic_dir / "platforms"):
+    (comic_dir / "manifest.json").unlink(missing_ok=True)
+    (comic_dir / ".manifest.json.tmp").unlink(missing_ok=True)
+    instagram_dir = comic_dir / "platforms" / "instagram"
+    if instagram_dir.is_dir():
+        for path in instagram_dir.iterdir():
+            if path.is_file() and (path.stem.isdigit() and path.suffix == ".png" or ".tmp" in path.name):
+                path.unlink(missing_ok=True)
+    known_names = {
+        "final_video.mp4",
+        "cover.png",
+        "audio_only.mp3",
+        "subtitles.srt",
+        "subtitles.ass",
+        "preview.mp4",
+    }
+    artifact_dirs = [comic_dir / "video"] + [
+        comic_dir / "platforms" / slug
+        for slug in ("tiktok", "youtube_shorts", "vk_clips")
+    ]
+    for artifact_dir in artifact_dirs:
         if artifact_dir.is_dir():
-            shutil.rmtree(artifact_dir)
+            for path in artifact_dir.iterdir():
+                if path.is_file() and (path.name in known_names or ".tmp" in path.name):
+                    path.unlink(missing_ok=True)
+    for directory in [instagram_dir, *artifact_dirs, comic_dir / "platforms"]:
+        if directory.is_dir() and not any(directory.iterdir()):
+            directory.rmdir()
+
+
+def _comic_output_order_key(path_value: str) -> tuple[int, int, str]:
+    path = Path(path_value)
+    name = path.name
+    parts = path.as_posix().split("/")
+    if name.startswith("scene_") and name.endswith(".png"):
+        return 0, 0, name
+    if "platforms/instagram" in path.as_posix() and path.stem.isdigit():
+        return 1, 0, name
+    if "/video/" in f"/{path.as_posix()}/":
+        master_rank = {"final_video.mp4": 0, "cover.png": 1, "audio_only.mp3": 2}
+        return 2, master_rank.get(name, 9), name
+    platform_rank = {"tiktok": 3, "youtube_shorts": 4, "vk_clips": 5}
+    for slug, rank in platform_rank.items():
+        if slug in parts:
+            return rank, 0, name
+    if name == "manifest.json":
+        return 6, 0, name
+    return 7, 0, path.as_posix()

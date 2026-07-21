@@ -613,3 +613,41 @@ Limitations:
 - No package manifest or shared publish package.
 - No comic CLI or autopublishing.
 - This is the bounded three-platform video preset slice, not the complete multi-platform comic package.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline — Four-Platform Package Export
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- One `DIALOG_MINISERIES` `RenderJob` now produces one logical comic package from a single ordered comic-frame batch.
+- `PublishingPlatform.INSTAGRAM` selects a static adapter over the already rendered comic PNGs. The adapter performs uniform contain from 9:16 to the immutable 1080x1350 (4:5) preset; it does not crop, stretch, redraw bubble text or mutate source/comic frames.
+- Instagram background is resolved from `ProductionBrand.colors_background_dark`; an immutable neutral RGBA preset value is the project-agnostic fallback.
+- TikTok, YouTube Shorts and VK Clips continue to use the existing `render_narrative_video()` renderer and their immutable video presets.
+- The `RenderJob` comic directory is the package root. `comic/manifest.json` uses schema version `1.0`, safe relative paths, deterministic artifact order, MIME, byte size, SHA-256 and image/video metadata already available from QA.
+- Manifest intermediates (`scene_*.png`) are distinct from deliverables (Instagram slides, platform/master media). The manifest never hashes itself and is registered last as `OutputFileType.METADATA`.
+- Stable `OutputFile` order is comic frames, Instagram slides, optional master artifacts, TikTok, YouTube Shorts, VK Clips and manifest.
+- Rendering, platform QA, package QA, manifest write/QA and repository failures leave the job `FAILED`, remove only known current-job artifacts and records, and preserve source images, other jobs and unrelated files.
+
+Verification:
+
+- production brief contract: 21 passed;
+- Instagram preset/renderer: 6 passed, 3 subtests passed;
+- manifest model/writer/QA: 5 passed, 12 subtests passed;
+- comic foundation/platform regression: 34 passed, 9 subtests passed;
+- production service and QA: 35 passed;
+- video regression: 16 passed;
+- ordinary carousel regression: 27 passed;
+- full suite: 373 passed, 145 subtests passed;
+- real four-platform service smoke: PASS (3 scenes, 270x480 sources, 1080x1350 Instagram slides, 3 comic PNG + 3 Instagram PNG + 3 MP4 + manifest, real Pillow/FFmpeg/ffprobe/manifest QA, one comic-frame batch, deterministic 10-record `OutputFile` order, unchanged sources, no SRT/ASS, temporary MP4 or unrequested outputs).
+- smoke MP4 durations: TikTok 3.81s, YouTube Shorts 5.75s, VK Clips 4.76s.
+
+Limitations:
+
+- The package is a verified `RenderJob` directory, not a ZIP archive.
+- No autopublishing, social API integration, social captions, hashtags or cover generation is added.
+- No comic CLI, teaser scene, scene reordering, animated bubble reveal or platform-specific music is added.
+- The final 8–10 scene MVP acceptance run remains a separate next stage.

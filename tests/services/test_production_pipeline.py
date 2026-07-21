@@ -566,9 +566,11 @@ class ProductionPipelineServiceTests(unittest.TestCase):
             )
             self.assertEqual(video_qa.call_count, 4)
             output_files = self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id)
-            self.assertEqual(len(output_files), 7)
+            self.assertEqual(len(output_files), 8)
             self.assertEqual(sum(item.file_type == OutputFileType.IMAGE for item in output_files), 3)
             self.assertEqual(sum(item.file_type == OutputFileType.VIDEO for item in output_files), 4)
+            self.assertEqual(output_files[-1].file_type, OutputFileType.METADATA)
+            self.assertEqual(Path(output_files[-1].path).name, "manifest.json")
             self.assertTrue(all(item.size_bytes for item in output_files))
         finally:
             shutil.rmtree(output_root, ignore_errors=True)
@@ -632,7 +634,149 @@ class ProductionPipelineServiceTests(unittest.TestCase):
         finally:
             shutil.rmtree(output_root, ignore_errors=True)
 
-    def test_comic_three_platform_package_with_real_pillow_ffmpeg_and_ffprobe(self) -> None:
+    def test_instagram_qa_failure_preserves_foreign_file_and_registers_nothing(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        Image.new("RGB", (270, 480), "blue").save(source_dir / "instagram.png", "PNG")
+        brief = ProductionBrief(
+            workspace_id="internal",
+            project_id="nura",
+            production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_instagram_failure",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[PublishingPlatform.INSTAGRAM],
+            subtitles=ProductionSubtitles(font_path=str(font)),
+            scenes=[ProductionScene(
+                index=0,
+                image_source="assets/instagram.png",
+                duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker="nura", text="Ошибка QA", position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            )],
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+        instagram_dir = output_root / "comic" / "platforms" / "instagram"
+        instagram_dir.mkdir(parents=True)
+        foreign = instagram_dir / "notes.txt"
+        foreign.write_text("keep", encoding="utf-8")
+
+        try:
+            with patch(
+                "core.tools.qa.check_comic_instagram_output",
+                return_value=QAResult(passed=False, errors=["simulated Instagram QA failure"]),
+            ), patch("core.tools.carousel.renderer.render_carousel") as ordinary_carousel:
+                with self.assertRaisesRegex(RuntimeError, "simulated Instagram QA failure"):
+                    self.service.execute_render("nura", job.render_job_id)
+            ordinary_carousel.assert_not_called()
+            self.assertEqual(
+                self.render_job_repo.load_render_job("nura", job.render_job_id).status,
+                RenderJobStatus.FAILED,
+            )
+            self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+            self.assertTrue(foreign.is_file())
+            self.assertFalse((instagram_dir / "01.png").exists())
+            self.assertFalse((output_root / "comic" / "scene_01.png").exists())
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
+
+    def test_manifest_write_failure_cleans_instagram_package(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        Image.new("RGB", (270, 480), "blue").save(source_dir / "manifest.png", "PNG")
+        brief = ProductionBrief(
+            workspace_id="internal", project_id="nura",
+            production_brief_id=build_entity_id("brief"), scenario_id="scenario_manifest_failure",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[PublishingPlatform.INSTAGRAM],
+            subtitles=ProductionSubtitles(font_path=str(font)),
+            scenes=[ProductionScene(
+                index=0, image_source="assets/manifest.png", duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker="nura", text="Manifest", position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            )],
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+        try:
+            with patch("core.tools.comic.write_comic_package_manifest", side_effect=OSError("manifest write failed")):
+                with self.assertRaisesRegex(OSError, "manifest write failed"):
+                    self.service.execute_render("nura", job.render_job_id)
+            self.assertEqual(
+                self.render_job_repo.load_render_job("nura", job.render_job_id).status,
+                RenderJobStatus.FAILED,
+            )
+            self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+            self.assertFalse((output_root / "comic" / "scene_01.png").exists())
+            self.assertFalse((output_root / "comic" / "platforms" / "instagram" / "01.png").exists())
+            self.assertFalse((output_root / "comic" / "manifest.json").exists())
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
+
+    def test_manifest_qa_failure_cleans_instagram_package(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        Image.new("RGB", (270, 480), "blue").save(source_dir / "manifest_qa.png", "PNG")
+        brief = ProductionBrief(
+            workspace_id="internal", project_id="nura",
+            production_brief_id=build_entity_id("brief"), scenario_id="scenario_manifest_qa_failure",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[PublishingPlatform.INSTAGRAM],
+            subtitles=ProductionSubtitles(font_path=str(font)),
+            scenes=[ProductionScene(
+                index=0, image_source="assets/manifest_qa.png", duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker="nura", text="Manifest QA", position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            )],
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+        try:
+            with patch(
+                "core.tools.qa.check_comic_package_manifest",
+                return_value=QAResult(passed=False, errors=["manifest QA failed"]),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "manifest QA failed"):
+                    self.service.execute_render("nura", job.render_job_id)
+            self.assertEqual(
+                self.render_job_repo.load_render_job("nura", job.render_job_id).status,
+                RenderJobStatus.FAILED,
+            )
+            self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+            self.assertFalse((output_root / "comic" / "scene_01.png").exists())
+            self.assertFalse((output_root / "comic" / "platforms" / "instagram" / "01.png").exists())
+            self.assertFalse((output_root / "comic" / "manifest.json").exists())
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
+
+    def test_comic_four_platform_package_with_real_pillow_ffmpeg_ffprobe_and_manifest(self) -> None:
         from PIL import Image
         import hashlib
         import os
@@ -657,7 +801,16 @@ class ProductionPipelineServiceTests(unittest.TestCase):
         for index, (color, duration) in enumerate(zip(("#375A7F", "#7F5539", "#343A40"), (0.9, 1.0, 1.1), strict=True)):
             source_name = f"real_platform_{index}.png"
             source_path = source_dir / source_name
-            Image.new("RGB", (270, 480), color).save(source_path, "PNG")
+            image = Image.new("RGB", (270, 480), color)
+            pixels = image.load()
+            for point, marker in (
+                ((0, 0), (255, 0, 0)),
+                ((269, 0), (0, 255, 0)),
+                ((0, 479), (0, 0, 255)),
+                ((269, 479), (255, 255, 0)),
+            ):
+                pixels[point] = marker
+            image.save(source_path, "PNG")
             source_hashes.append(hashlib.sha256(source_path.read_bytes()).hexdigest())
             scenes.append(ProductionScene(
                 index=index,
@@ -681,6 +834,7 @@ class ProductionPipelineServiceTests(unittest.TestCase):
             scenario_id="scenario_real_comic_platforms",
             content_format=ContentFormat.DIALOG_MINISERIES,
             target_platforms=[
+                PublishingPlatform.INSTAGRAM,
                 PublishingPlatform.VK,
                 PublishingPlatform.YOUTUBE_SHORTS,
                 PublishingPlatform.TIKTOK,
@@ -731,15 +885,63 @@ class ProductionPipelineServiceTests(unittest.TestCase):
                 for path in platform_paths
             ]
             self.assertTrue(all(result.passed for result in qa_results))
-            self.assertEqual(len({round(result.duration_sec, 2) for result in qa_results}), 3)
-            self.assertEqual(len(list((output_root / "comic").glob("scene_*.png"))), 3)
+            self.assertEqual([round(result.duration_sec, 2) for result in qa_results], [3.81, 5.75, 4.76])
+            comic_paths = list((output_root / "comic").glob("scene_*.png"))
+            self.assertEqual(len(comic_paths), 3)
+            instagram_paths = [
+                output_root / "comic" / "platforms" / "instagram" / f"{index:02d}.png"
+                for index in range(1, 4)
+            ]
+            self.assertTrue(all(path.is_file() for path in instagram_paths))
+            self.assertTrue(all(Image.open(path).size == (1080, 1350) for path in instagram_paths))
+            comic_hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in comic_paths]
+            instagram_hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in instagram_paths]
+            self.assertTrue(all(comic_hash != source_hash for comic_hash, source_hash in zip(comic_hashes, source_hashes, strict=True)))
+            self.assertTrue(all(instagram_hash != comic_hash for instagram_hash, comic_hash in zip(instagram_hashes, comic_hashes, strict=True)))
+            self.assertEqual(
+                {path.name for path in (output_root / "comic" / "platforms").iterdir() if path.is_dir()},
+                {"instagram", "tiktok", "youtube_shorts", "vk_clips"},
+            )
+            self.assertEqual(len(list((output_root / "comic" / "platforms" / "instagram").glob("[0-9]*.png"))), 3)
             self.assertFalse(list((output_root / "comic").rglob("*.srt")))
             self.assertFalse(list((output_root / "comic").rglob("*.ass")))
             self.assertFalse([path for path in (output_root / "comic").rglob("*.mp4") if ".tmp" in path.name])
             output_files = self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id)
-            self.assertEqual(len(output_files), 6)
-            self.assertEqual(sum(item.file_type == OutputFileType.IMAGE for item in output_files), 3)
+            self.assertEqual(len(output_files), 10)
+            self.assertEqual(sum(item.file_type == OutputFileType.IMAGE for item in output_files), 6)
             self.assertEqual(sum(item.file_type == OutputFileType.VIDEO for item in output_files), 3)
+            self.assertEqual(Path(output_files[-1].path).name, "manifest.json")
+            self.assertEqual(
+                [Path(item.path).resolve().relative_to((output_root / "comic").resolve()).as_posix() for item in output_files],
+                [
+                    "scene_01.png", "scene_02.png", "scene_03.png",
+                    "platforms/instagram/01.png", "platforms/instagram/02.png", "platforms/instagram/03.png",
+                    "platforms/tiktok/final_video.mp4",
+                    "platforms/youtube_shorts/final_video.mp4",
+                    "platforms/vk_clips/final_video.mp4",
+                    "manifest.json",
+                ],
+            )
+            manifest_path = output_root / "comic" / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema_version"], "1.0")
+            self.assertEqual(
+                manifest["requested_platforms"],
+                ["instagram", "tiktok", "youtube_shorts", "vk"],
+            )
+            self.assertEqual(manifest["generated_platforms"], manifest["requested_platforms"])
+            self.assertFalse(any(item["kind"] == "master_video" for item in manifest["artifacts"]["deliverables"]))
+            artifacts = [
+                *manifest["artifacts"]["intermediates"],
+                *manifest["artifacts"]["deliverables"],
+            ]
+            self.assertEqual(len(artifacts), 9)
+            self.assertTrue(all(not Path(item["relative_path"]).is_absolute() for item in artifacts))
+            self.assertTrue(all(
+                hashlib.sha256((output_root / "comic" / item["relative_path"]).read_bytes()).hexdigest()
+                == item["sha256"]
+                for item in artifacts
+            ))
         finally:
             shutil.rmtree(output_root, ignore_errors=True)
 

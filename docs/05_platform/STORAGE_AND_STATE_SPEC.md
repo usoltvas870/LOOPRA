@@ -173,6 +173,18 @@ project-specific values are hardcoded.
 
 ```text
 storage/
+    {project_id}/
+        renders/
+            {render_job_id}/
+                comic/
+                    scene_01.png
+                    scene_02.png
+                    manifest.json              — present when comic platform outputs are requested
+                    platforms/
+                        instagram/01.png        — 1080x1350 contain adaptation
+                        tiktok/final_video.mp4
+                        youtube_shorts/final_video.mp4
+                        vk_clips/final_video.mp4
     smoke_projects/
         {project_id}/
             project.yaml                — copy of source config
@@ -202,6 +214,12 @@ storage/
 Runtime files are execution output — generated, local, and generally not
 tracked in version control. The entire `storage/` directory is excluded by
 `.gitignore` (`storage/*`), except for `storage/.gitkeep`.
+
+The comic `RenderJob` directory is one logical package root. Its manifest
+uses relative paths and references canonical artifacts in place; media is
+not copied for packaging. Comic frames are intermediates, platform outputs
+are deliverables, and the manifest is created and registered only after all
+requested output QA succeeds.
 
 ## 4.3. Boundary Rule
 

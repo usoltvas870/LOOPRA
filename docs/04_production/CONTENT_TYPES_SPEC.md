@@ -1122,8 +1122,11 @@ architecturally reserved.
 Future content types follow the LOOPRA evolution path:
 
 ```text
-Foundation MVP (current)
-    text_social_post only
+Foundation MVP and bounded production slices (current)
+    text_social_post
+    short/ambient vertical video
+    ProductionSlide Instagram carousel
+    DIALOG_MINISERIES comic frames and four-platform package export
         ↓
 Content Intelligence
     content type recommendations driven by market and brand analysis
