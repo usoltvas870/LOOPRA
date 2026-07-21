@@ -490,6 +490,7 @@ class ProductionOutput(DomainModel):
     generate_cover: bool = True
     generate_audio_only: bool = True
     generate_preview: bool = False
+    generate_comic_master_video: bool = False
 
 
 class ProductionBrand(DomainModel):

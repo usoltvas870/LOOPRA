@@ -69,6 +69,12 @@ class FileSystemOutputFileRepository(FileSystemProjectModelRepository[OutputFile
     def save_output_file(self, output_file: OutputFile) -> OutputFile:
         return self.save_model(output_file.project_id, output_file.output_file_id, output_file)
 
+    def delete_output_file(self, project_id: str, output_file_id: str) -> None:
+        safe_output_file_id = self._validate_entity_id(output_file_id, "output_file_id")
+        path = self._project_data_dir(project_id) / f"{safe_output_file_id}.json"
+        if path.exists():
+            path.unlink()
+
 
 class ProductionPipelineService:
     def __init__(
@@ -217,7 +223,8 @@ class ProductionPipelineService:
             from PIL import Image
 
             from core.tools.comic import render_comic_frames
-            from core.tools.qa import check_comic_output
+            from core.tools.qa import check_comic_output, check_video_output
+            from core.tools.video import render_narrative_video
 
             render_output_dir = Path(render_dir_norm) / "comic"
             try:
@@ -233,25 +240,80 @@ class ProductionPipelineService:
                 )
                 if not qa_result.passed:
                     raise RuntimeError("Comic QA failed: " + "; ".join(qa_result.errors))
+
+                render_result: dict[str, Path] = {}
+                if brief.output.generate_comic_master_video:
+                    derived_brief = _build_comic_video_brief(brief, scene_paths)
+                    video_output_dir = render_output_dir / "video"
+                    render_result = render_narrative_video(derived_brief, video_output_dir, project_root)
+                    final_video = render_result.get("final_video")
+                    if final_video is None:
+                        raise RuntimeError("Comic video renderer produced no final MP4")
+                    expected_duration = sum(scene.duration_sec for scene in brief.scenes) - sum(
+                        scene.transition_duration for scene in brief.scenes[:-1]
+                    )
+                    video_qa_result = check_video_output(
+                        final_video,
+                        expected_resolution=(brief.output.resolution_width, brief.output.resolution_height),
+                        expected_fps=brief.output.fps,
+                        expected_duration_sec=expected_duration,
+                        expected_video_codec="h264",
+                        expected_pixel_format="yuv420p",
+                    )
+                    if not video_qa_result.passed:
+                        raise RuntimeError("Comic video QA failed: " + "; ".join(video_qa_result.errors))
             except Exception:
+                _cleanup_comic_artifacts(render_output_dir)
                 failed = render_job.transition_to(RenderJobStatus.FAILED)
                 self._render_job_repo.save_render_job(failed)
                 raise
 
-            for scene_path in scene_paths:
-                self._output_file_repo.save_output_file(
-                    OutputFile(
-                        output_file_id=build_entity_id("of"),
-                        workspace_id=render_job.workspace_id,
-                        project_id=render_job.project_id,
-                        render_job_id=render_job.render_job_id,
-                        file_type=OutputFileType.IMAGE,
-                        path=str(scene_path),
-                        mime_type="image/png",
-                        size_bytes=scene_path.stat().st_size,
-                    )
+            pending_output_files = [
+                OutputFile(
+                    output_file_id=build_entity_id("of"),
+                    workspace_id=render_job.workspace_id,
+                    project_id=render_job.project_id,
+                    render_job_id=render_job.render_job_id,
+                    file_type=OutputFileType.IMAGE,
+                    path=str(scene_path),
+                    mime_type="image/png",
+                    size_bytes=scene_path.stat().st_size,
                 )
-            artifact_count = len(scene_paths)
+                for scene_path in scene_paths
+            ]
+            video_artifacts = (
+                ("final_video", "video/mp4", OutputFileType.VIDEO),
+                ("cover", "image/png", OutputFileType.IMAGE),
+                ("audio_only", "audio/mpeg", OutputFileType.AUDIO),
+            )
+            for key, mime_type, file_type in video_artifacts:
+                artifact_path = render_result.get(key)
+                if artifact_path is not None and artifact_path.is_file():
+                    pending_output_files.append(
+                        OutputFile(
+                            output_file_id=build_entity_id("of"),
+                            workspace_id=render_job.workspace_id,
+                            project_id=render_job.project_id,
+                            render_job_id=render_job.render_job_id,
+                            file_type=file_type,
+                            path=str(artifact_path),
+                            mime_type=mime_type,
+                            size_bytes=artifact_path.stat().st_size,
+                        )
+                    )
+            saved_output_files: list[OutputFile] = []
+            try:
+                for output_file in pending_output_files:
+                    self._output_file_repo.save_output_file(output_file)
+                    saved_output_files.append(output_file)
+            except Exception:
+                for output_file in saved_output_files:
+                    self._output_file_repo.delete_output_file(output_file.project_id, output_file.output_file_id)
+                _cleanup_comic_artifacts(render_output_dir)
+                failed = render_job.transition_to(RenderJobStatus.FAILED)
+                self._render_job_repo.save_render_job(failed)
+                raise
+            artifact_count = len(pending_output_files)
         else:
             render_dir_path = Path(render_dir_norm)
             render_dir_path.mkdir(parents=True, exist_ok=True)
@@ -381,3 +443,26 @@ def build_production_pipeline_service(projects_root: Path | None = None) -> Prod
         content_repo=FileSystemContentItemRepository(projects_root),
         project_service=project_service,
     )
+
+
+def _build_comic_video_brief(brief: ProductionBrief, frame_paths: list[Path]) -> ProductionBrief:
+    if len(frame_paths) != len(brief.scenes):
+        raise ProductionPipelineValidationError(
+            f"Comic frame count {len(frame_paths)} does not match scene count {len(brief.scenes)}"
+        )
+    derived = brief.model_copy(deep=True)
+    for scene, frame_path in zip(derived.scenes, frame_paths, strict=True):
+        scene.image_source = str(frame_path.resolve())
+    derived.subtitles.enabled = False
+    return derived
+
+
+def _cleanup_comic_artifacts(comic_dir: Path) -> None:
+    for frame_path in comic_dir.glob("scene_*.png"):
+        frame_path.unlink(missing_ok=True)
+    video_dir = comic_dir / "video"
+    if video_dir.is_dir():
+        for artifact_path in video_dir.iterdir():
+            if artifact_path.is_file():
+                artifact_path.unlink(missing_ok=True)
+        video_dir.rmdir()

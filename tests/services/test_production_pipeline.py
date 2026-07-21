@@ -29,6 +29,7 @@ from core.services.production_pipeline import (
     FileSystemRenderJobRepository,
     ProductionPipelineService,
     ProductionPipelineValidationError,
+    _build_comic_video_brief,
 )
 from core.services.projects import FileSystemProjectRepository, ProjectService
 from core.tools.qa import QAResult
@@ -284,11 +285,13 @@ class ProductionPipelineServiceTests(unittest.TestCase):
         output_dir = Path("storage") / "nura" / "renders" / render_job.render_job_id / "comic"
 
         try:
-            updated = self.service.execute_render("nura", render_job.render_job_id)
+            with patch("core.tools.video.render_narrative_video") as video_render:
+                updated = self.service.execute_render("nura", render_job.render_job_id)
             output_files = self.output_file_repo.list_output_files_by_render_job("nura", render_job.render_job_id)
             self.assertEqual(updated.status, RenderJobStatus.RENDERED)
             self.assertEqual([Path(item.path).name for item in output_files], ["scene_01.png", "scene_02.png", "scene_03.png"])
             self.assertTrue(all(Path(item.path).is_file() for item in output_files))
+            video_render.assert_not_called()
         finally:
             shutil.rmtree(output_dir.parent, ignore_errors=True)
 
@@ -318,6 +321,148 @@ class ProductionPipelineServiceTests(unittest.TestCase):
         failed = self.render_job_repo.load_render_job("nura", job.render_job_id)
         self.assertEqual(failed.status, RenderJobStatus.FAILED)
         self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+
+    def test_derived_comic_video_brief_preserves_original_contract(self) -> None:
+        source = ProductionScene(
+            index=0,
+            image_source="assets/source.png",
+            duration_sec=1.25,
+            narration_text="Narration",
+            comic_overlay=ComicOverlay(
+                speaker="nura", text="Bubble", position="top_left", tail_anchor=ComicTailAnchor(x=0.8, y=0.8)
+            ),
+        )
+        brief = ProductionBrief(
+            workspace_id="internal", project_id="nura", production_brief_id="brief_comic_copy",
+            scenario_id="scenario_comic_copy", content_format=ContentFormat.DIALOG_MINISERIES,
+            subtitles=ProductionSubtitles(enabled=True, font_path="font.ttf"), scenes=[source],
+            output=ProductionOutput(generate_comic_master_video=True, resolution_width=270, resolution_height=480, fps=24),
+        )
+
+        derived = _build_comic_video_brief(brief, [Path("storage/nura/renders/job/comic/scene_01.png")])
+
+        self.assertEqual(derived.scenes[0].duration_sec, brief.scenes[0].duration_sec)
+        self.assertEqual(derived.scenes[0].animation, brief.scenes[0].animation)
+        self.assertEqual(derived.scenes[0].transition_type, brief.scenes[0].transition_type)
+        self.assertEqual(derived.output, brief.output)
+        self.assertEqual(derived.audio, brief.audio)
+        self.assertFalse(derived.subtitles.enabled)
+        self.assertTrue(brief.subtitles.enabled)
+        self.assertEqual(brief.scenes[0].image_source, "assets/source.png")
+        self.assertEqual(brief.scenes[0].comic_overlay.text, "Bubble")
+
+    def test_comic_master_video_uses_existing_renderer_after_comic_qa(self) -> None:
+        from PIL import Image
+        import hashlib
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        scenes = []
+        for index, color in enumerate(("blue", "green", "purple")):
+            source_name = f"master_{index}.png"
+            Image.new("RGB", (270, 480), color).save(source_dir / source_name, "PNG")
+            scenes.append(ProductionScene(
+                index=index, image_source=f"assets/{source_name}", duration_sec=0.6,
+                transition_duration=0.1,
+                comic_overlay=ComicOverlay(
+                    speaker=("nura", "woman", "shadow")[index], text=f"Scene {index}",
+                    position="top_left", tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            ))
+        brief = ProductionBrief(
+            workspace_id="internal", project_id="nura", production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_comic_master", content_format=ContentFormat.DIALOG_MINISERIES,
+            subtitles=ProductionSubtitles(font_path=str(font)), scenes=scenes,
+            output=ProductionOutput(
+                resolution_width=270, resolution_height=480, fps=24,
+                generate_cover=False, generate_audio_only=False, generate_comic_master_video=True,
+            ),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        self.assertEqual(job.status, RenderJobStatus.RENDERING)
+        output_dir = Path("storage") / "nura" / "renders" / job.render_job_id
+        source_hashes = [
+            hashlib.sha256((source_dir / f"master_{index}.png").read_bytes()).hexdigest()
+            for index in range(3)
+        ]
+
+        try:
+            updated = self.service.execute_render("nura", job.render_job_id)
+            output_files = self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id)
+            self.assertEqual(updated.status, RenderJobStatus.RENDERED)
+            self.assertEqual([Path(item.path).name for item in output_files], [
+                "scene_01.png", "scene_02.png", "scene_03.png", "final_video.mp4",
+            ])
+            self.assertTrue((output_dir / "comic" / "video" / "final_video.mp4").is_file())
+            self.assertFalse((output_dir / "comic" / "video" / "subtitles.srt").exists())
+            self.assertFalse((output_dir / "comic" / "video" / "subtitles.ass").exists())
+            self.assertEqual(source_hashes, [
+                hashlib.sha256((source_dir / f"master_{index}.png").read_bytes()).hexdigest()
+                for index in range(3)
+            ])
+            self.assertTrue(all(
+                hashlib.sha256((output_dir / "comic" / f"scene_{index:02d}.png").read_bytes()).hexdigest()
+                != source_hashes[index - 1]
+                for index in range(1, 4)
+            ))
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
+
+    def test_comic_output_repository_failure_removes_registered_files_and_artifacts(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        scenes = []
+        for index, color in enumerate(("blue", "green")):
+            source_name = f"failure_{index}.png"
+            Image.new("RGB", (270, 480), color).save(source_dir / source_name, "PNG")
+            scenes.append(ProductionScene(
+                index=index, image_source=f"assets/{source_name}", duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker="nura", text=f"Failure {index}", position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            ))
+        brief = ProductionBrief(
+            workspace_id="internal", project_id="nura", production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_comic_repository_failure", content_format=ContentFormat.DIALOG_MINISERIES,
+            subtitles=ProductionSubtitles(font_path=str(font)), scenes=scenes,
+            output=ProductionOutput(resolution_width=270, resolution_height=480),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_dir = Path("storage") / "nura" / "renders" / job.render_job_id
+        original_save = self.output_file_repo.save_output_file
+        calls = 0
+
+        def fail_after_first(output_file: OutputFile) -> OutputFile:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("simulated output repository failure")
+            return original_save(output_file)
+
+        try:
+            with patch.object(self.output_file_repo, "save_output_file", side_effect=fail_after_first):
+                with self.assertRaises(OSError):
+                    self.service.execute_render("nura", job.render_job_id)
+            failed = self.render_job_repo.load_render_job("nura", job.render_job_id)
+            self.assertEqual(failed.status, RenderJobStatus.FAILED)
+            self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+            self.assertFalse((output_dir / "comic" / "scene_01.png").exists())
+            self.assertFalse((output_dir / "comic" / "scene_02.png").exists())
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
 
     def test_create_content_from_render(self) -> None:
         brief = ProductionBrief(

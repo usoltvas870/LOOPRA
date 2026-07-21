@@ -541,3 +541,32 @@ Limitations:
 - No comic CLI, FFmpeg/video integration, Instagram comic export or platform package.
 - No TikTok, YouTube or VK presets.
 - No bubble animation, automatic positioning or multiple bubbles per scene.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline — Master Video Integration
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- `DIALOG_MINISERIES` retains its static comic-frame contract; `ProductionOutput.generate_comic_master_video` explicitly and backward-compatibly requests one additional master MP4.
+- The service renders and QA-checks all comic PNGs, creates a deep derived brief whose scene image sources point to those PNGs, then delegates MP4 creation to the existing `render_narrative_video()` renderer.
+- The original brief, scenes, comic overlays, audio configuration and output configuration remain unchanged. The derived copy preserves scene order, duration, animation and transitions, while disabling regular subtitle burn-in to avoid duplicating bubble text.
+- The master MP4 is written under `storage/<project_id>/renders/<render_job_id>/comic/video/` and is checked through the existing video QA with resolution, FPS, duration, codec and pixel-format expectations.
+- The comic package follows `comic frames → comic QA → video render → video QA → OutputFile`. Frames and actual video artifacts are registered only after successful rendering and QA; a failure cleans current-job comic artifacts and leaves no newly registered output files.
+
+Verification:
+
+- production brief contract: 21 passed
+- comic foundation and batch: 17 passed
+- production service and QA: 26 passed, including a real three-scene Pillow + FFmpeg smoke at 270x480/24 FPS without voiceover or subtitle burn-in
+- video regression: 15 passed
+- carousel regression: 27 passed
+- `python scripts/produce_video.py --help`: PASS
+
+Limitations:
+
+- No TikTok, YouTube Shorts or VK Clips presets.
+- No comic CLI, platform package, multiple video exports, teaser, bubble timing or bubble animation.

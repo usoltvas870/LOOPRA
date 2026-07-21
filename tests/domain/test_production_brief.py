@@ -41,6 +41,7 @@ def test_production_brief_creation() -> None:
     assert isinstance(brief.audio, ProductionAudio)
     assert isinstance(brief.subtitles, ProductionSubtitles)
     assert isinstance(brief.output, ProductionOutput)
+    assert brief.output.generate_comic_master_video is False
     assert isinstance(brief.brand, ProductionBrand)
     assert brief.slides == []
     assert isinstance(brief.qa, ProductionQA)
@@ -225,6 +226,15 @@ def test_dialog_miniseries_requires_ordered_comic_scenes_and_font() -> None:
         ],
     )
     assert brief.content_format == ContentFormat.DIALOG_MINISERIES
+
+
+def test_comic_master_video_flag_round_trips_and_rejects_unknown_value() -> None:
+    output = ProductionOutput(generate_comic_master_video=True)
+    restored = ProductionOutput.model_validate_json(output.model_dump_json())
+    assert restored.generate_comic_master_video is True
+
+    with pytest.raises(ValidationError):
+        ProductionOutput(generate_comic_master_video="not-a-boolean")
 
 
 def test_comic_overlay_validation_and_round_trip() -> None:

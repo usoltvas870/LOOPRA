@@ -20,9 +20,19 @@ class QAResult:
     resolution: str = ""
     bitrate_kbps: int = 0
     subtitle_count: int = 0
+    fps: float = 0.0
 
 
-def check_video_output(video_path: Path) -> QAResult:
+def check_video_output(
+    video_path: Path,
+    *,
+    expected_resolution: tuple[int, int] | None = None,
+    expected_fps: int | None = None,
+    expected_duration_sec: float | None = None,
+    duration_tolerance_sec: float = 0.25,
+    expected_video_codec: str | None = None,
+    expected_pixel_format: str | None = None,
+) -> QAResult:
     """Check a rendered video file for quality issues."""
     result = QAResult()
 
@@ -66,10 +76,39 @@ def check_video_output(video_path: Path) -> QAResult:
         w = vs.get("width", 0)
         h = vs.get("height", 0)
         result.resolution = f"{w}x{h}"
+        frame_rate = vs.get("r_frame_rate", "0/1")
+        try:
+            numerator, denominator = frame_rate.split("/", maxsplit=1)
+            result.fps = float(numerator) / float(denominator)
+        except (ValueError, ZeroDivisionError):
+            result.warnings.append(f"Unable to parse video FPS: {frame_rate}")
         if w < 360 or h < 640:
             result.warnings.append(f"Low resolution: {result.resolution}")
+        if expected_resolution is not None and (w, h) != expected_resolution:
+            result.passed = False
+            result.errors.append(
+                f"Unexpected resolution: {w}x{h} vs {expected_resolution[0]}x{expected_resolution[1]}"
+            )
+        if expected_fps is not None and abs(result.fps - expected_fps) > 0.01:
+            result.passed = False
+            result.errors.append(f"Unexpected FPS: {result.fps:g} vs {expected_fps}")
+        if expected_video_codec is not None and vs.get("codec_name") != expected_video_codec:
+            result.passed = False
+            result.errors.append(
+                f"Unexpected video codec: {vs.get('codec_name')} vs {expected_video_codec}"
+            )
+        if expected_pixel_format is not None and vs.get("pix_fmt") != expected_pixel_format:
+            result.passed = False
+            result.errors.append(
+                f"Unexpected pixel format: {vs.get('pix_fmt')} vs {expected_pixel_format}"
+            )
 
     result.duration_sec = float(fmt.get("duration", 0))
+    if expected_duration_sec is not None and abs(result.duration_sec - expected_duration_sec) > duration_tolerance_sec:
+        result.passed = False
+        result.errors.append(
+            f"Unexpected duration: {result.duration_sec:.3f}s vs {expected_duration_sec:.3f}s"
+        )
     result.bitrate_kbps = int(int(fmt.get("bit_rate", 0)) / 1000)
 
     if result.duration_sec < 5:
