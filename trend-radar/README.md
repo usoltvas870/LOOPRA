@@ -60,6 +60,7 @@ cp .env.example .env
 | `MIN_VIEWS` | 10000 | Мин. просмотров для попадания в отчёт |
 | `MAX_RESULTS_PER_SOURCE` | 20 | Макс. роликов с одного источника |
 | `HEADLESS` | true | Запускать браузер в фоне |
+| `DIAGNOSTIC_MODE` | false | Безопасная диагностика без изменения cookies и ожидания login |
 | `COOKIE_PATH` | data/tiktok_cookies.json | Путь к файлу cookies |
 | `ENABLE_AI_ANALYSIS` | false | Включить DeepSeek-анализ |
 | `DEEPSEEK_API_KEY` | — | Ключ API DeepSeek |
@@ -73,6 +74,16 @@ cp .env.example .env
 ```bash
 python run_radar.py
 ```
+
+### Diagnostic mode
+
+Для безопасной проверки без обновления сессии:
+
+```bash
+DIAGNOSTIC_MODE=true ENABLE_AI_ANALYSIS=false ENABLE_TELEGRAM=false python run_radar.py
+```
+
+В этом режиме cookies используются только для чтения, ручной login не ожидается, а operational failures завершаются ненулевым exit code. В конце выводится машинно-читаемая строка `RADAR_RESULT=...`. Diagnostic mode предназначен для проверки состояния, а не для обновления TikTok-сессии.
 
 Скрипт:
 1. Читает источники из `config/`
@@ -105,33 +116,13 @@ python run_radar.py
 Без входа радар найдёт видео только у некоторых открытых аккаунтов.  
 Чтобы всё работало полноценно — нужно сохранить cookies реального аккаунта.
 
-### Способ 1 — скрипт логина (рекомендуется)
+### Безопасное обновление cookies
 
 ```bash
-cd nura-trend-radar
-python -c "
-import asyncio
-from playwright.async_api import async_playwright
-
-async def login():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context()
-        page = await context.new_page()
-        await page.goto('https://www.tiktok.com/login/phone-or-email')
-        input('Войдите в TikTok в открывшемся браузере, нажмите Enter...')
-        cookies = await context.cookies()
-        import json
-        with open('data/tiktok_cookies.json', 'w') as f:
-            json.dump({'cookies': cookies, 'origins': []}, f)
-        print(f'Сохранено {len(cookies)} кук')
-        await browser.close()
-
-asyncio.run(login())
-"
+python refresh_tiktok_cookies.py
 ```
 
-После этого запускайте `python run_radar.py` как обычно — cookies подгрузятся автоматически.
+Helper открывает Chromium в видимом режиме и удерживает его до нажатия Enter в терминале. Пользователь входит только в браузере. Перед обновлением создаётся backup, новые cookies сохраняются сначала в pending-файл, затем проверяются в новом browser context; рабочий cookie-файл заменяется только после двух успешных проверок. Credentials и содержимое cookies нельзя передавать агенту или выводить в терминал.
 
 ### Способ 2 — логин во время запуска
 
@@ -141,9 +132,13 @@ asyncio.run(login())
 4. После входа скрипт продолжит сбор и **автоматически сохранит cookies**
 5. При следующих запусках cookies будут подгружаться
 
-### Если куки протухли
+### Если cookies протухли
 
-Удалите `data/tiktok_cookies.json` и повторите вход.
+Не удаляйте cookie-файл автоматически. Запустите `python refresh_tiktok_cookies.py` и выполните ручной вход в браузере.
+
+### Current operational limitation
+
+Collector зависит от действующей TikTok-сессии. Login wall возвращает `authentication_required`; до подтверждения авторизации parser нельзя считать сломанным. Текущий recovery status: безопасная диагностика реализована, первый актуальный сбор ещё не подтверждён.
 
 ## Структура проекта
 

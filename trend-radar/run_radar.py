@@ -17,7 +17,7 @@ from utils import (
     read_source_file,
 )
 from storage import init_db, get_connection, save_video
-from collector import TikTokCollector
+from collector import RadarOperationalError, TikTokCollector
 from scoring import compute_scores
 from ai_analyzer import analyze_top_videos
 from telegram import send_digest
@@ -26,7 +26,12 @@ from report import generate_report, save_report, save_xlsx, save_ai_analyses, sa
 logger = logging.getLogger('run_radar')
 
 
-async def main():
+def finish(reason: str, exit_code: int) -> int:
+    print(f'RADAR_RESULT={reason}')
+    return exit_code
+
+
+async def main() -> int:
     setup_logging()
     load_env()
 
@@ -57,26 +62,32 @@ async def main():
     total = len(competitors) + len(hashtags) + len(keywords) + len(rotational_raw)
     if total == 0:
         logger.warning('No sources found. Fill config files in config/')
-        return
+        return finish('collection_failed', 3)
 
     init_db()
     conn = get_connection()
 
+    collector = None
     try:
         headless = get_config_bool('HEADLESS', True)
         collector = TikTokCollector(headless=headless)
 
-        await collector.start()
         try:
+            await collector.start()
             videos = await collector.collect_all(sources)
             videos = await collector.enrich_missing_stats(videos)
+        except RadarOperationalError as e:
+            logger.error(str(e))
+            return finish(e.reason, 2)
         finally:
-            await collector.close()
+            if collector:
+                await collector.close()
 
         logger.info(f'Total videos collected: {len(videos)}')
         if not videos:
-            logger.warning('No videos found. Check config and TikTok availability.')
-            return
+            reason = collector.last_collection_reason or 'no_videos_found'
+            logger.warning(f'No videos found. Reason: {reason}')
+            return finish(reason, 3)
 
         new_count = 0
         for v in videos:
@@ -227,9 +238,13 @@ async def main():
             await send_digest(top_videos, ai_analyses)
 
         logger.info('Done!')
+        return finish('success', 0)
+    except Exception:
+        logger.exception('Unexpected radar failure')
+        return finish('internal_error', 1)
     finally:
         conn.close()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

@@ -15,6 +15,12 @@ from utils import get_config_int, get_config, async_random_sleep, extract_video_
 
 logger = logging.getLogger(__name__)
 
+
+class RadarOperationalError(RuntimeError):
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -25,8 +31,13 @@ USER_AGENTS = [
 class TikTokCollector:
     def __init__(self, headless: bool = True):
         self.headless = headless
+        self.diagnostic_mode = get_config('DIAGNOSTIC_MODE', '').lower() in ('true', '1', 'yes')
         self.browser: Optional[Browser] = None
         self.context = None
+        self.playwright = None
+        self.connected_over_cdp = False
+        self.owns_browser = False
+        self.last_collection_reason: Optional[str] = None
         self.max_results = get_config_int('MAX_RESULTS_PER_SOURCE', 20)
         self.collected_at = datetime.now().isoformat()
         self.run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -36,14 +47,15 @@ class TikTokCollector:
         self._debug_mode = os.getenv('LOG_LEVEL', '').upper() == 'DEBUG'
 
     async def start(self):
-        p = await async_playwright().start()
+        self.playwright = await async_playwright().start()
         debug_port = get_config('CHROME_DEBUG_PORT')
         if debug_port:
             try:
-                self.browser = await p.chromium.connect_over_cdp(
+                self.browser = await self.playwright.chromium.connect_over_cdp(
                     f'http://127.0.0.1:{debug_port}'
                 )
                 self.context = self.browser.contexts[0]
+                self.connected_over_cdp = True
                 logger.info(f'Connected to existing Chrome on port {debug_port}')
                 return
             except Exception as e:
@@ -62,9 +74,14 @@ class TikTokCollector:
                     '  │ Сейчас скрипт запустит свой браузер (headless)    │\n'
                     '  └────────────────────────────────────────────────────┘'
                 )
-        self.browser = await p.chromium.launch(headless=self.headless, args=[
-            '--disable-blink-features=AutomationControlled',
-        ])
+        try:
+            self.browser = await self.playwright.chromium.launch(headless=self.headless, args=[
+                '--disable-blink-features=AutomationControlled',
+            ])
+            self.owns_browser = True
+        except Exception as e:
+            await self._stop_playwright()
+            raise RadarOperationalError('browser_start_failed', f'Cannot start Chromium: {e}') from e
         storage_state = None
         if self.cookie_path.exists():
             try:
@@ -77,11 +94,10 @@ class TikTokCollector:
                     storage_state = data
                 logger.info(f'Loaded cookies from {self.cookie_path}')
             except Exception as e:
-                logger.warning(f'Failed to load cookies: {e}')
-                try:
-                    self.cookie_path.unlink()
-                except Exception:
-                    pass
+                raise RadarOperationalError(
+                    'cookies_invalid',
+                    f'Cannot read cookie file {self.cookie_path}. Replace it manually after fixing JSON.',
+                ) from e
 
         if self.context is None:
             self.context = await self.browser.new_context(
@@ -94,8 +110,13 @@ class TikTokCollector:
         self._cleanup_old_screenshots()
 
         if storage_state:
-            valid = await self._validate_cookies()
+            valid, validation_reason = await self._validate_cookies()
             if not valid and self.cookie_path.exists():
+                if self.diagnostic_mode or self.headless:
+                    raise RadarOperationalError(
+                        'authentication_required',
+                        f'TikTok authentication is required ({validation_reason}).',
+                    )
                 logger.warning(
                     '  ┌────────────────────────────────────────────────┐\n'
                     '  │ Куки протухли. Нужно залогиниться заново.     │\n'
@@ -131,8 +152,7 @@ class TikTokCollector:
         logger.info('Browser started')
 
     async def close(self):
-        is_connected = get_config('CHROME_DEBUG_PORT') is not None
-        if not is_connected and self.context and self.cookie_path:
+        if not self.diagnostic_mode and self.owns_browser and self.context and self.cookie_path:
             try:
                 cookies = await self.context.cookies()
                 import json
@@ -144,11 +164,17 @@ class TikTokCollector:
             except Exception as e:
                 logger.warning(f'Failed to save cookies: {e}')
         if self.browser:
-            if is_connected:
+            if self.connected_over_cdp:
                 logger.info('Detached from Chrome (keeping browser open)')
-            else:
+            elif self.owns_browser:
                 await self.browser.close()
                 logger.info('Browser closed')
+        await self._stop_playwright()
+
+    async def _stop_playwright(self):
+        if self.playwright:
+            await self.playwright.stop()
+            self.playwright = None
 
     async def collect_all(self, sources: dict) -> list[dict]:
         all_videos = []
@@ -157,6 +183,8 @@ class TikTokCollector:
         for username in sources.get('competitors', []):
             try:
                 videos = await self.collect_from_competitor(username)
+                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
+                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
                 for v in videos:
                     url = v.get('url', '')
                     if url and url not in seen_urls:
@@ -169,6 +197,8 @@ class TikTokCollector:
         for hashtag in sources.get('hashtags', []):
             try:
                 videos = await self.collect_from_hashtag(hashtag)
+                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
+                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
                 for v in videos:
                     url = v.get('url', '')
                     if url and url not in seen_urls:
@@ -181,6 +211,8 @@ class TikTokCollector:
         for keyword in sources.get('keywords', []):
             try:
                 videos = await self.collect_from_keyword(keyword)
+                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
+                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
                 for v in videos:
                     url = v.get('url', '')
                     if url and url not in seen_urls:
@@ -194,6 +226,8 @@ class TikTokCollector:
         for entry in rotational.get('hashtags', []):
             try:
                 videos = await self.collect_from_hashtag(entry)
+                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
+                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
                 for v in videos:
                     url = v.get('url', '')
                     if url and url not in seen_urls:
@@ -206,6 +240,8 @@ class TikTokCollector:
         for entry in rotational.get('keywords', []):
             try:
                 videos = await self.collect_from_keyword(entry)
+                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
+                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
                 for v in videos:
                     url = v.get('url', '')
                     if url and url not in seen_urls:
@@ -250,10 +286,10 @@ class TikTokCollector:
             except Exception:
                 pass
 
-    async def _validate_cookies(self) -> bool:
+    async def _validate_cookies(self) -> tuple[bool, str]:
         if not self.cookie_path.exists():
             logger.info('No cookie file found, running without cookies')
-            return False
+            return False, 'cookie file is missing'
 
         check_profile = os.getenv('COOKIE_CHECK_PROFILE', 'amatrixxx').replace('@', '').strip()
         page = await self.context.new_page()
@@ -272,7 +308,7 @@ class TikTokCollector:
                     f'Detected: {reason}. '
                     'Please refresh: export cookies from browser to data/tiktok_cookies.json'
                 )
-                return False
+                return False, reason
 
             has_ssr = await page.evaluate(
                 'document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__") !== null'
@@ -281,10 +317,10 @@ class TikTokCollector:
                 f'Cookies valid — profile loaded '
                 f'({"SSR data found" if has_ssr else "no SSR, but no login wall"})'
             )
-            return True
+            return True, ''
         except Exception as e:
             logger.warning(f'Cookie validation error: {e}')
-            return False
+            return False, str(e)
         finally:
             await page.close()
 
@@ -357,6 +393,10 @@ class TikTokCollector:
             blocked, reason = await self._is_blocked(page, source_value)
             if blocked:
                 logger.warning(f'Blocked at {url} — {reason}')
+                self.last_collection_reason = (
+                    'authentication_required' if 'login' in reason.lower()
+                    else 'tiktok_blocked'
+                )
                 await self._save_debug_screenshot(page, f'blocked_{source_value}')
                 return []
 
@@ -394,6 +434,7 @@ class TikTokCollector:
 
         except Exception as e:
             logger.error(f'Error at {url}: {e}')
+            self.last_collection_reason = 'collection_failed'
             return []
         finally:
             page.remove_listener('response', on_response)
@@ -468,7 +509,7 @@ class TikTokCollector:
                     const text = document.body.innerText.substring(0, 2000).toLowerCase();
                     const keywords = [
                         'log in to continue', 'войдите в аккаунт', 'login required',
-                        'войдите или зарегистрируйтесь', 'вход', 'log in', 'sign in',
+                        'войдите или зарегистрируйтесь', 'вход', 'войти', 'log in', 'sign in',
                     ];
                     return keywords.some(k => text.includes(k));
                 }
