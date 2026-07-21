@@ -5,6 +5,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from core.domain import ProductionBrief, ProductionSlide
+from core.tools.imaging.text_layout import text_width as _text_width
+from core.tools.imaging.text_layout import wrap_text as _wrap_text
 
 _DEFAULT_FONTS = [
     "C\\:/Windows/Fonts/arial.ttf",
@@ -124,49 +126,6 @@ def _build_accent_color(bg_color: tuple[int, int, int], brand: object) -> tuple[
     if _is_dark_bg(bg_color):
         return (100, 180, 255)
     return (0, 100, 200)
-
-
-def _wrap_text(
-    text: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    max_width: int,
-) -> list[str]:
-    words = text.split()
-    if not words:
-        return [text]
-
-    lines: list[str] = []
-    current_line: list[str] = []
-    for word in words:
-        test_line = " ".join(current_line + [word])
-        try:
-            bbox = font.getbbox(test_line)
-            test_w = bbox[2] - bbox[0]
-        except (AttributeError, TypeError):
-            test_w = len(test_line) * (font.size // 2)
-
-        if test_w <= max_width:
-            current_line.append(word)
-        else:
-            if current_line:
-                lines.append(" ".join(current_line))
-                current_line = [word]
-            else:
-                lines.append(word)
-
-    if current_line:
-        lines.append(" ".join(current_line))
-    return lines if lines else [text]
-
-
-def _text_width(
-    text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont
-) -> int:
-    try:
-        bbox = font.getbbox(text)
-        return bbox[2] - bbox[0]
-    except (AttributeError, TypeError):
-        return len(text) * (font.size // 2)
 
 
 def _draw_brand_logo(

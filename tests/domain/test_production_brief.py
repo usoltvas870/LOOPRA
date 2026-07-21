@@ -14,6 +14,8 @@ from core.domain import (
     ProductionSubtitles,
     ProductionBrand,
     ContentFormat,
+    ComicOverlay,
+    ComicTailAnchor,
     PublishingPlatform,
     InvalidStatusTransitionError,
     PRODUCTION_BRIEF_STATUS_TRANSITIONS,
@@ -190,6 +192,37 @@ def test_production_scene_validation() -> None:
             purpose="invalid",
             image_source="test.png",
         )
+
+
+def test_production_scene_without_comic_overlay_remains_valid() -> None:
+    scene = ProductionScene(index=0, image_source="scene.png", duration_sec=1.0)
+    assert scene.comic_overlay is None
+
+
+def test_comic_overlay_validation_and_round_trip() -> None:
+    overlay = ComicOverlay(
+        speaker="nura",
+        text="Ёлка — «тест»\nбез потери текста",
+        position="top_left",
+        tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+    )
+    scene = ProductionScene(index=0, image_source="scene.png", duration_sec=1.0, comic_overlay=overlay)
+    restored = ProductionScene.model_validate_json(scene.model_dump_json())
+    assert restored.comic_overlay == overlay
+
+
+@pytest.mark.parametrize("payload", [
+    {"speaker": "unknown", "text": "Text", "position": "top_left", "tail_anchor": {"x": 0.1, "y": 0.1}},
+    {"speaker": "nura", "text": "Text", "position": "unknown", "tail_anchor": {"x": 0.1, "y": 0.1}},
+    {"speaker": "nura", "text": "   ", "position": "top_left", "tail_anchor": {"x": 0.1, "y": 0.1}},
+    {"speaker": "nura", "text": "Text", "position": "top_left", "tail_anchor": {"x": -0.1, "y": 0.1}},
+    {"speaker": "nura", "text": "Text", "position": "top_left", "tail_anchor": {"x": 1.1, "y": 0.1}},
+    {"speaker": "nura", "text": "Text", "position": "top_left", "tail_anchor": {"x": 0.1, "y": -0.1}},
+    {"speaker": "nura", "text": "Text", "position": "top_left", "tail_anchor": {"x": 0.1, "y": 1.1}},
+])
+def test_invalid_comic_overlay_is_rejected(payload: dict) -> None:
+    with pytest.raises(ValidationError):
+        ComicOverlay.model_validate(payload)
 
 
 def test_production_slide_validation() -> None:

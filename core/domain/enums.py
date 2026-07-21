@@ -38,6 +38,22 @@ class ContentFormat(StrEnum):
     INSTAGRAM_CAROUSEL = "instagram_carousel"
 
 
+class ComicSpeaker(StrEnum):
+    NURA = "nura"
+    WOMAN = "woman"
+    SHADOW = "shadow"
+
+
+class ComicBubblePosition(StrEnum):
+    TOP_LEFT = "top_left"
+    TOP_CENTER = "top_center"
+    TOP_RIGHT = "top_right"
+    MIDDLE_LEFT = "middle_left"
+    MIDDLE_RIGHT = "middle_right"
+    BOTTOM_LEFT = "bottom_left"
+    BOTTOM_RIGHT = "bottom_right"
+
+
 class PublishingPlatform(StrEnum):
     INSTAGRAM = "instagram"
     TIKTOK = "tiktok"

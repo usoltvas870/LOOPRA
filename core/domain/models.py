@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .enums import (
     BrandProfileStatus,
+    ComicBubblePosition,
+    ComicSpeaker,
     ContentFormat,
     ContentItemStatus,
     DomainModule,
@@ -421,6 +423,25 @@ class SceneTextOverlay(DomainModel):
     phase: str = "single"
 
 
+class ComicTailAnchor(DomainModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+
+
+class ComicOverlay(DomainModel):
+    speaker: ComicSpeaker
+    text: str = Field(min_length=1)
+    position: ComicBubblePosition
+    tail_anchor: ComicTailAnchor
+
+    @field_validator("text")
+    @classmethod
+    def text_must_contain_visible_characters(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Comic overlay text must contain visible characters")
+        return value
+
+
 class ProductionScene(DomainModel):
     index: int = Field(ge=0)
     purpose: str = "main"
@@ -429,6 +450,7 @@ class ProductionScene(DomainModel):
     narration_text: str = ""
     animation: ProductionSceneImageAnimation = Field(default_factory=ProductionSceneImageAnimation)
     text_overlay: SceneTextOverlay | None = None
+    comic_overlay: ComicOverlay | None = None
     transition_type: str = "dissolve"
     transition_duration: float = 0.5
 

@@ -485,3 +485,26 @@ Verification:
 Limitations:
 
 - This slice renders text-based carousel slides only; it does not implement clean-illustration compositing, comic overlays, platform export packages or publishing.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline — Static Overlay Foundation
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- `ProductionScene` supports an optional `ComicOverlay` with validated speaker, bubble position, text and normalized tail anchor.
+- Three immutable visual themes are available: NURA, Woman and Shadow.
+- `render_comic_frame()` creates one static PNG from a clean source image using Pillow; it never modifies the source image.
+- Shared Pillow text layout supports Cyrillic, explicit line breaks, word wrapping, font-size reduction and explicit overflow failure without clipping.
+- Focused model, text-layout and comic-renderer tests passed.
+- A real, unmocked Pillow smoke render passed with an explicit Arial TTF and a Cyrillic NURA line.
+
+Limitations:
+
+- No integration with `ProductionPipelineService` or `RenderJob`.
+- No batch episode render, video integration or Instagram comic package.
+- No TikTok, YouTube or VK presets.
+- No bubble animation, automatic positioning or multiple bubbles per frame.
