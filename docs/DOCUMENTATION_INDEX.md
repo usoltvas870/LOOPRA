@@ -147,7 +147,8 @@ All documents in this layer are **Active specifications** but describe **Future/
 | `ASSET_LIBRARY_SPEC.md` | Active (v1.0) | Asset Library: storage, classification, validation, selection, and reuse of assets for content production | Future (no asset library in current MVP) | Source of truth for future asset library design |
 | `CONTENT_TYPES_SPEC.md` | Active (v1.0) | Production content types: supported formats (`text_social_post` is current), structural components, production parameters | Current (text_social_post) + Future (other format types) | Source of truth for content type specifications |
 | `DISTRIBUTION_SPEC.md` | Active (v1.0) | Distribution/Publishing boundary: ExportPackage transformation, channel mapping, publication records | Current (manual publication) + Future (automated channel delivery) | Source of truth for distribution architecture |
-| `PRODUCTION_PIPELINE_SPEC.md` | Active (v1.0) | Production Pipeline: from Content Decision/Scenario to verified Export Package ready for distribution | Future (full pipeline; only basic Scenario→ContentItem→ExportPackage flow exists in MVP) | Source of truth for future production pipeline design |
+| `PRODUCTION_PIPELINE_SPEC.md` | Active (v1.0) | Production Pipeline: from Content Decision/Scenario to verified Export Package ready for distribution | Current bounded comic package + future broader pipeline | Source of truth for production pipeline boundaries |
+| `COMIC_PIPELINE_QUICKSTART.md` | Active | Reproducible 9-scene comic package acceptance and operator prerequisites | Current bounded production capability | Operational entry point for comic package acceptance |
 
 ---
 

@@ -77,6 +77,14 @@ publishing action. Autopublishing, social APIs, captions/hashtags, teaser
 or reorder logic, animated bubbles and platform-specific music remain out
 of scope.
 
+The public reproducibility entry point is
+`python scripts/run_comic_pipeline_acceptance.py --workdir <directory> --keep-output --json`.
+It executes a technical nine-scene fixture through the real service,
+repositories, Pillow, FFmpeg, ffprobe and manifest QA. Its generated contact
+sheet is a manual-review aid only: it is not a production artifact and is not
+registered in `OutputFile` or the manifest. See
+[`COMIC_PIPELINE_QUICKSTART.md`](COMIC_PIPELINE_QUICKSTART.md).
+
 ---
 
 # 1. Purpose and Scope

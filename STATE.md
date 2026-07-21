@@ -650,4 +650,42 @@ Limitations:
 - The package is a verified `RenderJob` directory, not a ZIP archive.
 - No autopublishing, social API integration, social captions, hashtags or cover generation is added.
 - No comic CLI, teaser scene, scene reordering, animated bubble reveal or platform-specific music is added.
-- The final 8–10 scene MVP acceptance run remains a separate next stage.
+- The final 8–10 scene MVP acceptance is recorded below.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline MVP Acceptance
+
+Status:
+READY + END-TO-END VERIFIED
+
+Foundation chain:
+
+- `5d00c15` static comic overlay foundation;
+- `a1fb463` comic frame batch;
+- `ad68ddc` comic/video renderer integration;
+- `3abe8a9` comic platform presets;
+- `0d3820a` four-platform comic package export.
+
+Acceptance verification:
+
+- A real 9-scene technical episode produces nine immutable-source comic
+  frames, nine Instagram contain slides, and TikTok, YouTube Shorts and VK
+  Clips MP4 outputs.
+- The acceptance runner uses real Pillow, FFmpeg, ffprobe,
+  `ProductionPipelineService`, filesystem repositories and manifest QA.
+- The manifest has schema `1.0`; all package paths are relative and its
+  artifacts are hash- and metadata-verified.
+- `OutputFile` records are registered only after QA; the 9-scene four-platform
+  fixture produces 22 records with the manifest last.
+- The missing-font failure smoke exits non-zero, reaches `RenderJob.FAILED`,
+  registers no `OutputFile`, and keeps source hashes unchanged.
+- The public command is
+  `python scripts/run_comic_pipeline_acceptance.py --workdir <directory> --keep-output --json`.
+- Operator instructions: `docs/04_production/COMIC_PIPELINE_QUICKSTART.md`.
+
+Known MVP limitations:
+
+- hard delayed bubble reveal; one manually positioned bubble and tail per scene;
+- no publishing, ZIP, captions/hashtags, platform-specific music, UI, face
+  detection or automatic free-space search.
