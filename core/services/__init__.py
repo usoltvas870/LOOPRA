@@ -72,9 +72,13 @@ __all__ = [
     "PublishingValidationError",
     "ScenarioService",
     "ScenarioStudioValidationError",
+    "ScenarioToCarouselBriefService",
+    "ScenarioToCarouselBriefValidationError",
+    "SCENARIO_CAROUSEL_VARIANT",
     "FileTTSService",
     "TTSService",
     "WorkspaceService",
+    "build_scenario_to_carousel_brief_service",
 ]
 
 from .intelligence import (
@@ -94,3 +98,9 @@ from .production_pipeline import (
     build_production_pipeline_service,
 )
 from .tts import FileTTSService, TTSService
+from .carousel_handoff import (
+    SCENARIO_CAROUSEL_VARIANT,
+    ScenarioToCarouselBriefService,
+    ScenarioToCarouselBriefValidationError,
+    build_scenario_to_carousel_brief_service,
+)
