@@ -233,7 +233,8 @@ Implemented:
 -   content item flow;
 -   export package generation;
 -   publication records;
--   metric snapshot foundation.
+-   metric snapshot foundation;
+-   video production pipeline (image-to-video with subtitles).
 
 Validated lifecycle:
 
@@ -258,6 +259,10 @@ Publication
 ↓
 
 MetricSnapshot
+
+Video Production:
+
+ProductionBrief → RenderJob → Video Output (MP4 + SRT + ASS + Cover)
 
 -----------------------------------------------------------------------
 
@@ -417,3 +422,39 @@ Boundaries preserved:
 - No API, UI or database exists.
 - No Orchestrator Agent or Learning Memory exists.
 - The Foundation MVP execution chain remains unchanged.
+
+-----------------------------------------------------------------------
+
+# Video Production Pipeline
+
+Status:
+IMPLEMENTED
+
+Summary:
+
+- Core video rendering engine (`core/tools/video/renderer.py`) produces MP4 video from still images with Ken Burns effect (zoom/pan) and xfade transitions.
+- Subtitle generation: SRT files generated from scene narration_text with proper timecodes.
+- Subtitle burning: FFmpeg ASS filter with configurable font family, size, color and stroke; an explicit TTF/OTF path is resolved to its family and supplied to libass through its font directory.
+- Audio mixing: voiceover + background music with sidechain ducking.
+- Asset validation: image resolution, audio file integrity, font availability.
+- QA verification: video/audio/subtitle stream checks via ffprobe.
+- Domain models: ProductionBrief, ProductionScene, ProductionAudio, ProductionSubtitles, ProductionOutput.
+- Production pipeline service: RenderJob creation, asset validation, render execution, output file tracking.
+- CLI script: `scripts/produce_video.py` with --project-id, --brief, --format, --dry-run, --json options.
+- Supported formats: short_vertical_video (1080x1920, 24fps, max 90s), ambient_vertical_video (1080x1920, 24fps, default 15s).
+- Test coverage: ~51 tests across renderer, audio, QA, validators, pipeline, domain models, CLI.
+
+Boundaries preserved:
+
+- Video production is a tool-level capability; no autonomous agent orchestration.
+- No external AI video generation APIs; rendering uses local FFmpeg.
+- No autoposting or publishing integration.
+- video-assembler/ remains as legacy standalone subsystem (not integrated with core pipeline).
+
+Verification:
+
+- focused renderer tests: 14 passed (`tests/tools/video/test_renderer.py`)
+- focused model/service tests: 19 passed (`tests/domain/test_production_brief.py`, `tests/services/test_production_pipeline.py`)
+- local FFmpeg subtitle smoke: PASS (two synthetic scenes, explicit Arial TTF, Cyrillic subtitles, MP4/SRT/ASS artifacts, ffprobe QA)
+- CLI `--help`: PASS
+- full test suite was not run in this subtitle-hardening verification

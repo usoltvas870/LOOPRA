@@ -4,6 +4,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from core.domain import (
     ContentFormat,
@@ -94,6 +96,112 @@ class GenerateSrtFromBriefTests(unittest.TestCase):
         self.assertIn("A", srt)
         self.assertIn("B", srt)
         self.assertIn("C", srt)
+
+    def test_ass_uses_explicit_font_family_and_preserves_cyrillic_text(self) -> None:
+        from core.tools.video.renderer import _generate_ass_from_brief, _resolve_subtitle_font
+
+        font_path = Path("C:/Windows/Fonts/arial.ttf")
+        if not font_path.exists():
+            self.skipTest("Arial is not available for the Windows font test")
+
+        text = 'Ещё — «многострочный»\nтекст'
+        brief = _make_brief(
+            [ProductionScene(index=0, image_source="a.png", duration_sec=3.0, narration_text=text)]
+        )
+        brief.subtitles.font_path = str(font_path)
+
+        family, font_dir = _resolve_subtitle_font(brief, Path("."))
+        ass = _generate_ass_from_brief(brief, 1080, 1920, family)
+
+        self.assertIn(f"Style: Default,{family},", ass)
+        self.assertIn(text, ass)
+        self.assertEqual(font_dir, font_path.parent)
+
+    def test_explicit_missing_font_raises_clear_error(self) -> None:
+        from core.tools.video.renderer import _resolve_subtitle_font
+
+        brief = _make_brief([])
+        brief.subtitles.font_path = "missing-font.ttf"
+
+        with self.assertRaisesRegex(FileNotFoundError, "Subtitle font not found"):
+            _resolve_subtitle_font(brief, Path("."))
+
+
+class AssSubtitleBurnTests(unittest.TestCase):
+    def test_ass_filter_includes_font_directory(self) -> None:
+        from core.tools.video.renderer import _ass_filter
+
+        filter_value = _ass_filter(Path("C:/temp/subtitles.ass"), Path("C:/fonts"))
+
+        self.assertIn("fontsdir='C\\:/fonts'", filter_value)
+        self.assertIn("filename='C\\:/temp/subtitles.ass'", filter_value)
+
+    def test_success_replaces_final_video_only_after_temporary_output_exists(self) -> None:
+        from core.tools.video.renderer import _burn_ass_subtitles
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_video = Path(temp_dir) / "final_video.mp4"
+            ass_path = Path(temp_dir) / "subtitles.ass"
+            output_video.write_bytes(b"original")
+            ass_path.write_text("[Script Info]\n", encoding="utf-8")
+            temporary_video = Path(temp_dir) / "final_video.subtitles.tmp.mp4"
+
+            def successful_run(command, **_kwargs):
+                self.assertEqual(output_video.read_bytes(), b"original")
+                self.assertEqual(Path(command[-1]), temporary_video)
+                temporary_video.write_bytes(b"subtitled")
+                return SimpleNamespace(returncode=0, stderr="")
+
+            with patch("core.tools.video.renderer.subprocess.run", side_effect=successful_run):
+                _burn_ass_subtitles("ffmpeg", output_video, ass_path, Path(temp_dir), 0)
+
+            self.assertEqual(output_video.read_bytes(), b"subtitled")
+            self.assertFalse(temporary_video.exists())
+
+    def test_failure_preserves_final_video_and_removes_temporary_output(self) -> None:
+        from core.tools.video.renderer import _burn_ass_subtitles
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_video = Path(temp_dir) / "final_video.mp4"
+            ass_path = Path(temp_dir) / "subtitles.ass"
+            temporary_video = Path(temp_dir) / "final_video.subtitles.tmp.mp4"
+            output_video.write_bytes(b"original")
+            ass_path.write_text("[Script Info]\n", encoding="utf-8")
+
+            def failed_run(command, **_kwargs):
+                Path(command[-1]).write_bytes(b"partial")
+                return SimpleNamespace(returncode=1, stderr="burn failed")
+
+            with patch("core.tools.video.renderer.subprocess.run", side_effect=failed_run):
+                with self.assertRaisesRegex(RuntimeError, "Subtitle burn failed"):
+                    _burn_ass_subtitles("ffmpeg", output_video, ass_path, Path(temp_dir), 0)
+
+            self.assertEqual(output_video.read_bytes(), b"original")
+            self.assertFalse(temporary_video.exists())
+
+    def test_disabled_subtitles_do_not_create_subtitle_artifacts_or_second_pass(self) -> None:
+        from core.tools.video.renderer import render_narrative_video
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            image_path = root / "scene.png"
+            image_path.write_bytes(b"placeholder")
+            brief = _make_brief([ProductionScene(index=0, image_source="scene.png", duration_sec=1.0)])
+            brief.subtitles.enabled = False
+            brief.output.generate_cover = False
+            brief.output.generate_audio_only = False
+
+            def render_main_video(command, **_kwargs):
+                Path(command[-1]).write_bytes(b"video")
+                return SimpleNamespace(returncode=0, stderr="")
+
+            with patch("core.tools.video.renderer.subprocess.run", side_effect=render_main_video) as run:
+                result = render_narrative_video(brief, root / "output", root)
+
+            self.assertEqual(set(result), {"final_video"})
+            self.assertEqual(run.call_count, 1)
+            self.assertFalse((root / "output" / "subtitles.srt").exists())
+            self.assertFalse((root / "output" / "subtitles.ass").exists())
 
 
 class BuildVideoFiltergraphTests(unittest.TestCase):

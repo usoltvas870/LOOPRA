@@ -90,7 +90,8 @@ def _probe_duration(path: Path) -> float:
     proc = subprocess.run(
         [ffmpeg, "-hide_banner", "-i", str(path)],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
         creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
     )
@@ -130,6 +131,123 @@ def generate_srt_from_brief(brief: ProductionBrief) -> str:
             current_time -= scene.transition_duration
 
     return "\n".join(lines)
+
+
+def _resolve_subtitle_font(brief: ProductionBrief, project_root: Path) -> tuple[str, Path | None]:
+    raw_font_path = brief.subtitles.font_path
+    if raw_font_path:
+        font_path = _resolve_asset(raw_font_path, project_root)
+        if not font_path.is_file():
+            raise FileNotFoundError(f"Subtitle font not found: {font_path}")
+    else:
+        default_font = _find_default_font()
+        if not default_font:
+            return "Arial", None
+        font_path = Path(default_font)
+
+    try:
+        from PIL import ImageFont
+
+        family, _style = ImageFont.truetype(font_path, size=brief.subtitles.font_size).getname()
+    except Exception as exc:
+        raise ValueError(f"Subtitle font cannot be read: {font_path}") from exc
+
+    if not family:
+        raise ValueError(f"Subtitle font has no family name: {font_path}")
+    return family, font_path.parent
+
+
+def _generate_ass_from_brief(
+    brief: ProductionBrief, W: int, H: int, font_family: str
+) -> str:
+    font_size = brief.subtitles.font_size
+    font_color = brief.subtitles.color.lstrip("#")
+    stroke_color = brief.subtitles.stroke_color.lstrip("#")
+    stroke_w = int(brief.subtitles.stroke_width)
+    margin_v = int(H * (1.0 - brief.subtitles.y_position))
+
+    lines: list[str] = [
+        "[Script Info]",
+        "Title: LOOPRA Subtitles",
+        "ScriptType: v4.00+",
+        "WrapStyle: 2",
+        f"PlayResX: {W}",
+        f"PlayResY: {H}",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,{font_family},{font_size},&H00{font_color},&H00000000,&H00{stroke_color},&H00000000,0,0,0,0,100,100,0,0,1,{stroke_w},0,2,60,60,{margin_v},1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+
+    current_time = 0.0
+    for i, scene in enumerate(brief.scenes):
+        text = scene.narration_text.strip()
+        if not text:
+            current_time += scene.duration_sec
+            if i < len(brief.scenes) - 1:
+                current_time -= scene.transition_duration
+            continue
+
+        start = current_time
+        end = current_time + scene.duration_sec
+
+        start_str = f"{int(start // 3600):01d}:{int((start % 3600) // 60):02d}:{start % 60:05.2f}"
+        end_str = f"{int(end // 3600):01d}:{int((end % 3600) // 60):02d}:{end % 60:05.2f}"
+
+        lines.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{text}")
+
+        current_time += scene.duration_sec
+        if i < len(brief.scenes) - 1:
+            current_time -= scene.transition_duration
+
+    return "\n".join(lines) + "\n"
+
+
+def _ass_filter(ass_path: Path, font_dir: Path | None) -> str:
+    filter_value = f"ass=filename='{_ffpath_filter(ass_path)}'"
+    if font_dir is not None:
+        filter_value += f":fontsdir='{_ffpath_filter(font_dir)}'"
+    return filter_value
+
+
+def _burn_ass_subtitles(
+    ffmpeg: str,
+    output_video: Path,
+    ass_path: Path,
+    font_dir: Path | None,
+    creationflags: int,
+) -> None:
+    temporary_video = output_video.with_name(f"{output_video.stem}.subtitles.tmp.mp4")
+    temporary_video.unlink(missing_ok=True)
+    command = [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(output_video),
+        "-vf", _ass_filter(ass_path, font_dir),
+        "-c:a", "copy",
+        str(temporary_video),
+    ]
+
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            creationflags=creationflags,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Subtitle burn failed (code {proc.returncode}):\n{proc.stderr[-3000:]}"
+            )
+        if not temporary_video.is_file() or temporary_video.stat().st_size == 0:
+            raise RuntimeError("Subtitle burn completed without a valid temporary MP4")
+        temporary_video.replace(output_video)
+    except Exception:
+        temporary_video.unlink(missing_ok=True)
+        raise
 
 
 def _build_scene_filter(
@@ -195,8 +313,13 @@ def _build_scene_filter(
         f"{trim_src}trim=duration={scene_duration},setpts=PTS-STARTPTS{trim_label}"
     )
 
+    cfr_label = _nl()
+    cmd_parts.append(
+        f"{trim_label}fps=fps={fps}{cfr_label}"
+    )
+
     filter_str = ";".join(cmd_parts)
-    return filter_str, trim_label, label_ctr
+    return filter_str, cfr_label, label_ctr
 
 
 def _build_audio_filter(
@@ -363,11 +486,19 @@ def render_narrative_video(
             music_path = mu
 
     srt_path: Path | None = None
+    ass_path: Path | None = None
+    subtitle_font_dir: Path | None = None
     if brief.subtitles.enabled and brief.subtitles.mode == "manual":
         srt_content = generate_srt_from_brief(brief)
         if srt_content.strip():
             srt_path = output_dir / "subtitles.srt"
-            srt_path.write_text(srt_content, encoding="utf-8")
+            srt_path.write_text("\ufeff" + srt_content, encoding="utf-8")
+
+        subtitle_font_family, subtitle_font_dir = _resolve_subtitle_font(brief, project_root)
+        ass_content = _generate_ass_from_brief(brief, W, H, subtitle_font_family)
+        if ass_content.strip():
+            ass_path = output_dir / "subtitles.ass"
+            ass_path.write_text(ass_content, encoding="utf-8")
 
     video_filter, video_label = build_video_filtergraph(brief, (W, H), fps)
 
@@ -390,38 +521,6 @@ def render_narrative_video(
     full_filter = video_filter
     if audio_filter:
         full_filter += ";" + audio_filter
-
-    if srt_path:
-        font_path = _resolve_asset(brief.subtitles.font_path, project_root)
-        font_file = (
-            str(font_path).replace("\\", "/").replace(":", "\\:")
-            if font_path and font_path.exists()
-            else (_find_default_font() or "")
-        )
-        font_file_esc = font_file.replace("\\", "\\\\").replace(":", "\\:")
-
-        font_size = brief.subtitles.font_size
-        color_hex = brief.subtitles.color.lstrip("#")
-        stroke_hex = brief.subtitles.stroke_color.lstrip("#")
-        stroke_w = brief.subtitles.stroke_width
-        margin_v = int(H * (1.0 - brief.subtitles.y_position))
-
-        force_style = (
-            f"FontName=Default,FontSize={font_size},"
-            f"PrimaryColour=&H{color_hex},"
-            f"OutlineColour=&H{stroke_hex},"
-            f"Outline={stroke_w},"
-            f"Alignment=2,MarginV={margin_v}"
-        )
-
-        sl = f"[s_sub]"
-        full_filter += (
-            f";{video_label}subtitles="
-            f"filename='{_ffpath_filter(srt_path)}':"
-            f"fontsdir='{Path(font_file).parent.as_posix()}':"
-            f"force_style='{force_style}'{sl}"
-        )
-        video_label = sl
 
     cmd: list[str] = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
@@ -469,12 +568,23 @@ def render_narrative_video(
             f"FFmpeg render failed (code {proc.returncode}):\n{proc.stderr[-3000:]}"
         )
 
+    if ass_path and ass_path.exists():
+        _burn_ass_subtitles(
+            ffmpeg,
+            output_video,
+            ass_path,
+            subtitle_font_dir,
+            creationflags,
+        )
+
     result: dict[str, Path] = {
         "final_video": output_video,
     }
 
     if srt_path and srt_path.exists():
         result["subtitles"] = srt_path
+    if ass_path and ass_path.exists():
+        result["subtitles_ass"] = ass_path
 
     if brief.output.generate_cover and output_video.exists():
         cover_path = output_dir / "cover.png"
