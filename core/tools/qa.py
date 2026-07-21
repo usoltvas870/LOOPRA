@@ -81,7 +81,12 @@ def check_video_output(video_path: Path) -> QAResult:
     return result
 
 
-def check_carousel_output(carousel_dir: Path) -> QAResult:
+def check_carousel_output(
+    carousel_dir: Path,
+    *,
+    expected_count: int | None = None,
+    expected_size: tuple[int, int] | None = None,
+) -> QAResult:
     """Check a carousel output directory for quality issues."""
     result = QAResult()
 
@@ -98,6 +103,10 @@ def check_carousel_output(carousel_dir: Path) -> QAResult:
 
     result.subtitle_count = len(pngs)
 
+    if expected_count is not None and len(pngs) != expected_count:
+        result.passed = False
+        result.errors.append(f"Expected {expected_count} PNG files, found {len(pngs)}")
+
     try:
         from PIL import Image
     except ImportError:
@@ -113,7 +122,16 @@ def check_carousel_output(carousel_dir: Path) -> QAResult:
         try:
             im = Image.open(p)
             w, h = im.size
+            image_format = im.format
             im.close()
+            if image_format != "PNG":
+                result.errors.append(f"Unexpected image format: {p.name} ({image_format})")
+                result.passed = False
+            if expected_size is not None and (w, h) != expected_size:
+                result.errors.append(
+                    f"Unexpected size: {p.name} ({w}x{h} vs {expected_size[0]}x{expected_size[1]})"
+                )
+                result.passed = False
             if w < 500 or h < 500:
                 result.warnings.append(f"Low resolution: {p.name} ({w}x{h})")
         except Exception:

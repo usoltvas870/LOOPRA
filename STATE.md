@@ -458,3 +458,30 @@ Verification:
 - local FFmpeg subtitle smoke: PASS (two synthetic scenes, explicit Arial TTF, Cyrillic subtitles, MP4/SRT/ASS artifacts, ffprobe QA)
 - CLI `--help`: PASS
 - full test suite was not run in this subtitle-hardening verification
+
+-----------------------------------------------------------------------
+
+# Carousel Production Pipeline
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- `ProductionBrief` with `INSTAGRAM_CAROUSEL` is rendered by the Pillow-based `render_carousel()` tool.
+- The canonical production flow is `ProductionBrief` → `RenderJob` → PNG slides → carousel QA → `OutputFile` records.
+- Production output is stored under `storage/<project_id>/renders/<render_job_id>/carousel/`; the standalone CLI uses the same storage layout with its brief ID.
+- Slide dimensions come from `ProductionOutput`; 1080x1350 (4:5) is the verified Instagram configuration.
+- QA verifies PNG existence, non-empty files, expected count and expected dimensions before the service records output artifacts.
+
+Verification:
+
+- carousel renderer and CLI tests: 27 passed
+- production service and QA tests: 19 passed
+- domain/video regression tests: 25 passed
+- local carousel smoke: PASS (five 1080x1350 PNG slides, Cyrillic text, explicit QA)
+- full test suite was not run in this carousel verification
+
+Limitations:
+
+- This slice renders text-based carousel slides only; it does not implement clean-illustration compositing, comic overlays, platform export packages or publishing.

@@ -176,23 +176,43 @@ class ProductionPipelineService:
 
             artifact_count = len(created_artifacts)
         elif brief.content_format == ContentFormat.INSTAGRAM_CAROUSEL:
-            slide_count = brief.output.slide_count or len(brief.slides) or 1
-            artifacts = [
-                (f"slide_{i:02d}", f"{render_dir_norm}/carousel/slide_{i:02d}.png", "image/png", OutputFileType.IMAGE)
-                for i in range(1, slide_count + 1)
-            ]
-            for suffix, rel_path, mime, file_type in artifacts:
+            from core.tools.carousel.renderer import render_carousel
+            from core.tools.qa import check_carousel_output
+
+            render_output_dir = Path(render_dir_norm) / "carousel"
+            try:
+                render_result = render_carousel(brief, render_output_dir, project_root)
+                slide_paths = render_result.get("slides", [])
+                if not slide_paths:
+                    raise RuntimeError("Carousel renderer produced no PNG files")
+                qa_result = check_carousel_output(
+                    render_output_dir,
+                    expected_count=len(brief.slides),
+                    expected_size=(brief.output.resolution_width, brief.output.resolution_height),
+                )
+                if not qa_result.passed:
+                    raise RuntimeError("Carousel QA failed: " + "; ".join(qa_result.errors))
+            except Exception:
+                failed = render_job.transition_to(RenderJobStatus.FAILED)
+                self._render_job_repo.save_render_job(failed)
+                raise
+
+            created_artifacts: list[tuple[str, str, str, OutputFileType]] = []
+            for i, slide_path in enumerate(slide_paths):
+                slide_num = i + 1
                 output_file = OutputFile(
                     output_file_id=build_entity_id("of"),
                     workspace_id=render_job.workspace_id,
                     project_id=render_job.project_id,
                     render_job_id=render_job.render_job_id,
-                    file_type=file_type,
-                    path=rel_path,
-                    mime_type=mime,
+                    file_type=OutputFileType.IMAGE,
+                    path=str(slide_path),
+                    mime_type="image/png",
                 )
                 self._output_file_repo.save_output_file(output_file)
-            artifact_count = len(artifacts)
+                created_artifacts.append((f"slide_{slide_num:02d}", str(slide_path), "image/png", OutputFileType.IMAGE))
+
+            artifact_count = len(created_artifacts)
         else:
             render_dir_path = Path(render_dir_norm)
             render_dir_path.mkdir(parents=True, exist_ok=True)

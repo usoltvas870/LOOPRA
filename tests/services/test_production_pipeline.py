@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.domain import (
     ContentFormat,
@@ -27,6 +28,7 @@ from core.services.production_pipeline import (
     ProductionPipelineValidationError,
 )
 from core.services.projects import FileSystemProjectRepository, ProjectService
+from core.tools.qa import QAResult
 
 
 class ProductionPipelineServiceTests(unittest.TestCase):
@@ -212,6 +214,39 @@ class ProductionPipelineServiceTests(unittest.TestCase):
 
         with self.assertRaises(ProductionPipelineValidationError):
             self.service.execute_render("nura", render_job.render_job_id)
+
+    def test_execute_carousel_render_registers_qa_checked_pngs(self) -> None:
+        brief = ProductionBrief(
+            workspace_id="internal",
+            project_id="nura",
+            production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_test",
+            content_format=ContentFormat.INSTAGRAM_CAROUSEL,
+            slides=[
+                {"slide_number": 1, "heading": "One"},
+                {"slide_number": 2, "heading": "Two"},
+            ],
+            output=ProductionOutput(resolution_width=1080, resolution_height=1350),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        render_job = RenderJob(
+            render_job_id=build_entity_id("rjob"), workspace_id="internal", project_id="nura",
+            scenario_id=brief.scenario_id, content_format=brief.content_format,
+            status=RenderJobStatus.RENDERING, input_snapshot={"brief_id": brief.production_brief_id},
+        )
+        self.render_job_repo.save_render_job(render_job)
+        output_dir = Path("storage") / "nura" / "renders" / render_job.render_job_id / "carousel"
+        slides = [output_dir / "slide_01.png", output_dir / "slide_02.png"]
+
+        with patch("core.tools.carousel.renderer.render_carousel", return_value={"slides": slides}) as render, patch(
+            "core.tools.qa.check_carousel_output", return_value=QAResult()
+        ) as qa:
+            updated = self.service.execute_render("nura", render_job.render_job_id)
+
+        self.assertEqual(updated.status, RenderJobStatus.RENDERED)
+        self.assertEqual(len(self.output_file_repo.list_output_files_by_render_job("nura", render_job.render_job_id)), 2)
+        render.assert_called_once()
+        qa.assert_called_once()
 
     def test_create_content_from_render(self) -> None:
         brief = ProductionBrief(
