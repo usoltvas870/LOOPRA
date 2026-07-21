@@ -4,7 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.tools.qa import QAResult, check_video_output, check_carousel_output, check_comic_output, format_qa_result
+from core.tools.qa import (
+    QAResult,
+    check_carousel_output,
+    check_comic_output,
+    check_platform_video_package,
+    check_video_output,
+    format_qa_result,
+)
 
 
 class CheckVideoOutputTests(unittest.TestCase):
@@ -95,6 +102,51 @@ class CheckComicOutputTests(unittest.TestCase):
         (comic_dir / "scene_01.png").write_bytes(b"")
         result = check_comic_output(comic_dir, expected_count=1, expected_sizes=[(480, 800)])
         self.assertFalse(result.passed)
+
+
+class CheckPlatformVideoPackageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.platforms_dir = Path(self.temp_dir.name) / "platforms"
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_accepts_exact_requested_platform_set(self) -> None:
+        expected = {}
+        for slug in ("tiktok", "youtube_shorts", "vk_clips"):
+            path = self.platforms_dir / slug / "final_video.mp4"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"video")
+            expected[slug] = path
+        result = check_platform_video_package(self.platforms_dir, expected_paths=expected)
+        self.assertTrue(result.passed)
+
+    def test_rejects_unrequested_directory_and_temporary_mp4(self) -> None:
+        final_path = self.platforms_dir / "tiktok" / "final_video.mp4"
+        final_path.parent.mkdir(parents=True)
+        final_path.write_bytes(b"video")
+        unexpected = self.platforms_dir / "vk_clips" / "final_video.tmp.mp4"
+        unexpected.parent.mkdir(parents=True)
+        unexpected.write_bytes(b"partial")
+        result = check_platform_video_package(
+            self.platforms_dir,
+            expected_paths={"tiktok": final_path},
+        )
+        self.assertFalse(result.passed)
+        self.assertGreaterEqual(len(result.errors), 2)
+
+    def test_rejects_extra_non_temporary_mp4(self) -> None:
+        final_path = self.platforms_dir / "tiktok" / "final_video.mp4"
+        final_path.parent.mkdir(parents=True)
+        final_path.write_bytes(b"video")
+        (final_path.parent / "extra.mp4").write_bytes(b"extra")
+        result = check_platform_video_package(
+            self.platforms_dir,
+            expected_paths={"tiktok": final_path},
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("MP4 set", result.errors[0])
 
 
 class FormatQAResultTests(unittest.TestCase):

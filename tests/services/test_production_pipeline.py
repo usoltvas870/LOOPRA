@@ -18,6 +18,7 @@ from core.domain import (
     ProductionOutput,
     ProductionScene,
     ProductionSubtitles,
+    PublishingPlatform,
     RenderJob,
     RenderJobStatus,
 )
@@ -435,6 +436,7 @@ class ProductionPipelineServiceTests(unittest.TestCase):
         brief = ProductionBrief(
             workspace_id="internal", project_id="nura", production_brief_id=build_entity_id("brief"),
             scenario_id="scenario_comic_repository_failure", content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[PublishingPlatform.TIKTOK],
             subtitles=ProductionSubtitles(font_path=str(font)), scenes=scenes,
             output=ProductionOutput(resolution_width=270, resolution_height=480),
         ).transition_to(ProductionBriefStatus.VALIDATED)
@@ -452,8 +454,20 @@ class ProductionPipelineServiceTests(unittest.TestCase):
                 raise OSError("simulated output repository failure")
             return original_save(output_file)
 
+        def fake_video_render(_derived_brief, render_dir, _project_root):
+            render_dir.mkdir(parents=True, exist_ok=True)
+            final_video = render_dir / "final_video.mp4"
+            final_video.write_bytes(b"video")
+            return {"final_video": final_video}
+
         try:
-            with patch.object(self.output_file_repo, "save_output_file", side_effect=fail_after_first):
+            with patch.object(
+                self.output_file_repo, "save_output_file", side_effect=fail_after_first
+            ), patch(
+                "core.tools.video.render_narrative_video", side_effect=fake_video_render
+            ), patch(
+                "core.tools.qa.check_video_output", return_value=QAResult()
+            ):
                 with self.assertRaises(OSError):
                     self.service.execute_render("nura", job.render_job_id)
             failed = self.render_job_repo.load_render_job("nura", job.render_job_id)
@@ -461,8 +475,273 @@ class ProductionPipelineServiceTests(unittest.TestCase):
             self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
             self.assertFalse((output_dir / "comic" / "scene_01.png").exists())
             self.assertFalse((output_dir / "comic" / "scene_02.png").exists())
+            self.assertFalse((output_dir / "comic" / "platforms").exists())
         finally:
             shutil.rmtree(output_dir, ignore_errors=True)
+
+    def test_comic_platform_targets_render_once_each_in_canonical_order(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        from core.tools.comic import render_comic_frames as actual_render_comic_frames
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        scenes = []
+        for index, color in enumerate(("blue", "green", "purple")):
+            source_name = f"platform_{index}.png"
+            Image.new("RGB", (270, 480), color).save(source_dir / source_name, "PNG")
+            scenes.append(ProductionScene(
+                index=index,
+                image_source=f"assets/{source_name}",
+                duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker=("nura", "woman", "shadow")[index],
+                    text=f"Platform {index}",
+                    position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            ))
+        brief = ProductionBrief(
+            workspace_id="internal",
+            project_id="nura",
+            production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_comic_platforms",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[
+                PublishingPlatform.VK,
+                PublishingPlatform.TIKTOK,
+                PublishingPlatform.VK,
+                PublishingPlatform.YOUTUBE_SHORTS,
+            ],
+            subtitles=ProductionSubtitles(font_path=str(font)),
+            scenes=scenes,
+            output=ProductionOutput(
+                resolution_width=270,
+                resolution_height=480,
+                fps=24,
+                generate_cover=False,
+                generate_audio_only=False,
+                generate_comic_master_video=True,
+            ),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+        render_calls: list[tuple[Path, int]] = []
+
+        def fake_video_render(derived_brief, output_dir, _project_root):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            final_video = output_dir / "final_video.mp4"
+            final_video.write_bytes(b"video")
+            render_calls.append((output_dir, len(derived_brief.scenes)))
+            return {"final_video": final_video}
+
+        try:
+            with patch(
+                "core.tools.comic.render_comic_frames",
+                wraps=actual_render_comic_frames,
+            ) as frame_render, patch(
+                "core.tools.video.render_narrative_video",
+                side_effect=fake_video_render,
+            ), patch(
+                "core.tools.qa.check_video_output",
+                return_value=QAResult(),
+            ) as video_qa:
+                updated = self.service.execute_render("nura", job.render_job_id)
+
+            self.assertEqual(updated.status, RenderJobStatus.RENDERED)
+            frame_render.assert_called_once()
+            self.assertEqual(
+                [(path.relative_to(output_root).as_posix(), count) for path, count in render_calls],
+                [
+                    ("comic/video", 3),
+                    ("comic/platforms/tiktok", 6),
+                    ("comic/platforms/youtube_shorts", 6),
+                    ("comic/platforms/vk_clips", 6),
+                ],
+            )
+            self.assertEqual(video_qa.call_count, 4)
+            output_files = self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id)
+            self.assertEqual(len(output_files), 7)
+            self.assertEqual(sum(item.file_type == OutputFileType.IMAGE for item in output_files), 3)
+            self.assertEqual(sum(item.file_type == OutputFileType.VIDEO for item in output_files), 4)
+            self.assertTrue(all(item.size_bytes for item in output_files))
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
+
+    def test_comic_platform_middle_qa_failure_cleans_package_and_registers_nothing(self) -> None:
+        from PIL import Image
+        import os
+        import shutil
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        Image.new("RGB", (270, 480), "blue").save(source_dir / "failure.png", "PNG")
+        brief = ProductionBrief(
+            workspace_id="internal",
+            project_id="nura",
+            production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_comic_platform_failure",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[
+                PublishingPlatform.TIKTOK,
+                PublishingPlatform.YOUTUBE_SHORTS,
+                PublishingPlatform.VK,
+            ],
+            subtitles=ProductionSubtitles(font_path=str(font)),
+            scenes=[ProductionScene(
+                index=0,
+                image_source="assets/failure.png",
+                duration_sec=1.0,
+                comic_overlay=ComicOverlay(
+                    speaker="nura",
+                    text="Failure",
+                    position="top_left",
+                    tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+                ),
+            )],
+            output=ProductionOutput(resolution_width=270, resolution_height=480),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+        def fake_video_render(_derived_brief, output_dir, _project_root):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            final_video = output_dir / "final_video.mp4"
+            final_video.write_bytes(b"video")
+            return {"final_video": final_video}
+
+        try:
+            with patch("core.tools.video.render_narrative_video", side_effect=fake_video_render), patch(
+                "core.tools.qa.check_video_output",
+                side_effect=[QAResult(), QAResult(passed=False, errors=["simulated QA failure"])],
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated QA failure"):
+                    self.service.execute_render("nura", job.render_job_id)
+            failed = self.render_job_repo.load_render_job("nura", job.render_job_id)
+            self.assertEqual(failed.status, RenderJobStatus.FAILED)
+            self.assertEqual(self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id), [])
+            self.assertFalse((output_root / "comic" / "platforms").exists())
+            self.assertFalse((output_root / "comic" / "scene_01.png").exists())
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
+
+    def test_comic_three_platform_package_with_real_pillow_ffmpeg_and_ffprobe(self) -> None:
+        from PIL import Image
+        import hashlib
+        import os
+        import shutil
+
+        from core.tools.comic import render_comic_frames as actual_render_comic_frames
+        from core.tools.qa import check_video_output
+
+        font = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+        if not font.is_file() or shutil.which("ffprobe") is None:
+            self.skipTest("A Cyrillic font and ffprobe are required for the real platform smoke")
+
+        source_dir = self.projects_root / "nura" / "assets"
+        source_dir.mkdir()
+        texts = (
+            'Нура: «Всё начинается с выбора».',
+            "Женщина — а если путь уже рядом?",
+            'Тень отвечает: «Смотри внимательнее».',
+        )
+        scenes = []
+        source_hashes = []
+        for index, (color, duration) in enumerate(zip(("#375A7F", "#7F5539", "#343A40"), (0.9, 1.0, 1.1), strict=True)):
+            source_name = f"real_platform_{index}.png"
+            source_path = source_dir / source_name
+            Image.new("RGB", (270, 480), color).save(source_path, "PNG")
+            source_hashes.append(hashlib.sha256(source_path.read_bytes()).hexdigest())
+            scenes.append(ProductionScene(
+                index=index,
+                image_source=f"assets/{source_name}",
+                duration_sec=duration,
+                comic_overlay=ComicOverlay(
+                    speaker=("nura", "woman", "shadow")[index],
+                    text=texts[index],
+                    position=("top_left", "middle_right", "bottom_left")[index],
+                    tail_anchor=(
+                        ComicTailAnchor(x=0.8, y=0.8),
+                        ComicTailAnchor(x=0.2, y=0.2),
+                        ComicTailAnchor(x=0.8, y=0.2),
+                    )[index],
+                ),
+            ))
+        brief = ProductionBrief(
+            workspace_id="internal",
+            project_id="nura",
+            production_brief_id=build_entity_id("brief"),
+            scenario_id="scenario_real_comic_platforms",
+            content_format=ContentFormat.DIALOG_MINISERIES,
+            target_platforms=[
+                PublishingPlatform.VK,
+                PublishingPlatform.YOUTUBE_SHORTS,
+                PublishingPlatform.TIKTOK,
+            ],
+            subtitles=ProductionSubtitles(enabled=False, font_path=str(font)),
+            scenes=scenes,
+            output=ProductionOutput(
+                resolution_width=270,
+                resolution_height=480,
+                fps=24,
+                generate_srt=False,
+                generate_cover=False,
+                generate_audio_only=False,
+                generate_comic_master_video=False,
+            ),
+        ).transition_to(ProductionBriefStatus.VALIDATED)
+        original_brief = brief.model_dump(mode="json")
+        self.brief_repo.save_brief(brief)
+        job = self.service.create_render_job("nura", brief.production_brief_id)
+        job = self.service.validate_assets("nura", job.render_job_id)
+        output_root = Path("storage") / "nura" / "renders" / job.render_job_id
+
+        try:
+            with patch("core.tools.comic.render_comic_frames", wraps=actual_render_comic_frames) as frame_render:
+                updated = self.service.execute_render("nura", job.render_job_id)
+            frame_render.assert_called_once()
+            self.assertEqual(updated.status, RenderJobStatus.RENDERED)
+            self.assertEqual(brief.model_dump(mode="json"), original_brief)
+            self.assertEqual(
+                source_hashes,
+                [
+                    hashlib.sha256((source_dir / f"real_platform_{index}.png").read_bytes()).hexdigest()
+                    for index in range(3)
+                ],
+            )
+            platform_paths = [
+                output_root / "comic" / "platforms" / slug / "final_video.mp4"
+                for slug in ("tiktok", "youtube_shorts", "vk_clips")
+            ]
+            qa_results = [
+                check_video_output(
+                    path,
+                    expected_resolution=(270, 480),
+                    expected_fps=24,
+                    expected_video_codec="h264",
+                    expected_pixel_format="yuv420p",
+                )
+                for path in platform_paths
+            ]
+            self.assertTrue(all(result.passed for result in qa_results))
+            self.assertEqual(len({round(result.duration_sec, 2) for result in qa_results}), 3)
+            self.assertEqual(len(list((output_root / "comic").glob("scene_*.png"))), 3)
+            self.assertFalse(list((output_root / "comic").rglob("*.srt")))
+            self.assertFalse(list((output_root / "comic").rglob("*.ass")))
+            self.assertFalse([path for path in (output_root / "comic").rglob("*.mp4") if ".tmp" in path.name])
+            output_files = self.output_file_repo.list_output_files_by_render_job("nura", job.render_job_id)
+            self.assertEqual(len(output_files), 6)
+            self.assertEqual(sum(item.file_type == OutputFileType.IMAGE for item in output_files), 3)
+            self.assertEqual(sum(item.file_type == OutputFileType.VIDEO for item in output_files), 3)
+        finally:
+            shutil.rmtree(output_root, ignore_errors=True)
 
     def test_create_content_from_render(self) -> None:
         brief = ProductionBrief(

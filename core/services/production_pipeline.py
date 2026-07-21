@@ -222,16 +222,32 @@ class ProductionPipelineService:
         elif brief.content_format == ContentFormat.DIALOG_MINISERIES:
             from PIL import Image
 
-            from core.tools.comic import render_comic_frames
-            from core.tools.qa import check_comic_output, check_video_output
+            from core.tools.comic import (
+                build_comic_platform_video_brief,
+                calculate_brief_video_duration,
+                render_comic_frames,
+                resolve_comic_platform_video_presets,
+            )
+            from core.tools.qa import (
+                check_comic_output,
+                check_platform_video_package,
+                check_video_output,
+            )
             from core.tools.video import render_narrative_video
 
             render_output_dir = Path(render_dir_norm) / "comic"
+            render_job_root = Path(render_dir_norm)
             try:
                 scene_paths = render_comic_frames(brief, render_output_dir, project_root)
+                clean_source_paths = []
                 expected_sizes = []
                 for scene in brief.scenes:
-                    with Image.open(project_root / scene.image_source) as source:
+                    clean_source = Path(scene.image_source)
+                    if not clean_source.is_absolute():
+                        clean_source = project_root / clean_source
+                    clean_source = clean_source.resolve()
+                    clean_source_paths.append(clean_source)
+                    with Image.open(clean_source) as source:
                         expected_sizes.append(source.size)
                 qa_result = check_comic_output(
                     render_output_dir,
@@ -241,17 +257,17 @@ class ProductionPipelineService:
                 if not qa_result.passed:
                     raise RuntimeError("Comic QA failed: " + "; ".join(qa_result.errors))
 
-                render_result: dict[str, Path] = {}
+                master_render_result: dict[str, Path] = {}
                 if brief.output.generate_comic_master_video:
                     derived_brief = _build_comic_video_brief(brief, scene_paths)
                     video_output_dir = render_output_dir / "video"
-                    render_result = render_narrative_video(derived_brief, video_output_dir, project_root)
-                    final_video = render_result.get("final_video")
+                    master_render_result = render_narrative_video(
+                        derived_brief, video_output_dir, project_root
+                    )
+                    final_video = master_render_result.get("final_video")
                     if final_video is None:
                         raise RuntimeError("Comic video renderer produced no final MP4")
-                    expected_duration = sum(scene.duration_sec for scene in brief.scenes) - sum(
-                        scene.transition_duration for scene in brief.scenes[:-1]
-                    )
+                    expected_duration = calculate_brief_video_duration(derived_brief)
                     video_qa_result = check_video_output(
                         final_video,
                         expected_resolution=(brief.output.resolution_width, brief.output.resolution_height),
@@ -262,6 +278,58 @@ class ProductionPipelineService:
                     )
                     if not video_qa_result.passed:
                         raise RuntimeError("Comic video QA failed: " + "; ".join(video_qa_result.errors))
+
+                platform_render_results: list[tuple[str, dict[str, Path]]] = []
+                platform_final_videos: dict[str, Path] = {}
+                for preset in resolve_comic_platform_video_presets(brief.target_platforms):
+                    platform_output_dir = render_output_dir / "platforms" / preset.output_slug
+                    platform_brief = build_comic_platform_video_brief(
+                        brief,
+                        clean_source_paths,
+                        scene_paths,
+                        preset,
+                        platform_output_dir=platform_output_dir,
+                        render_job_root=render_job_root,
+                    )
+                    platform_result = render_narrative_video(
+                        platform_brief,
+                        platform_output_dir,
+                        project_root,
+                    )
+                    final_video = platform_result.get("final_video")
+                    if final_video is None:
+                        raise RuntimeError(
+                            f"Comic platform renderer produced no final MP4 for {preset.platform.value}"
+                        )
+                    video_qa_result = check_video_output(
+                        final_video,
+                        expected_resolution=(
+                            platform_brief.output.resolution_width,
+                            platform_brief.output.resolution_height,
+                        ),
+                        expected_fps=platform_brief.output.fps,
+                        expected_duration_sec=calculate_brief_video_duration(platform_brief),
+                        expected_video_codec="h264",
+                        expected_pixel_format="yuv420p",
+                    )
+                    if not video_qa_result.passed:
+                        raise RuntimeError(
+                            f"Comic platform video QA failed for {preset.platform.value}: "
+                            + "; ".join(video_qa_result.errors)
+                        )
+                    platform_render_results.append((preset.output_slug, platform_result))
+                    platform_final_videos[preset.output_slug] = final_video
+
+                if platform_final_videos:
+                    package_qa_result = check_platform_video_package(
+                        render_output_dir / "platforms",
+                        expected_paths=platform_final_videos,
+                    )
+                    if not package_qa_result.passed:
+                        raise RuntimeError(
+                            "Comic platform package QA failed: "
+                            + "; ".join(package_qa_result.errors)
+                        )
             except Exception:
                 _cleanup_comic_artifacts(render_output_dir)
                 failed = render_job.transition_to(RenderJobStatus.FAILED)
@@ -287,7 +355,7 @@ class ProductionPipelineService:
                 ("audio_only", "audio/mpeg", OutputFileType.AUDIO),
             )
             for key, mime_type, file_type in video_artifacts:
-                artifact_path = render_result.get(key)
+                artifact_path = master_render_result.get(key)
                 if artifact_path is not None and artifact_path.is_file():
                     pending_output_files.append(
                         OutputFile(
@@ -298,6 +366,21 @@ class ProductionPipelineService:
                             file_type=file_type,
                             path=str(artifact_path),
                             mime_type=mime_type,
+                            size_bytes=artifact_path.stat().st_size,
+                        )
+                    )
+            for _platform_slug, platform_result in platform_render_results:
+                artifact_path = platform_result.get("final_video")
+                if artifact_path is not None and artifact_path.is_file():
+                    pending_output_files.append(
+                        OutputFile(
+                            output_file_id=build_entity_id("of"),
+                            workspace_id=render_job.workspace_id,
+                            project_id=render_job.project_id,
+                            render_job_id=render_job.render_job_id,
+                            file_type=OutputFileType.VIDEO,
+                            path=str(artifact_path),
+                            mime_type="video/mp4",
                             size_bytes=artifact_path.stat().st_size,
                         )
                     )
@@ -458,11 +541,10 @@ def _build_comic_video_brief(brief: ProductionBrief, frame_paths: list[Path]) ->
 
 
 def _cleanup_comic_artifacts(comic_dir: Path) -> None:
+    import shutil
+
     for frame_path in comic_dir.glob("scene_*.png"):
         frame_path.unlink(missing_ok=True)
-    video_dir = comic_dir / "video"
-    if video_dir.is_dir():
-        for artifact_path in video_dir.iterdir():
-            if artifact_path.is_file():
-                artifact_path.unlink(missing_ok=True)
-        video_dir.rmdir()
+    for artifact_dir in (comic_dir / "video", comic_dir / "platforms"):
+        if artifact_dir.is_dir():
+            shutil.rmtree(artifact_dir)

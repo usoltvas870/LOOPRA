@@ -193,6 +193,10 @@ def test_production_scene_validation() -> None:
             purpose="invalid",
             image_source="test.png",
         )
+    with pytest.raises(ValidationError):
+        ProductionScene(index=0, image_source="test.png", duration_sec=0)
+    with pytest.raises(ValidationError):
+        ProductionScene(index=0, image_source="test.png", transition_duration=-0.1)
 
 
 def test_production_scene_without_comic_overlay_remains_valid() -> None:

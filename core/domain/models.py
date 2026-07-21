@@ -446,13 +446,13 @@ class ProductionScene(DomainModel):
     index: int = Field(ge=0)
     purpose: str = "main"
     image_source: str = Field(min_length=1)
-    duration_sec: float = Field(ge=0.5)
+    duration_sec: float = Field(gt=0.0)
     narration_text: str = ""
     animation: ProductionSceneImageAnimation = Field(default_factory=ProductionSceneImageAnimation)
     text_overlay: SceneTextOverlay | None = None
     comic_overlay: ComicOverlay | None = None
     transition_type: str = "dissolve"
-    transition_duration: float = 0.5
+    transition_duration: float = Field(default=0.5, ge=0.0)
 
 
 class ProductionAudio(DomainModel):

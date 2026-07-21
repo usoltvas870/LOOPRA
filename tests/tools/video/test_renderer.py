@@ -233,6 +233,30 @@ class BuildVideoFiltergraphTests(unittest.TestCase):
         self.assertIn("xfade", filter_graph)
         self.assertIn("s_xfade_", video_label)
 
+    def test_transition_uses_outgoing_scene_contract(self) -> None:
+        from core.tools.video.renderer import build_video_filtergraph
+
+        brief = _make_brief(
+            [
+                ProductionScene(
+                    index=0,
+                    image_source="a.png",
+                    duration_sec=3.0,
+                    transition_type="wipeleft",
+                    transition_duration=0.12,
+                ),
+                ProductionScene(
+                    index=1,
+                    image_source="b.png",
+                    duration_sec=3.0,
+                    transition_type="dissolve",
+                    transition_duration=0.5,
+                ),
+            ]
+        )
+        filter_graph, _ = build_video_filtergraph(brief, (1080, 1920), 24)
+        self.assertIn("transition=wipeleft:duration=0.12", filter_graph)
+
     def test_no_zoom_when_scales_equal(self) -> None:
         from core.tools.video.renderer import build_video_filtergraph
 

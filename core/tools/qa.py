@@ -227,6 +227,61 @@ def check_comic_output(
     return result
 
 
+def check_platform_video_package(
+    platforms_dir: Path,
+    *,
+    expected_paths: dict[str, Path],
+) -> QAResult:
+    """Validate an exact set of platform MP4 outputs and their directories."""
+    result = QAResult()
+    platforms_dir = Path(platforms_dir).resolve()
+    expected = {
+        slug: Path(path).resolve()
+        for slug, path in expected_paths.items()
+    }
+    expected_set = set(expected.values())
+
+    actual = (
+        {path.resolve() for path in platforms_dir.rglob("*.mp4")}
+        if platforms_dir.is_dir()
+        else set()
+    )
+    if actual != expected_set:
+        result.passed = False
+        result.errors.append(
+            f"Platform MP4 set does not match request: expected {len(expected_set)}, found {len(actual)}"
+        )
+
+    expected_directories = set(expected)
+    actual_directories = (
+        {path.name for path in platforms_dir.iterdir() if path.is_dir()}
+        if platforms_dir.is_dir()
+        else set()
+    )
+    if actual_directories != expected_directories:
+        result.passed = False
+        result.errors.append("Platform output directories do not match the requested platforms")
+
+    for slug, path in expected.items():
+        expected_path = platforms_dir / slug / "final_video.mp4"
+        if path != expected_path:
+            result.passed = False
+            result.errors.append(f"Unexpected platform output path for {slug}: {path}")
+        if not path.is_file() or path.stat().st_size == 0:
+            result.passed = False
+            result.errors.append(f"Missing or empty platform MP4 for {slug}: {path}")
+
+    temporary_mp4s = (
+        [path for path in platforms_dir.rglob("*.mp4") if ".tmp" in path.name]
+        if platforms_dir.is_dir()
+        else []
+    )
+    if temporary_mp4s:
+        result.passed = False
+        result.errors.append("Temporary MP4 files remain in the platform package")
+    return result
+
+
 def format_qa_result(result: QAResult, label: str = "Video") -> str:
     """Format a QAResult as a human-readable string."""
     lines = [f"QA check for {label}:"]

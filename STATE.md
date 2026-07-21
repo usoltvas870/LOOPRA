@@ -570,3 +570,46 @@ Limitations:
 
 - No TikTok, YouTube Shorts or VK Clips presets.
 - No comic CLI, platform package, multiple video exports, teaser, bubble timing or bubble animation.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline — Platform Video Presets
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- The existing `ProductionBrief.target_platforms` and `PublishingPlatform` contract selects TikTok, YouTube Shorts and VK Clips outputs; no parallel platform field or content type was added.
+- Three immutable presets centralize scene timing, bubble delay, supported camera motion, transition type/duration and final hold.
+- One comic frame batch and the existing `render_narrative_video()` renderer are reused for every requested platform.
+- Deep derived briefs expand each original scene into a clean phase and a bubble-frame phase, implementing an MVP delayed hard bubble reveal without mutating the original brief, scenes or comic overlays.
+- Platform motion is expressed through renderer-supported scale/easing values. Platform transitions apply only between original story scenes; clean-to-bubble uses a zero-duration hard cut.
+- Final hold is added once to the final bubble phase. Expected QA duration includes platform timing, transition overlaps and final hold.
+- Requested platform videos are rendered and QA-checked before any `OutputFile` is registered. Render, QA and repository failures clean the current job's comic frames, master video and platform artifacts and leave the job `FAILED`.
+- Output paths are:
+  - `comic/platforms/tiktok/final_video.mp4`;
+  - `comic/platforms/youtube_shorts/final_video.mp4`;
+  - `comic/platforms/vk_clips/final_video.mp4`.
+- `generate_comic_master_video` remains independent and can coexist with platform outputs.
+
+Verification:
+
+- production brief contract: 21 passed
+- platform preset and derived brief tests: 7 passed
+- comic foundation, batch and platform tests: 24 passed
+- production service and QA: 32 passed
+- video regression: 16 passed
+- carousel regression: 27 passed
+- real three-platform service smoke: PASS (3 original scenes, 6 derived scenes per platform, 270x480, 24 FPS, one Pillow comic batch, real FFmpeg and ffprobe, 3 PNG + 3 MP4 + 6 `OutputFile` records, source hashes unchanged, no SRT/ASS or temporary MP4)
+- smoke MP4 durations: TikTok 3.81s, YouTube Shorts 5.75s, VK Clips 4.76s
+
+Limitations:
+
+- Bubble reveal is a hard cut; opacity/scale bubble animation is not implemented.
+- No teaser scene or scene reordering.
+- No platform-specific music.
+- No Instagram comic export.
+- No package manifest or shared publish package.
+- No comic CLI or autopublishing.
+- This is the bounded three-platform video preset slice, not the complete multi-platform comic package.

@@ -420,8 +420,9 @@ def build_video_filtergraph(
     else:
         cur_dur = scenes[0].duration_sec
         for i in range(1, n_scenes):
-            tr_dur = scenes[i].transition_duration
-            tr_type = scenes[i].transition_type or "dissolve"
+            transition_scene = scenes[i - 1]
+            tr_dur = transition_scene.transition_duration
+            tr_type = transition_scene.transition_type or "dissolve"
             offset = cur_dur - tr_dur
 
             xl = f"[s_xfade_{i}]"
