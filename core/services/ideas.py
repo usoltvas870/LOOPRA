@@ -43,6 +43,7 @@ TEXT_SOCIAL_POST_LENGTH_TARGETS: dict[PublishingPlatform, tuple[int, int]] = {
     PublishingPlatform.THREADS: (150, 700),
     PublishingPlatform.VK: (800, 2500),
 }
+CAROUSEL_ALLOWED_BLOCK_ROLES = frozenset({"body", "quote", "list", "cta"})
 ENTITY_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -340,59 +341,101 @@ class ScenarioService:
         *,
         content_format: ContentFormat | None = None,
         target_platforms: Sequence[PublishingPlatform | str] | None = None,
+        blocks: Sequence[ScenarioTextBlock | dict[str, object]] | None = None,
     ) -> Scenario:
         project = self._project_service.get_project(project_id)
         idea = self._idea_service.get_idea(project_id, idea_id)
         brand_profile = self._brand_profile_service.get_brand_profile(project_id)
+
+        if idea.workspace_id != project.workspace_id or idea.project_id != project.project_id:
+            raise ScenarioStudioValidationError(
+                f"Idea '{idea.idea_id}' does not belong to project '{project_id}'"
+            )
+        if (
+            brand_profile.workspace_id != project.workspace_id
+            or brand_profile.project_id != project.project_id
+        ):
+            raise ScenarioStudioValidationError(
+                f"Brand Profile '{brand_profile.brand_profile_id}' does not belong to project '{project_id}'"
+            )
 
         if idea.status not in {IdeaStatus.APPROVED, IdeaStatus.SCRIPTED}:
             raise ScenarioStudioValidationError(
                 f"Idea '{idea.idea_id}' must be approved before scenario generation"
             )
 
-        resolved_format = content_format or idea.content_format
-        if resolved_format != ContentFormat.TEXT_SOCIAL_POST:
+        if content_format is not None and content_format != idea.content_format:
+            raise ScenarioStudioValidationError(
+                "content_format must match the Idea content_format"
+            )
+
+        resolved_format = idea.content_format
+        if resolved_format == ContentFormat.INSTAGRAM_CAROUSEL:
+            carousel_platforms = self._resolve_carousel_target_platforms(target_platforms)
+            carousel_blocks = self._validate_carousel_blocks(blocks)
+            self._ensure_carousel_scenario_is_unique(project_id, idea.idea_id)
+            scenario = Scenario(
+                scenario_id=_build_entity_id("scenario"),
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                idea_id=idea.idea_id,
+                brand_profile_id=brand_profile.brand_profile_id,
+                source_type="idea",
+                source_id=idea.idea_id,
+                title=idea.title,
+                funnel_stage=idea.funnel_stage,
+                content_format=resolved_format,
+                target_platforms=carousel_platforms,
+                blocks=carousel_blocks,
+                status=ScenarioStatus.NEEDS_REVIEW,
+                metadata={
+                    "source_type": idea.source_type,
+                    "source_id": idea.source_id,
+                    "topic": idea.topic,
+                    "priority": idea.priority,
+                },
+            )
+        elif resolved_format == ContentFormat.TEXT_SOCIAL_POST:
+            platforms = self._resolve_target_platforms(
+                project_id,
+                resolved_format,
+                target_platforms=target_platforms,
+            )
+            text_blocks = self._build_text_social_post_blocks(idea, brand_profile, platforms)
+            draft_text = "\n\n---\n\n".join(block.text for block in text_blocks)
+            caption_drafts = {
+                platform.value: self._build_caption_draft(platform, idea, brand_profile)
+                for platform in platforms
+            }
+            scenario = Scenario(
+                scenario_id=_build_entity_id("scenario"),
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                idea_id=idea.idea_id,
+                brand_profile_id=brand_profile.brand_profile_id,
+                source_type="idea",
+                source_id=idea.idea_id,
+                title=f"{idea.title} - {resolved_format.value}",
+                draft_text=draft_text,
+                funnel_stage=idea.funnel_stage,
+                content_format=resolved_format,
+                target_platforms=platforms,
+                blocks=text_blocks,
+                caption_drafts=caption_drafts,
+                qa_warnings=self._run_text_social_post_qa(text_blocks, brand_profile, idea.funnel_stage),
+                status=ScenarioStatus.NEEDS_REVIEW,
+                metadata={
+                    "post_subtype": "explainer_post",
+                    "source_type": idea.source_type,
+                    "source_id": idea.source_id,
+                    "topic": idea.topic,
+                    "priority": idea.priority,
+                },
+            )
+        else:
             raise ScenarioStudioValidationError(
                 f"Scenario generation currently supports only '{ContentFormat.TEXT_SOCIAL_POST.value}'"
             )
-
-        platforms = self._resolve_target_platforms(
-            project_id,
-            resolved_format,
-            target_platforms=target_platforms,
-        )
-        blocks = self._build_text_social_post_blocks(idea, brand_profile, platforms)
-        draft_text = "\n\n---\n\n".join(block.text for block in blocks)
-        caption_drafts = {
-            platform.value: self._build_caption_draft(platform, idea, brand_profile)
-            for platform in platforms
-        }
-
-        scenario = Scenario(
-            scenario_id=_build_entity_id("scenario"),
-            workspace_id=project.workspace_id,
-            project_id=project.project_id,
-            idea_id=idea.idea_id,
-            brand_profile_id=brand_profile.brand_profile_id,
-            source_type="idea",
-            source_id=idea.idea_id,
-            title=f"{idea.title} - {resolved_format.value}",
-            draft_text=draft_text,
-            funnel_stage=idea.funnel_stage,
-            content_format=resolved_format,
-            target_platforms=platforms,
-            blocks=blocks,
-            caption_drafts=caption_drafts,
-            qa_warnings=self._run_text_social_post_qa(blocks, brand_profile, idea.funnel_stage),
-            status=ScenarioStatus.NEEDS_REVIEW,
-            metadata={
-                "post_subtype": "explainer_post",
-                "source_type": idea.source_type,
-                "source_id": idea.source_id,
-                "topic": idea.topic,
-                "priority": idea.priority,
-            },
-        )
         saved_scenario = self._repository.save_scenario(scenario)
 
         if idea.status == IdeaStatus.APPROVED:
@@ -400,6 +443,72 @@ class ScenarioService:
             self._idea_repository.save_idea(scripted)
 
         return saved_scenario
+
+    def _resolve_carousel_target_platforms(
+        self,
+        target_platforms: Sequence[PublishingPlatform | str] | None,
+    ) -> list[PublishingPlatform]:
+        if not target_platforms:
+            raise ScenarioStudioValidationError(
+                "instagram_carousel scenarios require target_platforms=[instagram]"
+            )
+
+        platforms = self._normalize_platforms(target_platforms)
+        if platforms != [PublishingPlatform.INSTAGRAM]:
+            raise ScenarioStudioValidationError(
+                "instagram_carousel scenarios support only target_platforms=[instagram]"
+            )
+        return platforms
+
+    def _validate_carousel_blocks(
+        self,
+        blocks: Sequence[ScenarioTextBlock | dict[str, object]] | None,
+    ) -> list[ScenarioTextBlock]:
+        if not blocks:
+            raise ScenarioStudioValidationError(
+                "instagram_carousel scenarios require non-empty explicit blocks"
+            )
+
+        normalized: list[ScenarioTextBlock] = []
+        for block in blocks:
+            try:
+                payload = block.model_dump(mode="python") if isinstance(block, ScenarioTextBlock) else dict(block)
+                normalized.append(ScenarioTextBlock.model_validate(payload))
+            except (TypeError, ValueError) as error:
+                raise ScenarioStudioValidationError("Invalid instagram_carousel block") from error
+
+        block_ids = [block.block_id for block in normalized]
+        orders = [block.order for block in normalized]
+        if any(not block_id.strip() for block_id in block_ids):
+            raise ScenarioStudioValidationError("instagram_carousel block_id must not be empty")
+        if len(block_ids) != len(set(block_ids)):
+            raise ScenarioStudioValidationError("instagram_carousel block_id values must be unique")
+        if len(orders) != len(set(orders)):
+            raise ScenarioStudioValidationError("instagram_carousel block order values must be unique")
+
+        for block in normalized:
+            if not block.text.strip():
+                raise ScenarioStudioValidationError("instagram_carousel block text must not be empty")
+            if block.role not in CAROUSEL_ALLOWED_BLOCK_ROLES:
+                raise ScenarioStudioValidationError(
+                    f"Unsupported instagram_carousel block role '{block.role}'"
+                )
+            if block.platform not in {None, PublishingPlatform.INSTAGRAM}:
+                raise ScenarioStudioValidationError(
+                    "instagram_carousel block platform must be instagram when specified"
+                )
+
+        return sorted(normalized, key=lambda block: block.order)
+
+    def _ensure_carousel_scenario_is_unique(self, project_id: str, idea_id: str) -> None:
+        if any(
+            scenario.idea_id == idea_id
+            and scenario.content_format == ContentFormat.INSTAGRAM_CAROUSEL
+            for scenario in self._repository.list_scenarios(project_id)
+        ):
+            raise ScenarioStudioValidationError(
+                f"instagram_carousel Scenario already exists for Idea '{idea_id}'"
+            )
 
     def submit_for_review(self, project_id: str, scenario_id: str) -> Scenario:
         scenario = self.get_scenario(project_id, scenario_id)
