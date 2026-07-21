@@ -689,3 +689,34 @@ Known MVP limitations:
 - hard delayed bubble reveal; one manually positioned bubble and tail per scene;
 - no publishing, ZIP, captions/hashtags, platform-specific music, UI, face
   detection or automatic free-space search.
+
+-----------------------------------------------------------------------
+
+# Intelligence / Planning to Carousel Production Vertical Slice
+
+Status:
+END-TO-END VERIFIED
+
+The local deterministic acceptance now proves the existing canonical chain:
+`MarketSignal → TrendPattern → ContentOpportunity → Idea → explicit carousel
+ScenarioTextBlock input → approved Scenario → validated ProductionBrief →
+RenderJob → PNG carousel QA → OutputFile`.
+
+Verification:
+
+- public runner:
+  `python scripts/run_intelligence_to_carousel_acceptance.py --workdir .tmp/intelligence-carousel-acceptance --keep-output --json`;
+- real filesystem repositories, Pillow renderer and carousel QA;
+- five 1080x1350 PNG records with SHA-256 verification; and
+- focused success and needs-review handoff-failure acceptance coverage.
+
+Operator instructions:
+`docs/04_production/INTELLIGENCE_TO_CAROUSEL_QUICKSTART.md`.
+
+Limits retained:
+
+- carousel text remains explicit planning input; no AI text generation;
+- no Trend Radar connector, publishing, analytics, Learning Memory,
+  orchestrator/runtime agent or general ContentCycle;
+- only the Instagram carousel handoff is covered; and
+- Opportunity, Idea and Scenario approvals remain explicit.
