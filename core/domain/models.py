@@ -550,6 +550,21 @@ class ProductionBrief(ProjectScopedModel):
     qa: ProductionQA = Field(default_factory=ProductionQA)
     status: ProductionBriefStatus = ProductionBriefStatus.DRAFT
 
+    @model_validator(mode="after")
+    def validate_dialog_miniseries_comic_scenes(self) -> "ProductionBrief":
+        if self.content_format != ContentFormat.DIALOG_MINISERIES:
+            return self
+        if not self.scenes:
+            raise ValueError("Dialog miniseries requires at least one production scene")
+        if not self.subtitles.font_path.strip():
+            raise ValueError("Dialog miniseries requires a comic font path")
+        if any(scene.comic_overlay is None for scene in self.scenes):
+            raise ValueError("Every dialog miniseries scene requires a comic overlay")
+        indexes = [scene.index for scene in self.scenes]
+        if indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
+            raise ValueError("Dialog miniseries scene indexes must be unique and ordered")
+        return self
+
     def transition_to(self, next_status: ProductionBriefStatus) -> "ProductionBrief":
         validate_status_transition(
             entity_name="ProductionBrief",

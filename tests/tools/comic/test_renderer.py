@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from core.domain import ComicOverlay, ComicTailAnchor
-from core.tools.comic import ComicRenderError, render_comic_frame
+from core.domain import ComicOverlay, ComicTailAnchor, ContentFormat, ProductionBrief, ProductionScene, ProductionSubtitles
+from core.tools.comic import ComicRenderError, render_comic_frame, render_comic_frames
 
 
 FONT = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
@@ -70,3 +70,51 @@ def test_long_text_shrinks_and_impossible_text_removes_partial_output(source: Pa
     with pytest.raises(ComicRenderError, match="does not fit"):
         render_comic_frame(source, _overlay(text="сверхдлинноенеразбиваемоеслово" * 20), tmp_path / "failed.png", FONT)
     assert not (tmp_path / "failed.png").exists()
+
+
+def test_batch_renderer_orders_frames_cleans_stale_outputs_and_preserves_sources(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    source_paths = []
+    for index, color in enumerate(((30, 70, 110), (70, 40, 100), (90, 90, 40))):
+        source = project_root / f"source_{index}.png"
+        Image.new("RGB", (480, 800), color).save(source, "PNG")
+        source_paths.append(source)
+    before = [_hash(path) for path in source_paths]
+    brief = ProductionBrief(
+        workspace_id="internal", project_id="nura", production_brief_id="brief_batch", scenario_id="scenario_batch",
+        content_format=ContentFormat.DIALOG_MINISERIES, subtitles=ProductionSubtitles(font_path=str(FONT)),
+        scenes=[ProductionScene(index=index, image_source=path.name, duration_sec=1.0, comic_overlay=_overlay(speaker=speaker, position=position, anchor=anchor)) for index, (path, speaker, position, anchor) in enumerate(zip(source_paths, ("nura", "woman", "shadow"), ("top_left", "middle_right", "bottom_left"), ((0.8, 0.8), (0.1, 0.1), (0.8, 0.1)), strict=True))],
+    )
+    output_dir = tmp_path / "outputs"
+    (output_dir / "scene_99.png").parent.mkdir()
+    (output_dir / "scene_99.png").write_bytes(b"stale")
+    foreign = output_dir / "keep.txt"
+    foreign.write_text("keep", encoding="utf-8")
+
+    outputs = render_comic_frames(brief, output_dir, project_root)
+
+    assert [path.name for path in outputs] == ["scene_01.png", "scene_02.png", "scene_03.png"]
+    assert not (output_dir / "scene_99.png").exists()
+    assert foreign.read_text(encoding="utf-8") == "keep"
+    assert [_hash(path) for path in source_paths] == before
+    assert all(_hash(output) != _hash(source) for output, source in zip(outputs, source_paths, strict=True))
+
+
+def test_batch_renderer_rejects_path_traversal_and_cleans_partial_frames(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    source = project_root / "source.png"
+    Image.new("RGB", (480, 800), "blue").save(source, "PNG")
+    brief = ProductionBrief(
+        workspace_id="internal", project_id="nura", production_brief_id="brief_escape", scenario_id="scenario_escape",
+        content_format=ContentFormat.DIALOG_MINISERIES, subtitles=ProductionSubtitles(font_path=str(FONT)),
+        scenes=[
+            ProductionScene(index=0, image_source="source.png", duration_sec=1.0, comic_overlay=_overlay()),
+            ProductionScene(index=1, image_source="../outside.png", duration_sec=1.0, comic_overlay=_overlay(speaker="woman")),
+        ],
+    )
+    output_dir = tmp_path / "outputs"
+    with pytest.raises(ComicRenderError, match="escapes"):
+        render_comic_frames(brief, output_dir, project_root)
+    assert not list(output_dir.glob("scene_*.png"))

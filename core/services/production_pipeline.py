@@ -61,7 +61,7 @@ class FileSystemOutputFileRepository(FileSystemProjectModelRepository[OutputFile
 
     def list_output_files_by_render_job(self, project_id: str, render_job_id: str) -> list[OutputFile]:
         all_files = self.list_models(project_id)
-        return [f for f in all_files if f.render_job_id == render_job_id]
+        return sorted((f for f in all_files if f.render_job_id == render_job_id), key=lambda item: item.path)
 
     def load_output_file(self, project_id: str, output_file_id: str) -> OutputFile:
         return self.load_model(project_id, output_file_id, entity_name="output_file_id")
@@ -115,7 +115,7 @@ class ProductionPipelineService:
             )
 
         brief = self._brief_repo.load_brief(project_id, render_job.input_snapshot["brief_id"])
-        project_dir = resolve_project_dir(project_id)
+        project_dir = resolve_project_dir(project_id, self._brief_repo.projects_root)
         report = validate_production_assets(brief, project_dir)
 
         snapshot = dict(render_job.input_snapshot)
@@ -142,7 +142,7 @@ class ProductionPipelineService:
             )
 
         brief = self._brief_repo.load_brief(project_id, render_job.input_snapshot["brief_id"])
-        project_root = resolve_project_dir(project_id)
+        project_root = resolve_project_dir(project_id, self._brief_repo.projects_root)
 
         render_dir_norm = f"storage/{project_id}/renders/{render_job.render_job_id}"
 
@@ -213,6 +213,45 @@ class ProductionPipelineService:
                 created_artifacts.append((f"slide_{slide_num:02d}", str(slide_path), "image/png", OutputFileType.IMAGE))
 
             artifact_count = len(created_artifacts)
+        elif brief.content_format == ContentFormat.DIALOG_MINISERIES:
+            from PIL import Image
+
+            from core.tools.comic import render_comic_frames
+            from core.tools.qa import check_comic_output
+
+            render_output_dir = Path(render_dir_norm) / "comic"
+            try:
+                scene_paths = render_comic_frames(brief, render_output_dir, project_root)
+                expected_sizes = []
+                for scene in brief.scenes:
+                    with Image.open(project_root / scene.image_source) as source:
+                        expected_sizes.append(source.size)
+                qa_result = check_comic_output(
+                    render_output_dir,
+                    expected_count=len(brief.scenes),
+                    expected_sizes=expected_sizes,
+                )
+                if not qa_result.passed:
+                    raise RuntimeError("Comic QA failed: " + "; ".join(qa_result.errors))
+            except Exception:
+                failed = render_job.transition_to(RenderJobStatus.FAILED)
+                self._render_job_repo.save_render_job(failed)
+                raise
+
+            for scene_path in scene_paths:
+                self._output_file_repo.save_output_file(
+                    OutputFile(
+                        output_file_id=build_entity_id("of"),
+                        workspace_id=render_job.workspace_id,
+                        project_id=render_job.project_id,
+                        render_job_id=render_job.render_job_id,
+                        file_type=OutputFileType.IMAGE,
+                        path=str(scene_path),
+                        mime_type="image/png",
+                        size_bytes=scene_path.stat().st_size,
+                    )
+                )
+            artifact_count = len(scene_paths)
         else:
             render_dir_path = Path(render_dir_norm)
             render_dir_path.mkdir(parents=True, exist_ok=True)

@@ -508,3 +508,36 @@ Limitations:
 - No batch episode render, video integration or Instagram comic package.
 - No TikTok, YouTube or VK presets.
 - No bubble animation, automatic positioning or multiple bubbles per frame.
+
+-----------------------------------------------------------------------
+
+# Comic Production Pipeline — Static Frame Batch
+
+Status:
+IMPLEMENTED + VERIFIED
+
+Summary:
+
+- The existing `DIALOG_MINISERIES` content format is the bounded comic episode type; no new enum was added.
+- A comic `ProductionBrief` requires ordered `ProductionScene` entries, one `ComicOverlay` per scene and an explicit usable comic font path.
+- `render_comic_frames()` renders ordered `scene_01.png`, `scene_02.png`, ... through the existing immutable `render_comic_frame()` function.
+- The production flow is `ProductionBrief` → `RenderJob` → comic frame batch → PNG QA → ordered `OutputFile` records.
+- Comic frames are written under `storage/<project_id>/renders/<render_job_id>/comic/`.
+- QA verifies the exact ordered frame set, PNG format, non-empty files and each source-derived output size before any `OutputFile` is registered.
+- Batch failures delete partial `scene_*.png` output, preserve unrelated files and set the current `RenderJob` to `FAILED`; no output records are registered before renderer and QA success.
+- Sources are project-root constrained for batch rendering and remain byte-for-byte unchanged.
+
+Verification:
+
+- domain test: 20 passed
+- comic renderer and shared text layout: 17 passed
+- production service and QA: 23 passed
+- carousel regression: 27 passed
+- video regression: 15 passed
+- real service smoke: PASS (3 scenes, `nura`/`woman`/`shadow`, 480x800 sources, Arial TTF, Cyrillic text including `ё`, em dash and Russian quotes; 3 PNG and 3 `OutputFile` records; source hashes unchanged; QA passed; no extra or temporary frames)
+
+Limitations:
+
+- No comic CLI, FFmpeg/video integration, Instagram comic export or platform package.
+- No TikTok, YouTube or VK presets.
+- No bubble animation, automatic positioning or multiple bubbles per scene.

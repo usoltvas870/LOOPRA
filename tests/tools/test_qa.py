@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.tools.qa import QAResult, check_video_output, check_carousel_output, format_qa_result
+from core.tools.qa import QAResult, check_video_output, check_carousel_output, check_comic_output, format_qa_result
 
 
 class CheckVideoOutputTests(unittest.TestCase):
@@ -69,6 +69,31 @@ class CheckCarouselOutputTests(unittest.TestCase):
         empty_path.write_bytes(b"")
 
         result = check_carousel_output(carousel_dir)
+        self.assertFalse(result.passed)
+
+
+class CheckComicOutputTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_validates_exact_order_and_sizes(self) -> None:
+        from PIL import Image
+
+        comic_dir = Path(self.temp_dir.name) / "comic"
+        comic_dir.mkdir()
+        Image.new("RGB", (480, 800), "blue").save(comic_dir / "scene_01.png", "PNG")
+        Image.new("RGB", (600, 900), "green").save(comic_dir / "scene_02.png", "PNG")
+        result = check_comic_output(comic_dir, expected_count=2, expected_sizes=[(480, 800), (600, 900)])
+        self.assertTrue(result.passed)
+
+    def test_rejects_missing_or_corrupt_frame(self) -> None:
+        comic_dir = Path(self.temp_dir.name) / "comic"
+        comic_dir.mkdir()
+        (comic_dir / "scene_01.png").write_bytes(b"")
+        result = check_comic_output(comic_dir, expected_count=1, expected_sizes=[(480, 800)])
         self.assertFalse(result.passed)
 
 

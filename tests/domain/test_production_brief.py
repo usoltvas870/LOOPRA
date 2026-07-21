@@ -199,6 +199,34 @@ def test_production_scene_without_comic_overlay_remains_valid() -> None:
     assert scene.comic_overlay is None
 
 
+def test_dialog_miniseries_requires_ordered_comic_scenes_and_font() -> None:
+    common = {
+        "workspace_id": "internal",
+        "project_id": "nura",
+        "production_brief_id": "brief_comic_001",
+        "scenario_id": "scenario_comic",
+        "content_format": ContentFormat.DIALOG_MINISERIES,
+    }
+    with pytest.raises(ValidationError):
+        ProductionBrief(**common)
+    with pytest.raises(ValidationError):
+        ProductionBrief(
+            **common,
+            subtitles=ProductionSubtitles(font_path="font.ttf"),
+            scenes=[ProductionScene(index=0, image_source="scene.png")],
+        )
+
+    brief = ProductionBrief(
+        **common,
+        subtitles=ProductionSubtitles(font_path="font.ttf"),
+        scenes=[
+            ProductionScene(index=0, image_source="one.png", duration_sec=1.0, comic_overlay=ComicOverlay(speaker="nura", text="One", position="top_left", tail_anchor=ComicTailAnchor(x=0.8, y=0.8))),
+            ProductionScene(index=1, image_source="two.png", duration_sec=1.0, comic_overlay=ComicOverlay(speaker="woman", text="Two", position="top_right", tail_anchor=ComicTailAnchor(x=0.2, y=0.8))),
+        ],
+    )
+    assert brief.content_format == ContentFormat.DIALOG_MINISERIES
+
+
 def test_comic_overlay_validation_and_round_trip() -> None:
     overlay = ComicOverlay(
         speaker="nura",

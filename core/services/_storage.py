@@ -25,6 +25,10 @@ class FileSystemProjectModelRepository(Generic[ModelT]):
         self._model_type = model_type
         self._projects_root = projects_root or PROJECTS_ROOT
 
+    @property
+    def projects_root(self) -> Path:
+        return self._projects_root
+
     def list_models(self, project_id: str) -> list[ModelT]:
         validate_project_id(project_id)
         data_dir = self._project_data_dir(project_id)

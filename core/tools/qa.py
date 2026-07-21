@@ -141,6 +141,53 @@ def check_carousel_output(
     return result
 
 
+def check_comic_output(
+    comic_dir: Path,
+    *,
+    expected_count: int,
+    expected_sizes: list[tuple[int, int]],
+) -> QAResult:
+    """Validate the exact ordered PNG frame set of a static comic episode."""
+    result = QAResult()
+    expected_names = [f"scene_{index:02d}.png" for index in range(1, expected_count + 1)]
+    if not comic_dir.exists():
+        result.passed = False
+        result.errors.append(f"Comic output dir not found: {comic_dir}")
+        return result
+
+    frames = sorted(comic_dir.glob("scene_*.png"))
+    if [path.name for path in frames] != expected_names:
+        result.passed = False
+        result.errors.append("Comic frame names or order do not match the expected scene set")
+        return result
+
+    result.subtitle_count = len(frames)
+    try:
+        from PIL import Image
+    except ImportError:
+        result.passed = False
+        result.errors.append("Pillow is required for comic image validation")
+        return result
+
+    for path, expected_size in zip(frames, expected_sizes, strict=True):
+        if path.stat().st_size == 0:
+            result.passed = False
+            result.errors.append(f"Empty PNG: {path.name}")
+            continue
+        try:
+            with Image.open(path) as image:
+                if image.format != "PNG":
+                    result.passed = False
+                    result.errors.append(f"Unexpected image format: {path.name} ({image.format})")
+                if image.size != expected_size:
+                    result.passed = False
+                    result.errors.append(f"Unexpected size: {path.name} ({image.size} vs {expected_size})")
+        except Exception:
+            result.passed = False
+            result.errors.append(f"Corrupt image: {path.name}")
+    return result
+
+
 def format_qa_result(result: QAResult, label: str = "Video") -> str:
     """Format a QAResult as a human-readable string."""
     lines = [f"QA check for {label}:"]

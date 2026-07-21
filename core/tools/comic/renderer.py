@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from core.domain import ComicOverlay
+from core.domain import ComicOverlay, ProductionBrief
 from core.tools.imaging.text_layout import TextLayoutError, fit_text, text_width
 
 
@@ -104,3 +104,34 @@ def render_comic_frame(source_image: Path, overlay: ComicOverlay | None, output_
         if isinstance(error, ComicRenderError):
             raise
         raise ComicRenderError(str(error)) from error
+
+
+def render_comic_frames(brief: ProductionBrief, output_dir: Path, project_root: Path) -> list[Path]:
+    """Render an ordered static comic episode and remove partial frames on failure."""
+    output_dir = Path(output_dir)
+    project_root = Path(project_root).resolve()
+    font_path = Path(brief.subtitles.font_path)
+    if not font_path.is_absolute():
+        font_path = project_root / font_path
+    if not font_path.is_file():
+        raise ComicRenderError(f"Font file does not exist: {font_path}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for stale in output_dir.glob("scene_*.png"):
+        stale.unlink()
+
+    rendered: list[Path] = []
+    try:
+        for number, scene in enumerate(brief.scenes, start=1):
+            source = (project_root / scene.image_source).resolve()
+            try:
+                source.relative_to(project_root)
+            except ValueError as exc:
+                raise ComicRenderError(f"Comic source escapes project root: {scene.image_source}") from exc
+            output_path = output_dir / f"scene_{number:02d}.png"
+            rendered.append(render_comic_frame(source, scene.comic_overlay, output_path, font_path))
+        return rendered
+    except Exception:
+        for partial in output_dir.glob("scene_*.png"):
+            partial.unlink()
+        raise
