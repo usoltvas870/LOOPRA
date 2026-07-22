@@ -193,21 +193,23 @@ Trend Radar, or a full test suite to use this public workflow.
 
 ## User Operational Acceptance Checklist
 
-Run these commands manually from a new PowerShell window in the repository
-root, using an already installed working environment. This checklist does not
-delete user files or assert that user acceptance has already occurred.
+Run these commands manually from a new PowerShell window. Replace the example
+repository path with your local clone. This checklist uses the version-controlled
+fixture directly, does not delete user files and does not assert that user
+acceptance has already occurred.
 
 ```powershell
+Set-Location "C:\path\to\LOOPRA"
+.\.venv\Scripts\Activate.ps1
 python scripts/produce_episode.py --help
-Copy-Item -Recurse tests\fixtures\episode_package input\fixture_episode
-python scripts/produce_episode.py --episode input\fixture_episode\episode.json --validate-only
-python scripts/produce_episode.py --episode input\fixture_episode\episode.json --json
+python scripts/produce_episode.py --episode tests\fixtures\episode_package\episode.json --validate-only
+python scripts/produce_episode.py --episode tests\fixtures\episode_package\episode.json --json
 python scripts/produce_episode.py --verify-package output\fixture_episode\final --json
-Get-ChildItem output\fixture_episode\final
+Invoke-Item output\fixture_episode\final
 ```
 
 Expected signs: each CLI command exits `0`; production reports
 `handoff_package_root`; verification reports `passed`; and the final directory
 contains `manifest.json`, the selected platform MP4 files and Instagram carousel
-slides. If `input\fixture_episode` already exists, use a different episode ID
-or replace it only after preserving your own files.
+slides. The version-controlled fixture remains unchanged and no existing
+`input/` package is required.
