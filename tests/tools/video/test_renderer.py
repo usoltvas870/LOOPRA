@@ -128,6 +128,20 @@ class GenerateSrtFromBriefTests(unittest.TestCase):
 
 
 class AssSubtitleBurnTests(unittest.TestCase):
+    def test_odd_output_resolution_fails_before_ffmpeg_invocation(self) -> None:
+        from core.tools.video.renderer import render_narrative_video
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            brief = _make_brief([ProductionScene(index=0, image_source="scene.png", duration_sec=1.0)])
+            brief.output.resolution_width = 941
+
+            with patch("core.tools.video.renderer.subprocess.run") as run:
+                with self.assertRaisesRegex(ValueError, "must be even"):
+                    render_narrative_video(brief, root / "output", root)
+
+            run.assert_not_called()
+
     def test_ass_filter_includes_font_directory(self) -> None:
         from core.tools.video.renderer import _ass_filter
 
@@ -218,6 +232,7 @@ class BuildVideoFiltergraphTests(unittest.TestCase):
         self.assertIn("scale", filter_graph)
         self.assertIn("pad", filter_graph)
         self.assertIn("zoompan", filter_graph)
+        self.assertIn(":d=72:", filter_graph)
         self.assertIn("s0", video_label)
 
     def test_two_scenes_with_transition(self) -> None:
@@ -257,6 +272,20 @@ class BuildVideoFiltergraphTests(unittest.TestCase):
         filter_graph, _ = build_video_filtergraph(brief, (1080, 1920), 24)
         self.assertIn("transition=wipeleft:duration=0.12", filter_graph)
 
+    def test_zero_duration_transition_uses_concat(self) -> None:
+        from core.tools.video.renderer import build_video_filtergraph
+
+        brief = _make_brief(
+            [
+                ProductionScene(index=0, image_source="a.png", duration_sec=1.0, transition_duration=0.0),
+                ProductionScene(index=1, image_source="b.png", duration_sec=1.0, transition_duration=0.0),
+            ]
+        )
+
+        filter_graph, _ = build_video_filtergraph(brief, (1080, 1920), 24)
+        self.assertIn("concat=n=2:v=1:a=0", filter_graph)
+        self.assertNotIn("xfade=transition=dissolve:duration=0.0", filter_graph)
+
     def test_no_zoom_when_scales_equal(self) -> None:
         from core.tools.video.renderer import build_video_filtergraph
 
@@ -274,6 +303,7 @@ class BuildVideoFiltergraphTests(unittest.TestCase):
 
         filter_graph, _ = build_video_filtergraph(brief, (1080, 1920), 24)
         self.assertIn("trim", filter_graph)
+        self.assertNotIn("zoompan", filter_graph)
 
     def test_empty_scenes_raises(self) -> None:
         from core.tools.video.renderer import build_video_filtergraph

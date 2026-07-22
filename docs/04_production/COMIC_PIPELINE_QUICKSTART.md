@@ -95,6 +95,9 @@ It is not an `OutputFile` and is not included in the manifest.
 - Source outside project root: use a project-relative image path.
 - Tail anchor inside bubble: select an anchor outside the selected position.
 - Text too long: shorten it so the renderer can wrap it inside the bubble.
+- H.264 output needs even width and height (for example, `1080x1920`); source
+  PNGs may have odd dimensions because the renderer scales them to the brief's
+  output resolution.
 - FFmpeg unavailable: install it and ensure both `ffmpeg` and `ffprobe` are on
   `PATH`.
 - Corrupt PNG: replace the source asset with a readable image.

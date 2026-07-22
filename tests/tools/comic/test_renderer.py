@@ -9,6 +9,7 @@ from PIL import Image
 
 from core.domain import ComicOverlay, ComicTailAnchor, ContentFormat, ProductionBrief, ProductionScene, ProductionSubtitles
 from core.tools.comic import ComicRenderError, render_comic_frame, render_comic_frames
+from core.tools.comic.renderer import _bubble_box, _tail_polygon
 
 
 FONT = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
@@ -49,14 +50,23 @@ def test_themes_render_distinct_png_without_mutating_source(source: Path, tmp_pa
 def test_all_positions_and_tails_stay_inside_frame(source: Path, tmp_path: Path, position: str, anchor: tuple[float, float]) -> None:
     output = render_comic_frame(source, _overlay(position=position, anchor=anchor), tmp_path / f"{position}.png", FONT)
     with Image.open(output) as image:
-        x, y = round(anchor[0] * 479), round(anchor[1] * 799)
         assert image.size == (480, 800)
-        assert image.getpixel((x, y)) != (40, 80, 120, 255)
+
+
+def test_top_bubble_reserves_motion_safe_space_and_tail_stays_bounded() -> None:
+    box = _bubble_box("top_center", 480, 800, 240, 120)
+    tail = _tail_polygon(box, (360, 700), 480, 800)
+    base_center_x = (tail[0][0] + tail[1][0]) / 2
+    base_center_y = (tail[0][1] + tail[1][1]) / 2
+    tail_length = ((tail[2][0] - base_center_x) ** 2 + (tail[2][1] - base_center_y) ** 2) ** 0.5
+
+    assert box[1] == 108
+    assert tail_length <= 48
 
 
 def test_anchor_inside_bubble_and_missing_inputs_raise_clean_errors(source: Path, tmp_path: Path) -> None:
     with pytest.raises(ComicRenderError, match="outside"):
-        render_comic_frame(source, _overlay(anchor=(0.2, 0.1)), tmp_path / "partial.png", FONT)
+        render_comic_frame(source, _overlay(anchor=(0.2, 0.2)), tmp_path / "partial.png", FONT)
     assert not (tmp_path / "partial.png").exists()
     with pytest.raises(ComicRenderError, match="Font"):
         render_comic_frame(source, _overlay(), tmp_path / "missing_font.png", tmp_path / "missing.ttf")

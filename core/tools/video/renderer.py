@@ -271,7 +271,7 @@ def _build_scene_filter(
         return lbl
 
     total_frames = max(1, int(scene_duration * fps))
-    scale_diff = abs(to_scale - from_scale) < 0.0001
+    scale_same = abs(to_scale - from_scale) < 0.0001
 
     fps_label = _nl()
     cmd_parts = [
@@ -289,7 +289,7 @@ def _build_scene_filter(
         f"{scale_label}pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black{pad_label}"
     )
 
-    if not scale_diff:
+    if not scale_same:
         t_sub = f"on/{total_frames}"
         ease = _ease_fn(easing)
         ease_expr = re.sub(r"\bt\b", f"({t_sub})", ease)
@@ -301,7 +301,7 @@ def _build_scene_filter(
         )
         zoom_label = _nl()
         cmd_parts.append(
-            f"{pad_label}zoompan=z='{z_expr}':d=1:s={W}x{H}:fps={fps}:"
+            f"{pad_label}zoompan=z='{z_expr}':d={total_frames}:s={W}x{H}:fps={fps}:"
             f"x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2){zoom_label}"
         )
         trim_src = zoom_label
@@ -426,16 +426,17 @@ def build_video_filtergraph(
             offset = cur_dur - tr_dur
 
             xl = f"[s_xfade_{i}]"
+            previous_label = scene_v_labels[0] if i == 1 else f"[s_xfade_{i - 1}]"
 
-            if i == 1:
+            if tr_dur == 0:
+                concat_label = f"[s_concat_{i}]"
                 parts.append(
-                    f"{scene_v_labels[0]}{scene_v_labels[1]}"
-                    f"xfade=transition={tr_type}:duration={tr_dur}:offset={offset}{xl}"
+                    f"{previous_label}{scene_v_labels[i]}concat=n=2:v=1:a=0{concat_label};"
+                    f"{concat_label}fps=fps={fps}{xl}"
                 )
             else:
-                prev_xl = f"[s_xfade_{i - 1}]"
                 parts.append(
-                    f"{prev_xl}{scene_v_labels[i]}"
+                    f"{previous_label}{scene_v_labels[i]}"
                     f"xfade=transition={tr_type}:duration={tr_dur}:offset={offset}{xl}"
                 )
 
@@ -454,6 +455,9 @@ def render_narrative_video(
     W = brief.output.resolution_width
     H = brief.output.resolution_height
     fps = brief.output.fps
+
+    if W % 2 or H % 2:
+        raise ValueError("Video resolution width and height must be even for H.264 output")
 
     if not brief.scenes:
         raise ValueError("ProductionBrief must have at least one scene")
