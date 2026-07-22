@@ -161,7 +161,13 @@ python scripts/produce_episode.py --episode input/<episode_id>/episode.json --va
 Production:
 
 ```powershell
-python scripts/produce_episode.py --episode input/<episode_id>/episode.json --json
+python scripts/produce_episode.py --episode input/<episode_id>/episode.json --handoff-output output --json
+```
+
+Verify the resulting user-facing package without rendering again:
+
+```powershell
+python scripts/produce_episode.py --verify-package output/<episode_id>/final --json
 ```
 
 Success exits `0`. Argument errors exit `2`; validation and production failures
@@ -178,8 +184,9 @@ storage/<project_id>/renders/<render_job_id>/comic/
 ```
 
 The JSON result reports the exact `render_job_id`, `package_root`, artifact
-paths, and source hashes. Existing comic output ordering, QA, rollback, and
-manifest semantics are unchanged.
+paths, `handoff_package_root`, and source hashes. Existing comic output
+ordering, QA, rollback, and manifest semantics are unchanged. The derived
+external package is documented in `CANONICAL_HANDOFF_PACKAGE.md`.
 
 ## Current limitations
 

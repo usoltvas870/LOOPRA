@@ -150,6 +150,7 @@ All documents in this layer are **Active specifications** but describe **Future/
 | `PRODUCTION_PIPELINE_SPEC.md` | Active (v1.0) | Production Pipeline: from Content Decision/Scenario to verified Export Package ready for distribution | Current bounded comic package + future broader pipeline | Source of truth for production pipeline boundaries |
 | `COMIC_PIPELINE_QUICKSTART.md` | Active | Reproducible 9-scene comic package acceptance and operator prerequisites | Current bounded production capability | Operational entry point for comic package acceptance |
 | `EPISODE_INPUT_PACKAGE.md` | Active | Canonical filesystem manifest, validation, and production command for comic episodes | Current bounded production capability | Source of truth for Episode Input Package v1 |
+| `CANONICAL_HANDOFF_PACKAGE.md` | Active | Stable external package derived from a verified comic RenderJob, including validation and manual handoff semantics | Current bounded production capability | Source of truth for LOOPRA 0.5 handoff package |
 
 ---
 

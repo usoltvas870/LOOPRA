@@ -40,10 +40,30 @@ def test_episode_package_runs_through_real_comic_pipeline(tmp_path: Path) -> Non
     result = json.loads(completed.stdout)
     assert result["status"] == "success"
     assert result["artifact_count"] == 22
+    handoff_root = Path(result["handoff_package_root"])
+    assert handoff_root == tmp_path / "output" / "fixture_episode" / "final"
+    assert (handoff_root / "manifest.json").is_file()
     comic_root = Path(result["package_root"])
     assert len(list(comic_root.glob("scene_*.png"))) == 9
     assert len(list((comic_root / "platforms" / "instagram").glob("*.png"))) == 9
     for platform in ("tiktok", "youtube_shorts", "vk_clips"):
         assert (comic_root / "platforms" / platform / "final_video.mp4").is_file()
     assert (comic_root / "manifest.json").is_file()
+    verified = subprocess.run(
+        [sys.executable, str(SCRIPT), "--verify-package", str(handoff_root), "--json"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=240,
+    )
+    assert verified.returncode == 0, verified.stderr
+    assert json.loads(verified.stdout)["package_validation_status"] == "passed"
+    handoff_payload = json.loads((handoff_root / "manifest.json").read_text(encoding="utf-8"))
+    assert [item["path"] for item in handoff_payload["artifacts"]] == [
+        *(f"instagram_carousel/frame_{index:02d}.png" for index in range(1, 10)),
+        "fixture_episode_tiktok.mp4",
+        "fixture_episode_youtube_shorts.mp4",
+        "fixture_episode_vk_clips.mp4",
+    ]
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in sources] == before

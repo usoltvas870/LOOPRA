@@ -767,3 +767,48 @@ Limits retained:
   orchestrator/runtime agent or general ContentCycle;
 - only the Instagram carousel handoff is covered; and
 - Opportunity, Idea and Scenario approvals remain explicit.
+
+-----------------------------------------------------------------------
+
+# Canonical Export/Handoff Package and Validation
+
+Status:
+IMPLEMENTED + END-TO-END VERIFIED
+
+Summary:
+
+- A successful `DIALOG_MINISERIES` `RenderJob` can now be materialized into a
+  separate stable user-facing directory at `output/<episode_id>/final/` (or an
+  explicitly selected handoff root).
+- The handoff builder only copies already rendered and QA-checked Instagram
+  carousel slides and TikTok, YouTube Shorts and VK Clips videos. Internal
+  render-job artifacts, renderer behavior and the internal comic manifest
+  remain unchanged.
+- `manifest.json` schema `1.0` is portable and contains relative artifact
+  paths, SHA-256, size, image/video metadata, technical render-job traceability,
+  validation state, audio semantics and explicit manual-required actions.
+- `python scripts/produce_episode.py --verify-package <final-directory>`
+  verifies an existing package without rendering: schema, exact file set,
+  checksums, metadata and full FFmpeg decode.
+- Package rebuilds are staged and verified before replacing the canonical final
+  directory; an unsuccessful rebuild preserves the preceding successful one.
+
+Verification:
+
+- focused handoff, episode, comic, video, QA, service, CLI and e2e regression:
+  103 passed, 15 subtests passed;
+- public comic acceptance: PASS (9 frames, 9 Instagram slides, 3 MP4,
+  22 output records, plus isolated failure smoke);
+- real NURA operational acceptance: PASS twice using nine untracked source
+  PNGs, public production/verify commands, three fully decoded H.264/AAC MP4,
+  nine Instagram slides and unchanged source hashes; non-manifest final
+  artifact hashes matched across runs;
+- full suite was started but exceeded the 360-second execution limit in this
+  environment; it produced no completed aggregate result and is not claimed as
+  fresh evidence.
+
+Boundaries preserved:
+
+- No Trend Radar, publishing, draft upload, platform API, captions/hashtags,
+  music generation, cover generation, UI, database, connector, scheduler or
+  agent runtime was added.

@@ -70,6 +70,16 @@ def test_argument_errors_use_nonzero_exit_and_json(tmp_path: Path) -> None:
     assert json.loads(completed.stdout)["error_type"] == "argument_error"
 
 
+def test_verify_package_failure_uses_stable_json_without_traceback(tmp_path: Path) -> None:
+    completed = _run("--verify-package", str(tmp_path / "missing"), "--json", cwd=tmp_path)
+
+    assert completed.returncode == 1
+    result = json.loads(completed.stdout)
+    assert result["status"] == "error"
+    assert result["package_validation_status"] == "failed"
+    assert "Traceback" not in completed.stdout + completed.stderr
+
+
 def test_invalid_package_never_reaches_staging_or_renderer(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

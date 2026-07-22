@@ -32,6 +32,12 @@ from .package import (
     canonical_comic_platforms,
     write_comic_package_manifest,
 )
+from .handoff import (
+    HANDOFF_PACKAGE_SCHEMA_VERSION,
+    ComicHandoffError,
+    build_comic_handoff_package,
+    verify_comic_handoff_package,
+)
 
 __all__ = [
     "COMIC_PLATFORM_VIDEO_PRESETS",
@@ -45,6 +51,9 @@ __all__ = [
     "ComicPackageError",
     "ComicPackageManifest",
     "INSTAGRAM_COMIC_PRESET",
+    "HANDOFF_PACKAGE_SCHEMA_VERSION",
+    "ComicHandoffError",
+    "build_comic_handoff_package",
     "build_comic_package_manifest",
     "build_comic_platform_video_brief",
     "calculate_brief_video_duration",
@@ -58,4 +67,5 @@ __all__ = [
     "render_comic_instagram_carousel",
     "resolve_comic_platform_video_presets",
     "write_comic_package_manifest",
+    "verify_comic_handoff_package",
 ]

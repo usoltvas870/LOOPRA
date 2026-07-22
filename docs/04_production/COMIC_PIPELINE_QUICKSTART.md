@@ -58,7 +58,8 @@ repository calls. Create an Episode Input Package and run:
 
 ```powershell
 python scripts/produce_episode.py --episode input/<episode_id>/episode.json --validate-only --json
-python scripts/produce_episode.py --episode input/<episode_id>/episode.json --json
+python scripts/produce_episode.py --episode input/<episode_id>/episode.json --handoff-output output --json
+python scripts/produce_episode.py --verify-package output/<episode_id>/final --json
 ```
 
 The manifest maps to a validated `ProductionBrief` with:
@@ -89,6 +90,11 @@ storage/<project_id>/renders/<render_job_id>/comic/
 ├── platforms/vk_clips/final_video.mp4
 └── manifest.json
 ```
+
+The stable operator handoff directory is `output/<episode_id>/final/`. It
+contains only selected platform deliverables and a portable verified manifest;
+see `CANONICAL_HANDOFF_PACKAGE.md` for its filenames, manual publication
+actions, and repeat-run behavior.
 
 The runner additionally writes `acceptance_contact_sheet.png` for manual QA.
 It is not an `OutputFile` and is not included in the manifest.

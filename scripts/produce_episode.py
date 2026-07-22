@@ -19,22 +19,27 @@ from core.services.production_pipeline import (
     build_production_pipeline_service,
 )
 from core.domain import RenderJobStatus
+from core.tools.comic import build_comic_handoff_package, verify_comic_handoff_package
 
 
 USAGE = """\
 Build a LOOPRA comic episode from a canonical Episode Input Package.
 
 Usage:
-  python scripts/produce_episode.py --episode <path-to-episode.json> [--validate-only] [--json] [--help]
+  python scripts/produce_episode.py --episode <path-to-episode.json> [--validate-only] [--handoff-output <path>] [--json] [--help]
+  python scripts/produce_episode.py --verify-package <path-to-final-package> [--json]
 
 Options:
   --episode PATH       Canonical episode.json manifest (required)
   --validate-only      Validate the complete package without rendering
+  --handoff-output PATH Root for output/<episode_id>/final (default: output)
+  --verify-package PATH Verify an existing final handoff package without rendering
   --json               Write one machine-readable JSON result to stdout
   --help, -h           Show this help and exit
 
-The manifest is the source of episode configuration. Production output is
-written through the existing pipeline under storage/<project_id>/renders/.
+The manifest is the source of episode configuration. Internal production output
+is written under storage/<project_id>/renders/; successful production also
+creates output/<episode_id>/final by default.
 """
 
 
@@ -50,7 +55,7 @@ def _write(payload: dict[str, object], *, json_mode: bool, error: bool = False) 
                 print(f"  {issue.get('path')}: {issue.get('message')}", file=stream)
         return
     print(payload.get("message", "Episode package completed"), file=stream)
-    for key in ("episode_id", "project_id", "render_job_id", "package_root"):
+    for key in ("episode_id", "project_id", "render_job_id", "package_root", "handoff_package_root"):
         if payload.get(key):
             print(f"  {key}: {payload[key]}", file=stream)
 
@@ -71,12 +76,14 @@ def main() -> int:
         return 0
     json_mode = "--json" in args
     validate_only = "--validate-only" in args
-    valid_flags = {"--episode", "--validate-only", "--json", "--help", "-h"}
+    valid_flags = {"--episode", "--validate-only", "--handoff-output", "--verify-package", "--json", "--help", "-h"}
     unknown = [item for item in args if item.startswith("-") and item not in valid_flags]
     if unknown:
         return _argument_error(f"unknown option: {unknown[0]}", json_mode)
 
     manifest_path: str | None = None
+    handoff_output: str | None = None
+    verify_package: str | None = None
     index = 0
     while index < len(args):
         argument = args[index]
@@ -85,9 +92,35 @@ def main() -> int:
             if index >= len(args):
                 return _argument_error("--episode requires a value", json_mode)
             manifest_path = args[index]
+        elif argument in {"--handoff-output", "--verify-package"}:
+            index += 1
+            if index >= len(args):
+                return _argument_error(f"{argument} requires a value", json_mode)
+            if argument == "--handoff-output":
+                handoff_output = args[index]
+            else:
+                verify_package = args[index]
         elif argument not in {"--validate-only", "--json"}:
             return _argument_error(f"unexpected argument: {argument}", json_mode)
         index += 1
+    if verify_package:
+        if manifest_path or validate_only or handoff_output:
+            return _argument_error("--verify-package cannot be combined with production options", json_mode)
+        result = verify_comic_handoff_package(Path(verify_package))
+        _write(
+            {
+                "status": "success" if result["status"] == "passed" else "error",
+                "mode": "verify_package",
+                "message": "Handoff package validation: PASSED" if result["status"] == "passed" else "Handoff package validation: FAILED",
+                "package_validation_status": result["status"],
+                "package_root": result["package_root"],
+                "errors": result["errors"],
+                "warnings": result["warnings"],
+            },
+            json_mode=json_mode,
+            error=result["status"] != "passed",
+        )
+        return 0 if result["status"] == "passed" else 1
     if not manifest_path:
         return _argument_error("--episode is required", json_mode)
 
@@ -162,6 +195,13 @@ def main() -> int:
         final_hashes = package.source_hashes()
         if final_hashes != initial_hashes:
             raise RuntimeError("Source image integrity check failed")
+        handoff_root = build_comic_handoff_package(
+            staged_brief,
+            job,
+            comic_root,
+            Path(handoff_output) if handoff_output else Path.cwd() / "output",
+            source_manifest_path=package.manifest_path,
+        )
         _write(
             {
                 "status": "success",
@@ -172,6 +212,7 @@ def main() -> int:
                 "project_id": project_id,
                 "render_job_id": job.render_job_id,
                 "package_root": str(comic_root),
+                "handoff_package_root": str(handoff_root),
                 "artifact_count": len(output_files),
                 "artifacts": [str(Path(output_file.path).resolve()) for output_file in output_files],
                 "source_hashes": final_hashes,
