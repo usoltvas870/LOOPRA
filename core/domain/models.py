@@ -443,6 +443,7 @@ class ComicOverlay(DomainModel):
 
 
 class ProductionScene(DomainModel):
+    scene_id: str = ""
     index: int = Field(ge=0)
     purpose: str = "main"
     image_source: str = Field(min_length=1)
@@ -537,6 +538,8 @@ class ProductionSlide(DomainModel):
 
 
 class ProductionBrief(ProjectScopedModel):
+    schema_version: Literal[1] = 1
+    title: str = ""
     production_brief_id: str = Field(min_length=1)
     scenario_id: str = Field(min_length=1)
     content_format: ContentFormat = ContentFormat.TEXT_SOCIAL_POST
@@ -564,6 +567,13 @@ class ProductionBrief(ProjectScopedModel):
         indexes = [scene.index for scene in self.scenes]
         if indexes != sorted(indexes) or len(set(indexes)) != len(indexes):
             raise ValueError("Dialog miniseries scene indexes must be unique and ordered")
+        scene_ids = [scene.scene_id.strip() for scene in self.scenes if scene.scene_id.strip()]
+        if scene_ids and (
+            len(scene_ids) != len(self.scenes) or len(set(scene_ids)) != len(scene_ids)
+        ):
+            raise ValueError(
+                "Dialog miniseries scene IDs must be present for every scene and unique"
+            )
         return self
 
     def transition_to(self, next_status: ProductionBriefStatus) -> "ProductionBrief":

@@ -1,4 +1,9 @@
-from .renderer import ComicRenderError, render_comic_frame, render_comic_frames
+from .renderer import (
+    ComicRenderError,
+    render_comic_frame,
+    render_comic_frames,
+    validate_comic_frame_layout,
+)
 from .platform_presets import (
     COMIC_PLATFORM_VIDEO_PRESETS,
     ComicPlatformVideoPreset,
@@ -49,6 +54,7 @@ __all__ = [
     "contain_geometry",
     "render_comic_frame",
     "render_comic_frames",
+    "validate_comic_frame_layout",
     "render_comic_instagram_carousel",
     "resolve_comic_platform_video_presets",
     "write_comic_package_manifest",

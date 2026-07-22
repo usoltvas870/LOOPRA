@@ -53,9 +53,15 @@ path. It never uses network services or production mocks.
 
 ## Run your episode
 
-Create `projects/<project_id>/` with `project.yaml` and put clean PNG images
-under that project directory, for example `assets/scene_01.png`. Build a
-`ProductionBrief` with:
+The canonical operator workflow no longer requires Python changes or direct
+repository calls. Create an Episode Input Package and run:
+
+```powershell
+python scripts/produce_episode.py --episode input/<episode_id>/episode.json --validate-only --json
+python scripts/produce_episode.py --episode input/<episode_id>/episode.json --json
+```
+
+The manifest maps to a validated `ProductionBrief` with:
 
 - `content_format: "dialog_miniseries"`;
 - ordered `scenes` with one `comic_overlay` each;
@@ -65,12 +71,10 @@ under that project directory, for example `assets/scene_01.png`. Build a
 - `target_platforms`: `instagram`, `tiktok`, `youtube_shorts`, and/or `vk`;
 - `subtitles.font_path` set to the TTF/OTF used to draw comic text.
 
-The public acceptance runner is deliberately limited to its reproducible
-technical fixture. To run a custom approved brief today, construct and save it
-through `FileSystemProductionBriefRepository`, then call
-`ProductionPipelineService.create_render_job()`, `validate_assets()`, and
-`execute_render()` in that order. This preserves the existing service contract
-instead of adding a second production implementation.
+The command saves that canonical brief through the existing repository and
+calls `ProductionPipelineService.create_render_job()`, `validate_assets()`, and
+`execute_render()` in that order. See `EPISODE_INPUT_PACKAGE.md` for the full
+manifest schema, defaults, supported values, path safety, and JSON errors.
 
 ## Results
 

@@ -204,6 +204,54 @@ def test_production_scene_without_comic_overlay_remains_valid() -> None:
     assert scene.comic_overlay is None
 
 
+def test_episode_metadata_round_trips_without_affecting_existing_defaults() -> None:
+    scene = ProductionScene(
+        scene_id="opening",
+        index=0,
+        image_source="scene.png",
+        duration_sec=1.0,
+    )
+    brief = ProductionBrief(
+        schema_version=1,
+        title="Episode title",
+        workspace_id="internal",
+        project_id="nura",
+        production_brief_id="episode_001",
+        scenario_id="scenario_001",
+        scenes=[scene],
+    )
+
+    restored = ProductionBrief.model_validate_json(brief.model_dump_json())
+    assert restored.schema_version == 1
+    assert restored.title == "Episode title"
+    assert restored.scenes[0].scene_id == "opening"
+
+
+def test_dialog_miniseries_rejects_partial_or_duplicate_scene_ids() -> None:
+    common = {
+        "workspace_id": "internal",
+        "project_id": "nura",
+        "production_brief_id": "episode_001",
+        "scenario_id": "scenario_001",
+        "content_format": ContentFormat.DIALOG_MINISERIES,
+        "subtitles": ProductionSubtitles(font_path="font.ttf"),
+    }
+    overlay = ComicOverlay(
+        speaker="nura",
+        text="Text",
+        position="top_left",
+        tail_anchor=ComicTailAnchor(x=0.8, y=0.8),
+    )
+    with pytest.raises(ValidationError):
+        ProductionBrief(
+            **common,
+            scenes=[
+                ProductionScene(scene_id="same", index=0, image_source="one.png", comic_overlay=overlay),
+                ProductionScene(scene_id="same", index=1, image_source="two.png", comic_overlay=overlay),
+            ],
+        )
+
+
 def test_dialog_miniseries_requires_ordered_comic_scenes_and_font() -> None:
     common = {
         "workspace_id": "internal",

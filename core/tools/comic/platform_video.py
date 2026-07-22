@@ -126,6 +126,7 @@ def build_comic_platform_video_brief(
             is_last=index == last_index,
         )
         clean_scene = scene.model_copy(deep=True)
+        clean_scene.scene_id = f"{scene.scene_id or f'scene_{index + 1:02d}'}_clean"
         clean_scene.index = index * 2
         clean_scene.image_source = str(source_path)
         clean_scene.duration_sec = float(timing.clean_duration_sec)
@@ -139,6 +140,7 @@ def build_comic_platform_video_brief(
         clean_scene.transition_duration = 0.0
 
         bubble_scene = scene.model_copy(deep=True)
+        bubble_scene.scene_id = f"{scene.scene_id or f'scene_{index + 1:02d}'}_bubble"
         bubble_scene.index = index * 2 + 1
         bubble_scene.image_source = str(frame_path)
         bubble_scene.duration_sec = float(timing.bubble_duration_sec)

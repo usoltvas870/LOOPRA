@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from core.domain import ComicOverlay, ProductionBrief
-from core.tools.imaging.text_layout import TextLayoutError, fit_text, text_width
+from core.tools.imaging.text_layout import TextLayout, TextLayoutError, fit_text, text_width
 
 
 class ComicRenderError(ValueError):
@@ -33,6 +33,17 @@ _BUBBLE_WIDTH_RATIO = 0.70
 _BUBBLE_MIN_HEIGHT_RATIO = 0.11
 _BUBBLE_MAX_HEIGHT_RATIO = 0.19
 _MAX_LINES = 4
+
+
+@dataclass(frozen=True)
+class _PreparedComicFrame:
+    image: Image.Image
+    theme: ComicTheme
+    bubble_width: int
+    bubble_height: int
+    box: tuple[int, int, int, int]
+    tail: list[tuple[int, int]]
+    layout: TextLayout
 
 
 def _bubble_box(position: str, width: int, height: int, bubble_width: int, bubble_height: int) -> tuple[int, int, int, int]:
@@ -78,41 +89,101 @@ def _tail_polygon(box: tuple[int, int, int, int], anchor: tuple[int, int], width
     return [base[0], base[1], tip]
 
 
-def render_comic_frame(source_image: Path, overlay: ComicOverlay | None, output_path: Path, font_path: Path) -> Path:
-    """Render one comic bubble over a source image without modifying that source."""
-    source_image, output_path, font_path = Path(source_image), Path(output_path), Path(font_path)
+def _prepare_comic_frame(
+    source_image: Path, overlay: ComicOverlay | None, font_path: Path
+) -> _PreparedComicFrame:
     if overlay is None:
         raise ComicRenderError("Comic overlay is required")
     if not source_image.is_file():
         raise ComicRenderError(f"Source image does not exist: {source_image}")
     if not font_path.is_file():
         raise ComicRenderError(f"Font file does not exist: {font_path}")
-    if source_image.resolve() == output_path.resolve():
-        raise ComicRenderError("Output path must differ from the source image")
     try:
         with Image.open(source_image) as opened:
             image = opened.convert("RGBA").copy()
         width, height = image.size
         theme = THEMES[overlay.speaker.value]
         bubble_width = max(80, round(width * _BUBBLE_WIDTH_RATIO))
-        padding_x, padding_y = max(10, round(width * 0.032)), max(8, round(height * 0.012))
+        padding_x = max(10, round(width * 0.032))
+        padding_y = max(8, round(height * 0.012))
         min_bubble_height = max(48, round(height * _BUBBLE_MIN_HEIGHT_RATIO))
         max_bubble_height = max(min_bubble_height, round(height * _BUBBLE_MAX_HEIGHT_RATIO))
-        layout = fit_text(overlay.text, font_path, max_width=bubble_width - 2 * padding_x, max_height=max(1, max_bubble_height - 2 * padding_y), max_lines=_MAX_LINES, preferred_size=max(18, round(min(width, height) * 0.037)), min_size=max(12, round(min(width, height) * 0.020)))
+        layout = fit_text(
+            overlay.text,
+            font_path,
+            max_width=bubble_width - 2 * padding_x,
+            max_height=max(1, max_bubble_height - 2 * padding_y),
+            max_lines=_MAX_LINES,
+            preferred_size=max(18, round(min(width, height) * 0.037)),
+            min_size=max(12, round(min(width, height) * 0.020)),
+        )
         bubble_height = max(min_bubble_height, layout.height + 2 * padding_y)
         box = _bubble_box(overlay.position.value, width, height, bubble_width, bubble_height)
-        anchor = (round(overlay.tail_anchor.x * (width - 1)), round(overlay.tail_anchor.y * (height - 1)))
+        anchor = (
+            round(overlay.tail_anchor.x * (width - 1)),
+            round(overlay.tail_anchor.y * (height - 1)),
+        )
         tail = _tail_polygon(box, anchor, width, height)
-        draw = ImageDraw.Draw(image, "RGBA")
+        return _PreparedComicFrame(
+            image=image,
+            theme=theme,
+            bubble_width=bubble_width,
+            bubble_height=bubble_height,
+            box=box,
+            tail=tail,
+            layout=layout,
+        )
+    except (TextLayoutError, KeyError, OSError, ValueError) as error:
+        if isinstance(error, ComicRenderError):
+            raise
+        raise ComicRenderError(str(error)) from error
+
+
+def validate_comic_frame_layout(
+    source_image: Path, overlay: ComicOverlay | None, font_path: Path
+) -> None:
+    """Validate image, text layout, bubble, and tail geometry without writing output."""
+    _prepare_comic_frame(Path(source_image), overlay, Path(font_path))
+
+
+def render_comic_frame(source_image: Path, overlay: ComicOverlay | None, output_path: Path, font_path: Path) -> Path:
+    """Render one comic bubble over a source image without modifying that source."""
+    source_image, output_path, font_path = Path(source_image), Path(output_path), Path(font_path)
+    if source_image.resolve() == output_path.resolve():
+        raise ComicRenderError("Output path must differ from the source image")
+    try:
+        prepared = _prepare_comic_frame(source_image, overlay, font_path)
+        width, height = prepared.image.size
+        draw = ImageDraw.Draw(prepared.image, "RGBA")
         outline_width = max(1, round(min(width, height) * 0.003))
-        draw.polygon(tail, fill=theme.fill, outline=theme.outline, width=outline_width)
-        draw.rounded_rectangle(box, radius=max(8, round(min(width, height) * 0.052)), fill=theme.fill, outline=theme.outline, width=outline_width)
-        text_y = box[1] + (bubble_height - layout.height) // 2
-        for line in layout.lines:
-            draw.text((box[0] + (bubble_width - text_width(line, layout.font)) // 2, text_y), line, font=layout.font, fill=theme.text)
-            text_y += layout.line_height
+        draw.polygon(
+            prepared.tail,
+            fill=prepared.theme.fill,
+            outline=prepared.theme.outline,
+            width=outline_width,
+        )
+        draw.rounded_rectangle(
+            prepared.box,
+            radius=max(8, round(min(width, height) * 0.052)),
+            fill=prepared.theme.fill,
+            outline=prepared.theme.outline,
+            width=outline_width,
+        )
+        text_y = prepared.box[1] + (prepared.bubble_height - prepared.layout.height) // 2
+        for line in prepared.layout.lines:
+            draw.text(
+                (
+                    prepared.box[0]
+                    + (prepared.bubble_width - text_width(line, prepared.layout.font)) // 2,
+                    text_y,
+                ),
+                line,
+                font=prepared.layout.font,
+                fill=prepared.theme.text,
+            )
+            text_y += prepared.layout.line_height
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        image.save(output_path, "PNG")
+        prepared.image.save(output_path, "PNG")
         if not output_path.is_file() or output_path.stat().st_size == 0:
             raise ComicRenderError(f"Comic output was not created: {output_path}")
         return output_path

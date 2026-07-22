@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "episode_id": "fixture_episode",
+  "title": "Технический диалоговый эпизод",
+  "project_id": "fixture_project",
+  "content_format": "dialog_miniseries",
+  "target_platforms": [
+    "instagram",
+    "tiktok",
+    "youtube_shorts",
+    "vk"
+  ],
+  "defaults": {
+    "duration_sec": 1.0,
+    "transition_type": "dissolve",
+    "transition_duration_sec": 0.0
+  },
+  "font": {
+    "path": "system:default"
+  },
+  "output": {
+    "resolution_width": 270,
+    "resolution_height": 480,
+    "fps": 24
+  },
+  "frames": [
+    {
+      "frame_id": "opening",
+      "image": "assets/scene_01_clean.png",
+      "speaker": "nura",
+      "text": "Нура: Выбор начинается с маленького шага.",
+      "position": "top_left",
+      "tail_anchor": {"x": 0.8, "y": 0.8}
+    },
+    {
+      "frame_id": "question",
+      "image": "assets/scene_02_clean.png",
+      "speaker": "woman",
+      "text": "Женщина: А если путь уже рядом?",
+      "position": "top_center",
+      "tail_anchor": {"x": 0.5, "y": 0.75},
+      "duration_sec": 1.25
+    },
+    {
+      "frame_id": "warning",
+      "image": "assets/scene_03_clean.png",
+      "speaker": "shadow",
+      "text": "Тень: Смотри внимательнее.",
+      "position": "top_right",
+      "tail_anchor": {"x": 0.2, "y": 0.8}
+    },
+    {
+      "frame_id": "route",
+      "image": "assets/scene_04_clean.png",
+      "speaker": "nura",
+      "text": "Нура: Не обязательно видеть весь маршрут.",
+      "position": "middle_left",
+      "tail_anchor": {"x": 0.82, "y": 0.15}
+    },
+    {
+      "frame_id": "turn",
+      "image": "assets/scene_05_clean.png",
+      "speaker": "woman",
+      "text": "Женщина: Достаточно увидеть следующий поворот.",
+      "position": "middle_right",
+      "tail_anchor": {"x": 0.18, "y": 0.15}
+    },
+    {
+      "frame_id": "fear",
+      "image": "assets/scene_06_clean.png",
+      "speaker": "shadow",
+      "text": "Тень: Страх любит оставаться безымянным.",
+      "position": "bottom_left",
+      "tail_anchor": {"x": 0.8, "y": 0.2}
+    },
+    {
+      "frame_id": "name",
+      "image": "assets/scene_07_clean.png",
+      "speaker": "nura",
+      "text": "Нура: Тогда назовём его и пойдём дальше.",
+      "position": "bottom_right",
+      "tail_anchor": {"x": 0.2, "y": 0.2}
+    },
+    {
+      "frame_id": "decision",
+      "image": "assets/scene_08_clean.png",
+      "speaker": "woman",
+      "text": "Женщина: Я выбираю движение, даже когда длинная реплика требует аккуратного переноса.",
+      "position": "top_left",
+      "tail_anchor": {"x": 0.82, "y": 0.8}
+    },
+    {
+      "frame_id": "finale",
+      "image": "assets/scene_09_clean.png",
+      "speaker": "shadow",
+      "text": "Тень: Значит, история только начинается.",
+      "position": "middle_right",
+      "tail_anchor": {"x": 0.18, "y": 0.2}
+    }
+  ]
+}

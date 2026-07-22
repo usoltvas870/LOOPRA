@@ -692,6 +692,53 @@ Known MVP limitations:
 
 -----------------------------------------------------------------------
 
+# Canonical Episode Input Package
+
+Status:
+IMPLEMENTED + END-TO-END VERIFIED
+
+Summary:
+
+- `episode.json` schema version `1` is the canonical filesystem input for the
+  bounded `DIALOG_MINISERIES` production flow.
+- The loader maps the manifest directly into the existing `ProductionBrief`,
+  `ProductionScene`, and `ComicOverlay` contract; no parallel renderer or CLI
+  domain model exists.
+- Package-relative image and font paths are root-constrained. Strict parsing,
+  enum/default checks, H.264 dimensions, image/font integrity, platform timing,
+  text fit, bubble geometry, and tail geometry are validated before runtime
+  staging, renderer, or FFmpeg execution.
+- Validated sources are copied to ignored runtime staging. Source packages are
+  never modified; production continues through the existing repositories,
+  `ProductionPipelineService`, comic/image/video QA, and package manifest.
+- Public command:
+  `python scripts/produce_episode.py --episode input/<episode_id>/episode.json`;
+  `--validate-only`, `--json`, and side-effect-free `--help` are supported.
+- The version-controlled nine-frame technical fixture demonstrates all three
+  speakers, Cyrillic and long text, positions/anchors, defaults, a duration
+  override, four platforms, and full production.
+
+Verification:
+
+- targeted loader/domain/CLI/renderer tests: 66 passed;
+- comic/video/service/CLI/e2e regression: 94 passed, 15 subtests passed;
+- existing public comic acceptance: PASS (9 scenes, 22 output records, failure
+  smoke and source integrity PASS);
+- version-controlled fixture: validation-only PASS; two production runs PASS;
+  22 output records per run and 21 non-manifest artifact hashes identical;
+- real NURA nine-PNG package through the public episode command: PASS (22
+  output records, source hashes unchanged, three MP4 files passed ffprobe,
+  existing video QA, and full decode);
+- full suite: 425 passed, 176 subtests passed.
+
+Boundaries preserved:
+
+- Existing RenderJob output and Export/Handoff Package semantics are unchanged.
+- No Trend Radar, Content Ledger, publication, connector, UI, database, agent,
+  image generation, or output-layout redesign is included.
+
+-----------------------------------------------------------------------
+
 # Intelligence / Planning to Carousel Production Vertical Slice
 
 Status:
