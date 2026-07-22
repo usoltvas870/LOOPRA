@@ -146,6 +146,10 @@ episode.
 
 Run from the repository root.
 
+For the complete public PowerShell setup, validation, production, verification,
+platform-upload mapping and user acceptance checklist, start with
+`LOCAL_WORKFLOW_QUICKSTART.md`.
+
 Validation only:
 
 ```powershell
@@ -184,9 +188,12 @@ storage/<project_id>/renders/<render_job_id>/comic/
 ```
 
 The JSON result reports the exact `render_job_id`, `package_root`, artifact
-paths, `handoff_package_root`, and source hashes. Existing comic output
-ordering, QA, rollback, and manifest semantics are unchanged. The derived
-external package is documented in `CANONICAL_HANDOFF_PACKAGE.md`.
+paths, `handoff_package_root`, and source hashes. `render_job_id` and
+`package_root` are technical traceability fields, not locations an operator must
+use: hand off only `handoff_package_root` (`output/<episode_id>/final/` by
+default). Existing comic output ordering, QA, rollback, and manifest semantics
+are unchanged. The derived external package is documented in
+`CANONICAL_HANDOFF_PACKAGE.md`.
 
 ## Current limitations
 
@@ -195,5 +202,5 @@ external package is documented in `CANONICAL_HANDOFF_PACKAGE.md`.
 - Platform timing and transitions are presets, not manifest-defined variants.
 - `system:default` is convenient but not visually portable; package a licensed
   font for reproducible typography across machines.
-- The existing RenderJob output layout is retained; a future canonical
-  `output/<episode_id>/final/` redesign is outside this slice.
+- The existing RenderJob output layout is retained; the separate canonical
+  handoff directory is `output/<episode_id>/final/`.

@@ -79,6 +79,11 @@ Next Cycle
 
 Current implementation focuses on Foundation MVP.
 
+For the verified LOOPRA 0.5 local comic-production workflow, start with
+[`docs/04_production/LOCAL_WORKFLOW_QUICKSTART.md`](docs/04_production/LOCAL_WORKFLOW_QUICKSTART.md).
+It covers PowerShell setup, episode validation, production, final-package
+verification and the manual upload mapping.
+
 Validated lifecycle:
 
 Idea → Scenario → ContentItem → ExportPackage → Publication →
