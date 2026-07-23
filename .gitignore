@@ -12,6 +12,10 @@ hyperframes/frame_*.png
 # Data dirs in trend-radar
 trend-radar/data/
 
+# Local selected-video media and derived format-inspection evidence
+trend-radar/media-inbox/
+trend-radar/data/format-inspections/
+
 # Generated outputs in video-assembler
 video-assembler/jobs/
 video-assembler/videos/output/

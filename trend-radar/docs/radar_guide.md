@@ -83,6 +83,23 @@
 | Время дня | Результаты отличаются утром/вечером |
 | Тренды меняются | Другие видео — это нормально |
 
+## Выбранный ролик: локальная инспекция формата
+
+Обычный запуск Radar не скачивает и не анализирует видео. Для явно выбранного
+ролика помести допустимо полученный локальный MP4 в `media-inbox/` (эта папка
+игнорируется Git) и запусти независимый офлайн-инспектор:
+
+```powershell
+python inspect_video_format.py --input media-inbox/video.mp4 --video-id <TikTok-ID> --output-dir data/format-inspections/<TikTok-ID>
+```
+
+Инспектор не использует cookies, сеть или downloader и не изменяет исходный
+файл. Он сохраняет только derived evidence: `inspection.json`, Markdown,
+ffprobe JSON, кадры, contact sheets и scene metrics. URL при необходимости
+передаётся отдельно через `--canonical-url`; signed URL не должен попадать в
+отчёты. OCR, транскрипция и семантическая интерпретация в этом baseline имеют
+явный статус `unavailable`/`manual_review_required`, а не выдаются за факт.
+
 ## Итоговые файлы
 
 После запуска в `data/`:
