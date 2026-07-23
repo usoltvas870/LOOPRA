@@ -105,12 +105,6 @@ async def main() -> int:
                 save_run_evidence(conn, failed, journal_path)
                 conn.commit()
             return finish(e.reason, code)
-        finally:
-            if collector:
-                shutdown_started = datetime.now()
-                await collector.close()
-                shutdown_duration_ms = int((datetime.now() - shutdown_started).total_seconds() * 1000)
-
         logger.info(f'Total videos collected: {len(videos)}')
         if not videos:
             reason = collector.last_collection_reason or 'no_videos_found'
@@ -149,6 +143,12 @@ async def main() -> int:
             if v.get('views') is None
         ]
         top_videos = (with_views[:30] + without_views[:max(0, 30 - len(with_views))])[:30]
+        await collector.validate_candidate_links(top_videos)
+        verified_top_videos = [
+            video for video in top_videos
+            if video.get('link_status') in ('AVAILABLE', 'REDIRECTED_TO_CANONICAL')
+            and video.get('identity_confidence') == 'HIGH'
+        ]
 
         logger.info(f'Videos with views >= {min_views}: {len(with_views)}, '
                     f'without views: {len(without_views)}, '
@@ -215,6 +215,8 @@ async def main() -> int:
                     'age_hours': video.get('age_hours'),
                     'age_days': video.get('age_days'),
                     'freshness_bucket': video.get('freshness_bucket'),
+                    'identity_confidence': video.get('identity_confidence'),
+                    'link_status': video.get('link_status'),
                     'freshness_known': video.get('freshness_known'),
                     'new_to_database': bool(
                         video.get('provenance', {}).get('new_to_database')
@@ -225,6 +227,28 @@ async def main() -> int:
         }
 
         export_started = datetime.now()
+        stats['link_integrity'] = {
+            'checked': len(top_videos),
+            'available': sum(v.get('link_status') == 'AVAILABLE' for v in top_videos),
+            'redirected': sum(v.get('link_status') == 'REDIRECTED_TO_CANONICAL' for v in top_videos),
+            'unavailable': sum(v.get('link_status') in ('PRIVATE_OR_DELETED', 'NOT_FOUND') for v in top_videos),
+            'unknown': sum(v.get('link_status') not in ('AVAILABLE', 'REDIRECTED_TO_CANONICAL', 'PRIVATE_OR_DELETED', 'NOT_FOUND') for v in top_videos),
+            'rejected_identity_objects': sum(v.get('identity_confidence') != 'HIGH' for v in top_videos),
+        }
+        stats['link_validation_results'] = [
+            {
+                'video_id': video.get('video_id'),
+                'author_username': video.get('author_username'),
+                'canonical_url': video.get('url'),
+                'fallback_url': video.get('fallback_url'),
+                'identity_source_endpoint': video.get('identity_source_endpoint'),
+                'link_status': video.get('link_status'),
+                'link_final_hostname': video.get('link_final_hostname'),
+                'identity_warnings': video.get('identity_warnings', []),
+            }
+            for video in top_videos
+        ]
+        top_videos = verified_top_videos
         report_md = generate_report(stats, top_videos, ai_analyses, playlists)
         report_path = save_report(report_md)
 
@@ -338,6 +362,12 @@ async def main() -> int:
         logger.exception('Unexpected radar failure')
         return finish('internal_error', 1)
     finally:
+        if collector:
+            shutdown_started = datetime.now()
+            try:
+                await collector.close()
+            finally:
+                shutdown_duration_ms = int((datetime.now() - shutdown_started).total_seconds() * 1000)
         conn.close()
 
 

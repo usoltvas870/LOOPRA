@@ -146,6 +146,10 @@ class RunRadarResultTests(unittest.IsolatedAsyncioTestCase):
             run_id = 'run'
             last_collection_reason = None
             async def collect_all(self, sources): return [video]
+            async def validate_candidate_links(self, videos):
+                for item in videos:
+                    item.update(link_status='AVAILABLE', identity_confidence='HIGH')
+                return videos
 
         with patch.multiple(run_radar, setup_logging=Mock(), load_env=Mock(),
                             read_source_file=Mock(side_effect=lambda name: ['source'] if name == 'hashtags.txt' else []),

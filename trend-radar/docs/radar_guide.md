@@ -85,6 +85,15 @@ freshness score, momentum proxy, confidence, classification, причины и
 является измеренной скоростью роста. Отсутствующий share отмечен как missing,
 а не как измеренный ноль. Полная методика: `scoring_logic.md`.
 
+## Link integrity
+
+Перед включением в `TOP MANUAL REVIEW CANDIDATES` Radar проверяет canonical
+permalink в своей авторизованной сессии. В отчёт попадают только `AVAILABLE` и
+`REDIRECTED_TO_CANONICAL`; `VALIDATION_UNKNOWN`, private/deleted и challenge
+объекты остаются вне пользовательского top-list. Сверь покрытие в разделе
+`LINK INTEGRITY`: если оно ниже 95%, не объявляй весь запуск готовым для ручного
+отбора без повторной controlled validation.
+
 ## Проверяемость данных
 
 Для каждого запуска сохраняется JSON source-attempt journal: статус, raw/unique/duplicate счётчики, безопасный URL маршрута, метод сбора и состояние аутентификации. JSON и SQLite provenance сохраняют все источники, в которых встретился ролик, не дублируя строку `videos`. Отчёты включают Source Coverage, Cross-source Overlap, Freshness Summary, current candidates и evergreen references. Freshness: emerging ≤72ч, current ≤14д, recent evergreen ≤90д, historical evergreen >90д; без даты — unknown. Возраст не меняет существующую формулу Final Score: score breakdown показывает reach, engagement, comment и viral components отдельно.

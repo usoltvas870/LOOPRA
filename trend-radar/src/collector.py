@@ -44,6 +44,7 @@ class TikTokCollector:
         self.last_raw_items_received = 0
         self.last_final_page_url = None
         self.last_authentication_state = 'unknown'
+        self.last_unsupported_schema_count = 0
         self.authentication_state = 'unknown'
         self.source_attempts: list[dict] = []
         self.provenance: list[dict] = []
@@ -316,7 +317,7 @@ class TikTokCollector:
         self.last_final_page_url = None
         self.last_authentication_state = self.authentication_state
         page = await self.context.new_page()
-        api_data: list[dict] = []
+        api_data: list[tuple[str, dict]] = []
 
         async def on_response(response):
             if not response.ok:
@@ -326,7 +327,7 @@ class TikTokCollector:
                 try:
                     body = await response.json()
                     if body:
-                        api_data.append(body)
+                        api_data.append((url_path.split('?', 1)[0], body))
                         logger.debug(
                             f'API captured [{source_type}/{source_value}]: '
                             f'{url_path[:120]} | keys={list(body.keys())[:5]}'
@@ -381,6 +382,7 @@ class TikTokCollector:
                 return []
 
             videos = extract_from_api_responses(api_data, source_type, source_value)
+            self.last_unsupported_schema_count = max(0, sum(len(body.get('itemList') or body.get('items') or body.get('data') or []) for _, body in api_data if isinstance(body, dict)) - len(videos))
             if len(videos) < self.max_results:
                 await self._activate_videos_tab(page)
                 await self._scroll(page, 4)
@@ -398,10 +400,9 @@ class TikTokCollector:
                 self.last_raw_items_received = len(videos)
                 logger.info(f'  Got {len(videos)} videos (API)')
             else:
-                videos = await extract_video_data(page, source_type, source_value)
-                self.last_collection_method = 'ssr' if videos else 'none'
-                self.last_raw_items_received = len(videos)
-                logger.info(f'  Got {len(videos)} videos (DOM)')
+                self.last_collection_method = 'none'
+                self.last_raw_items_received = 0
+                logger.info('  No supported endpoint-specific video objects')
 
             if not videos:
                 await self._save_debug_screenshot(page, f'empty_{source_value}')
@@ -476,6 +477,38 @@ class TikTokCollector:
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
         logger.info(f'Stats enriched: {enriched}/{len(need_stats)}')
+        return videos
+
+    async def validate_candidate_links(self, videos: list[dict]) -> list[dict]:
+        """Validate a bounded manual-review set; 200 error pages are not accepted."""
+        for video in videos:
+            page = await self.context.new_page()
+            try:
+                await page.goto(video['url'], wait_until='domcontentloaded', timeout=20_000)
+                await asyncio.sleep(1)
+                text = (await page.locator('body').inner_text())[:3000].lower()
+                final_url = page.url
+                found_id = extract_video_id(final_url)
+                unavailable = any(term in text for term in ('video is unavailable', 'видео недоступно', 'couldn\'t find this video'))
+                if 'challenge' in final_url.lower() or 'captcha' in text:
+                    status = 'CHALLENGE'
+                elif 'login' in final_url.lower():
+                    status = 'LOGIN_REQUIRED'
+                elif unavailable:
+                    status = 'PRIVATE_OR_DELETED'
+                elif found_id == video['video_id']:
+                    status = 'AVAILABLE' if final_url.split('?', 1)[0] == video['url'] else 'REDIRECTED_TO_CANONICAL'
+                else:
+                    status = 'VALIDATION_UNKNOWN'
+                video.update(link_status=status, link_validation_timestamp=utc_iso(), link_final_hostname=final_url.split('/')[2] if '//' in final_url else None)
+                video['canonical_url_status'] = status
+                if status not in ('AVAILABLE', 'REDIRECTED_TO_CANONICAL'):
+                    video.setdefault('identity_warnings', []).append(f'link_validation={status}')
+            except Exception:
+                video.update(link_status='NETWORK_ERROR', link_validation_timestamp=utc_iso(), canonical_url_status='NETWORK_ERROR')
+                video.setdefault('identity_warnings', []).append('link_validation=NETWORK_ERROR')
+            finally:
+                await page.close()
         return videos
 
     async def _is_blocked(self, page, label: str) -> tuple[bool, str]:

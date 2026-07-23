@@ -18,7 +18,7 @@ from collector import RadarOperationalError, TikTokCollector
 
 class DataTrustTests(unittest.TestCase):
     def test_parser_and_freshness_boundaries(self):
-        video = _parse_item({'id': '1', 'author': {'uniqueId': 'a'}, 'stats': {'createTime': 0}})
+        video = _parse_item({'id': '7261234567890123456', 'author': {'uniqueId': 'author_1'}, 'stats': {'createTime': 0}})
         self.assertEqual(video['published_at'], '1970-01-01T00:00:00Z')
         for hours, expected in ((72, 'emerging'), (72.01, 'current'), (14 * 24, 'current'), (90 * 24, 'recent_evergreen'), (90 * 24 + 1, 'historical_evergreen')):
             result = apply_freshness({'publish_time': str(1_700_000_000)}, f'2023-11-14T22:13:20Z')

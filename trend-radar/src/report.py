@@ -30,6 +30,7 @@ XLSX_HEADERS = [
     ('Reach Score', 14), ('Engagement Score', 18), ('Freshness Score', 16),
     ('Momentum Proxy', 16), ('Confidence', 12), ('Classification', 18),
     ('Final Score', 12), ('Ranking Reasons', 55), ('Caveats', 70), ('Missing Fields', 30),
+    ('Link Status', 24), ('Link Checked At', 22), ('Identity Confidence', 20), ('Source Endpoint', 45),
 ]
 
 
@@ -96,6 +97,14 @@ def generate_report(
             )
     lines += ['', '## Data Quality Warnings', '']
     lines += [f'- {warning}' for warning in warnings] or ['- None.']
+    integrity = stats.get('link_integrity', {})
+    lines += ['', '## LINK INTEGRITY', '',
+              f'- Checked: {integrity.get("checked", 0)}',
+              f'- Available: {integrity.get("available", 0)}',
+              f'- Redirected: {integrity.get("redirected", 0)}',
+              f'- Unavailable: {integrity.get("unavailable", 0)}',
+              f'- Unknown: {integrity.get("unknown", 0)}',
+              f'- Rejected identity objects: {integrity.get("rejected_identity_objects", 0)}']
     classifications = {}
     for video in top_videos:
         classification = video.get('classification', 'INSUFFICIENT_DATA')
@@ -117,6 +126,8 @@ def generate_report(
         lines.append('')
         lines.append(f'- **Автор:** @{v.get("author_username", "N/A")}')
         lines.append(f'- **URL:** {v.get("url", "#")}')
+        lines.append(f'- **Link status / identity:** {v.get("link_status", "UNVALIDATED")} / {v.get("identity_confidence", "UNKNOWN")}')
+        lines.append(f'- **Source endpoint:** {v.get("identity_source_endpoint", "unknown")}')
         lines.append(f'- **Источник:** {v.get("source_type", "N/A")} / {v.get("source_value", "N/A")}')
         lines.append(f'- **Просмотры:** {_fmt(v.get("views"))}')
         lines.append(f'- **Лайки:** {_fmt(v.get("likes"))}')
@@ -259,7 +270,7 @@ def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None, stats: d
         ws.cell(row=row_idx, column=9, value=v.get('likes'))
         ws.cell(row=row_idx, column=10, value=v.get('comments'))
         ws.cell(row=row_idx, column=11, value=v.get('shares'))
-        values = [v.get('published_at'), v.get('age_hours'), v.get('freshness_bucket'), v.get('like_rate'), v.get('comment_rate'), v.get('share_rate'), v.get('total_engagement_rate'), v.get('reach_score'), v.get('engagement_score'), v.get('freshness_score'), v.get('momentum_proxy'), v.get('data_confidence'), v.get('classification'), v.get('final_score'), '; '.join(v.get('ranking_reasons', [])), '; '.join(v.get('caveats', [])), ', '.join(v.get('missing_fields', []))]
+        values = [v.get('published_at'), v.get('age_hours'), v.get('freshness_bucket'), v.get('like_rate'), v.get('comment_rate'), v.get('share_rate'), v.get('total_engagement_rate'), v.get('reach_score'), v.get('engagement_score'), v.get('freshness_score'), v.get('momentum_proxy'), v.get('data_confidence'), v.get('classification'), v.get('final_score'), '; '.join(v.get('ranking_reasons', [])), '; '.join(v.get('caveats', [])), ', '.join(v.get('missing_fields', [])), v.get('link_status'), v.get('link_validation_timestamp'), v.get('identity_confidence'), v.get('identity_source_endpoint')]
         for column, value in enumerate(values, 12):
             ws.cell(row=row_idx, column=column, value=value)
 

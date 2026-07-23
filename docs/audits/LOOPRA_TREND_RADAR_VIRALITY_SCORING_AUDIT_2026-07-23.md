@@ -87,7 +87,12 @@ generation or video assembly is part of this slice.
 
 Product decision: **CURRENT METHODOLOGY USABLE WITH LIMITED FIXES**.
 
-Readiness: **MANUAL TREND SELECTION READY**.
+Readiness was later withdrawn by the Video Identity and Link Integrity audit:
+the original report had not verified clickable video availability.
+
+The corrective run subsequently restored manual-report readiness under the
+stricter rule that every published candidate has an AVAILABLE or canonical
+redirect validation result; unknown diagnostics are excluded from the report.
 
 ## Authentication reliability follow-up
 
