@@ -12,6 +12,7 @@ from playwright.async_api import async_playwright, Browser
 
 from parser import extract_video_data, extract_from_api_responses, parse_detail_page_stats
 from utils import get_config_int, get_config, async_random_sleep, extract_video_id, get_cookie_path
+from run_data import apply_freshness, utc_iso
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,15 @@ class TikTokCollector:
         self.connected_over_cdp = False
         self.owns_browser = False
         self.last_collection_reason: Optional[str] = None
+        self.last_collection_method = 'none'
+        self.last_raw_items_received = 0
+        self.last_final_page_url = None
+        self.last_authentication_state = 'unknown'
+        self.authentication_state = 'unknown'
+        self.source_attempts: list[dict] = []
+        self.provenance: list[dict] = []
         self.max_results = get_config_int('MAX_RESULTS_PER_SOURCE', 20)
-        self.collected_at = datetime.now().isoformat()
+        self.collected_at = utc_iso()
         self.run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.cookie_path = get_cookie_path()
         self.screenshots_dir = Path(__file__).resolve().parent.parent / 'data' / 'debug'
@@ -106,48 +114,25 @@ class TikTokCollector:
                 locale='ru-RU',
                 storage_state=storage_state,
             )
+        self.authentication_state = 'public'
 
         self._cleanup_old_screenshots()
 
         if storage_state:
             valid, validation_reason = await self._validate_cookies()
+            if valid:
+                self.authentication_state = 'authenticated'
             if not valid and self.cookie_path.exists():
                 if self.diagnostic_mode or self.headless:
                     raise RadarOperationalError(
                         'authentication_required',
                         f'TikTok authentication is required ({validation_reason}).',
                     )
-                logger.warning(
-                    '  ┌────────────────────────────────────────────────┐\n'
-                    '  │ Куки протухли. Нужно залогиниться заново.     │\n'
-                    '  │ Откроется TikTok — просто войди в аккаунт.    │\n'
-                    '  │ После входа скрипт сам подхватит куки.        │\n'
-                    '  │ Ждать не больше 5 минут.                      │\n'
-                    '  └────────────────────────────────────────────────┘'
+                self.last_authentication_state = 'login_overlay'
+                raise RadarOperationalError(
+                    'authentication_timeout',
+                    f'TikTok authentication is required ({validation_reason}); interactive login is not automated.',
                 )
-                page = await self.context.new_page()
-                try:
-                    await page.goto(
-                        'https://www.tiktok.com/login/phone-or-email/email',
-                        wait_until='load',
-                        timeout=30000,
-                    )
-                    for _ in range(150):
-                        await asyncio.sleep(2)
-                        url = page.url.lower()
-                        if 'login' not in url and 'auth' not in url:
-                            logger.info('Login detected — saving fresh cookies')
-                            break
-                    else:
-                        logger.warning('Login timeout — continuing with old cookies')
-                finally:
-                    await page.close()
-                self.cookie_path.parent.mkdir(parents=True, exist_ok=True)
-                cookies = await self.context.cookies()
-                import json as _json
-                with open(self.cookie_path, 'w', encoding='utf-8') as f:
-                    _json.dump({'cookies': cookies, 'origins': []}, f)
-                logger.info(f'Saved {len(cookies)} cookies to {self.cookie_path}')
 
         logger.info('Browser started')
 
@@ -177,80 +162,73 @@ class TikTokCollector:
             self.playwright = None
 
     async def collect_all(self, sources: dict) -> list[dict]:
-        all_videos = []
-        seen_urls: set[str] = set()
-
-        for username in sources.get('competitors', []):
-            try:
-                videos = await self.collect_from_competitor(username)
-                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
-                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
-                for v in videos:
-                    url = v.get('url', '')
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_videos.append(v)
-            except Exception as e:
-                logger.error(f'Competitor @{username} failed: {e}')
-            await async_random_sleep(3, 6)
-
-        for hashtag in sources.get('hashtags', []):
-            try:
-                videos = await self.collect_from_hashtag(hashtag)
-                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
-                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
-                for v in videos:
-                    url = v.get('url', '')
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_videos.append(v)
-            except Exception as e:
-                logger.error(f'Hashtag #{hashtag} failed: {e}')
-            await async_random_sleep(3, 6)
-
-        for keyword in sources.get('keywords', []):
-            try:
-                videos = await self.collect_from_keyword(keyword)
-                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
-                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
-                for v in videos:
-                    url = v.get('url', '')
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_videos.append(v)
-            except Exception as e:
-                logger.error(f"Keyword '{keyword}' failed: {e}")
-            await async_random_sleep(3, 6)
-
+        planned = [('competitor', v) for v in sources.get('competitors', [])]
+        planned += [('hashtag', v) for v in sources.get('hashtags', [])]
+        planned += [('keyword', v) for v in sources.get('keywords', [])]
         rotational = sources.get('rotational', {})
-        for entry in rotational.get('hashtags', []):
+        planned += [('hashtag', v) for v in rotational.get('hashtags', [])]
+        planned += [('keyword', v) for v in rotational.get('keywords', [])]
+        all_videos, seen = [], {}
+        for ordinal, (source_type, value) in enumerate(planned, 1):
+            started = datetime.now()
+            attempt = {'run_id': self.run_id, 'ordinal': ordinal, 'source_type': source_type, 'source_value': value,
+                       'started_at': utc_iso(), 'requested_limit': self.max_results, 'raw_items_received': 0,
+                       'parsed_items': 0, 'items_with_valid_url': 0, 'unique_within_source': 0, 'duplicates_within_source': 0,
+                       'unique_added_to_run': 0, 'duplicates_already_seen_in_run': 0, 'items_rejected': 0,
+                       'rejection_reasons': {}, 'collection_method': 'none', 'status': 'error', 'error_reason': None,
+                       'final_page_url': None, 'authentication_state': 'unknown'}
             try:
-                videos = await self.collect_from_hashtag(entry)
-                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
-                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
-                for v in videos:
-                    url = v.get('url', '')
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_videos.append(v)
-            except Exception as e:
-                logger.error(f'Rotational hashtag #{entry} failed: {e}')
-            await async_random_sleep(3, 6)
-
-        for entry in rotational.get('keywords', []):
-            try:
-                videos = await self.collect_from_keyword(entry)
-                if self.diagnostic_mode and self.last_collection_reason == 'authentication_required':
-                    raise RadarOperationalError('authentication_required', 'TikTok login wall detected.')
-                for v in videos:
-                    url = v.get('url', '')
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_videos.append(v)
-            except Exception as e:
-                logger.error(f"Rotational keyword '{entry}' failed: {e}")
-            await async_random_sleep(3, 6)
-
+                videos = await (self.collect_from_hashtag(value) if source_type == 'hashtag' else self.collect_from_keyword(value) if source_type == 'keyword' else self.collect_from_competitor(value))
+                attempt.update(raw_items_received=self.last_raw_items_received, parsed_items=len(videos), collection_method=self.last_collection_method,
+                               final_page_url=self.last_final_page_url, authentication_state=self.last_authentication_state)
+                limit_excluded = max(0, self.last_raw_items_received - len(videos))
+                if limit_excluded:
+                    attempt['items_rejected'] += limit_excluded
+                    attempt['rejection_reasons']['requested_limit'] = limit_excluded
+                local = set()
+                for video in videos:
+                    url = video.get('url')
+                    if not url:
+                        attempt['items_rejected'] += 1; attempt['rejection_reasons']['missing_url'] = attempt['rejection_reasons'].get('missing_url', 0) + 1; continue
+                    attempt['items_with_valid_url'] += 1
+                    key = video.get('video_id') or url
+                    if key in local:
+                        attempt['duplicates_within_source'] += 1; continue
+                    local.add(key); attempt['unique_within_source'] += 1
+                    if key in seen:
+                        attempt['duplicates_already_seen_in_run'] += 1
+                        seen[key]['matched_sources'].append({'source_type': source_type, 'source_value': value, 'ordinal': ordinal})
+                        seen[key]['discovery_methods'].append(self.last_collection_method)
+                        seen[key]['repeat_discoveries'] += 1
+                    else:
+                        apply_freshness(video, self.collected_at)
+                        provenance = {'video_id': video.get('video_id'), 'canonical_url': url, 'primary_source_type': source_type,
+                                      'primary_source_value': value, 'first_discovery_ordinal': ordinal,
+                                      'matched_sources': [{'source_type': source_type, 'source_value': value, 'ordinal': ordinal}],
+                                      'discovery_methods': [self.last_collection_method], 'repeat_discoveries': 0, 'new_to_database': False}
+                        video['provenance'] = provenance; seen[key] = provenance; all_videos.append(video); attempt['unique_added_to_run'] += 1
+                attempt['status'] = 'success' if videos else ('blocked' if self.last_collection_reason in ('authentication_required', 'tiktok_blocked') else 'empty')
+                attempt['error_reason'] = self.last_collection_reason if not videos else None
+            except RadarOperationalError as error:
+                attempt.update(
+                    raw_items_received=self.last_raw_items_received,
+                    parsed_items=0,
+                    collection_method=self.last_collection_method,
+                    status='timeout' if error.reason == 'authentication_timeout' else 'error',
+                    error_reason=error.reason,
+                    final_page_url=self.last_final_page_url,
+                    authentication_state=self.last_authentication_state,
+                )
+                raise
+            except Exception as error:
+                attempt.update(status='error', error_reason=type(error).__name__)
+                logger.error('Source %s failed: %s', value, error)
+            finally:
+                attempt['completed_at'] = utc_iso(); attempt['duration_ms'] = int((datetime.now() - started).total_seconds() * 1000)
+                self.source_attempts.append(attempt)
+            if ordinal < len(planned):
+                await async_random_sleep(3, 6)
+        self.provenance = list(seen.values())
         return all_videos
 
     async def _dismiss_overlays(self, page) -> None:
@@ -343,6 +321,11 @@ class TikTokCollector:
     async def _navigate_and_extract(
         self, url: str, source_type: str, source_value: str
     ) -> list[dict]:
+        self.last_collection_reason = None
+        self.last_collection_method = 'none'
+        self.last_raw_items_received = 0
+        self.last_final_page_url = None
+        self.last_authentication_state = self.authentication_state
         page = await self.context.new_page()
         api_data: list[dict] = []
 
@@ -391,33 +374,44 @@ class TikTokCollector:
             await self._dismiss_overlays(page)
 
             blocked, reason = await self._is_blocked(page, source_value)
+            self.last_final_page_url = page.url
+            if 'login' in reason.lower():
+                self.last_authentication_state = 'login_overlay'
             if blocked:
                 logger.warning(f'Blocked at {url} — {reason}')
                 self.last_collection_reason = (
-                    'authentication_required' if 'login' in reason.lower()
+                    'authentication_timeout' if 'login' in reason.lower()
                     else 'tiktok_blocked'
                 )
                 await self._save_debug_screenshot(page, f'blocked_{source_value}')
+                if self.last_collection_reason == 'authentication_timeout':
+                    raise RadarOperationalError(
+                        'authentication_timeout',
+                        'TikTok login overlay detected; interactive login is not automated.',
+                    )
                 return []
 
-            await self._activate_videos_tab(page)
-
-            await self._scroll(page, 4)
-            await asyncio.sleep(2)
-
-            try:
-                await page.wait_for_selector(
-                    'a[href*="/video/"], [data-e2e="user-post-item"]',
-                    timeout=5000,
-                )
-            except Exception:
-                pass
-
             videos = extract_from_api_responses(api_data, source_type, source_value)
+            if len(videos) < self.max_results:
+                await self._activate_videos_tab(page)
+                await self._scroll(page, 4)
+                await asyncio.sleep(2)
+                try:
+                    await page.wait_for_selector(
+                        'a[href*="/video/"], [data-e2e="user-post-item"]',
+                        timeout=5000,
+                    )
+                except Exception:
+                    pass
+                videos = extract_from_api_responses(api_data, source_type, source_value)
             if videos:
+                self.last_collection_method = 'api'
+                self.last_raw_items_received = len(videos)
                 logger.info(f'  Got {len(videos)} videos (API)')
             else:
                 videos = await extract_video_data(page, source_type, source_value)
+                self.last_collection_method = 'ssr' if videos else 'none'
+                self.last_raw_items_received = len(videos)
                 logger.info(f'  Got {len(videos)} videos (DOM)')
 
             if not videos:
@@ -484,10 +478,11 @@ class TikTokCollector:
             stats = await self._fetch_video_stats(url)
             if stats:
                 for key in ('views', 'likes', 'comments', 'shares',
-                            'author_followers', 'publish_time',
+                            'author_followers', 'publish_time', 'published_at',
                             'caption', 'author_username'):
                     if stats.get(key) is not None and v.get(key) is None:
                         v[key] = stats[key]
+                apply_freshness(v, self.collected_at)
                 enriched += 1
             await asyncio.sleep(random.uniform(1.0, 2.0))
 

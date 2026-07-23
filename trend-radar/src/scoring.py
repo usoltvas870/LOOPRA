@@ -29,6 +29,7 @@ def compute_scores(videos: list[dict]) -> list[dict]:
     for v in scored:
         v['final_score'] = _final_score(v, max_views)
         v['subscriber_potential'] = _subscriber_potential(v, max_views)
+        v['score_breakdown'] = _score_breakdown(v, max_views)
 
     scored.sort(key=lambda v: v.get('final_score', 0) or 0, reverse=True)
     return scored
@@ -90,3 +91,16 @@ def _final_score(video: dict, max_views: int) -> float:
         score += min(viral, 1.0) * 0.1
 
     return round(score, 4)
+
+
+def _score_breakdown(video: dict, max_views: int) -> dict:
+    """Expose the existing formula; freshness intentionally has no score weight."""
+    views_norm = (video.get('views') or 0) / max_views if max_views else 0
+    viral = video.get('viral_score') or 0
+    return {
+        'reach_component': round(views_norm * 0.5, 4),
+        'engagement_component': round((video.get('engagement_rate') or 0) * 100 * 0.3, 4),
+        'comment_component': round((video.get('comment_density') or 0) * 1000 * 0.2, 4),
+        'viral_component': round(min(viral, 1.0) * 0.1 if viral > 0 else 0.0, 4),
+        'freshness_component': 0.0,
+    }

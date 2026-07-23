@@ -1,11 +1,17 @@
 import logging
+import json
 import re
 from datetime import datetime
 from pathlib import Path
 
+from utils import get_config
+
 logger = logging.getLogger(__name__)
 
-REPORTS_DIR = Path(__file__).resolve().parent.parent / 'data' / 'reports'
+REPORTS_DIR = Path(get_config(
+    'RADAR_REPORTS_DIR',
+    str(Path(__file__).resolve().parent.parent / 'data' / 'reports'),
+))
 
 XLSX_HEADERS = [
     ('#', 4),
@@ -61,6 +67,34 @@ def generate_report(
         '',
     ]
 
+    lines[5:5] = ['## Run Summary', '', f'- Mode: {stats.get("mode", "N/A")}', f'- Start/end: {stats.get("started_at", "N/A")} / {stats.get("completed_at", "N/A")}', '']
+    lines += ['', '## Source Coverage', '', '| # | Source | Status | Raw | Unique | Added | Duplicates | Method |', '|---:|---|---|---:|---:|---:|---:|---|']
+    for attempt in stats.get('source_attempts', []):
+        lines.append(f'| {attempt.get("ordinal")} | {attempt.get("source_type")}/{attempt.get("source_value")} | {attempt.get("status")} | {attempt.get("raw_items_received", 0)} | {attempt.get("unique_within_source", 0)} | {attempt.get("unique_added_to_run", 0)} | {attempt.get("duplicates_already_seen_in_run", 0)} | {attempt.get("collection_method")} |')
+    lines += ['', '## Cross-source Overlap', '']
+    overlaps = [p for p in stats.get('provenance', []) if p.get('repeat_discoveries')]
+    lines += [f'- {p.get("video_id")}: {len(p.get("matched_sources", []))} sources' for p in overlaps] or ['- No overlap observed.']
+    buckets = {key: 0 for key in ('emerging', 'current', 'recent_evergreen', 'historical_evergreen', 'unknown')}
+    for video in top_videos: buckets[video.get('freshness_bucket', 'unknown')] += 1
+    lines += ['', '## Freshness Summary', ''] + [f'- {key}: {value}' for key, value in buckets.items()]
+    lines += ['', '## Current Trend Candidates', ''] + [f'- {v.get("url")} ({v.get("freshness_bucket")})' for v in top_videos if v.get('freshness_bucket') in ('emerging', 'current')] or ['- None.']
+    lines += ['', '## Evergreen Format References', ''] + [f'- {v.get("url")} ({v.get("freshness_bucket")})' for v in top_videos if v.get('freshness_bucket') in ('recent_evergreen', 'historical_evergreen')] or ['- None.']
+    warnings = []
+    if buckets['unknown']:
+        warnings.append(f'missing published_at: {buckets["unknown"]} video(s)')
+    for attempt in stats.get('source_attempts', []):
+        if attempt.get('status') not in ('success', 'empty'):
+            warnings.append(
+                f'{attempt.get("source_type")}/{attempt.get("source_value")}: '
+                f'{attempt.get("status")}'
+            )
+        if attempt.get('raw_items_received', 0) > attempt.get('unique_within_source', 0) * 3:
+            warnings.append(
+                f'{attempt.get("source_type")}/{attempt.get("source_value")}: duplicate-heavy or limit-truncated'
+            )
+    lines += ['', '## Data Quality Warnings', '']
+    lines += [f'- {warning}' for warning in warnings] or ['- None.']
+
     analysis_map = {}
     if ai_analyses:
         for a in ai_analyses:
@@ -82,6 +116,8 @@ def generate_report(
         if v.get('viral_score') is not None:
             lines.append(f'- **Viral Score:** {v.get("viral_score", 0):.1f}x')
         lines.append(f'- **Final Score:** {v.get("final_score", 0)}')
+        lines.append(f'- **Freshness:** {v.get("freshness_bucket", "unknown")} ({v.get("published_at") or "unknown"})')
+        lines.append(f'- **Score breakdown:** {v.get("score_breakdown", {})}')
         lines.append(f'- **Subscriber Potential:** {v.get("subscriber_potential", 0)}/10')
         lines.append('')
 
@@ -167,7 +203,7 @@ def save_report(markdown: str) -> str:
     return str(path)
 
 
-def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None) -> str | None:
+def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None, stats: dict | None = None) -> str | None:
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill
@@ -181,7 +217,7 @@ def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None) -> str |
 
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Top Videos'
+    ws.title = 'Videos'
 
     header_font = Font(bold=True, color='FFFFFF', size=11)
     header_fill = PatternFill(start_color='2F2F2F', end_color='2F2F2F', fill_type='solid')
@@ -220,6 +256,17 @@ def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None) -> str |
         ws.cell(row=row_idx, column=16, value=v.get('final_score'))
         ws.cell(row=row_idx, column=17, value='AI analysis:\n' + (analysis[:10000] if analysis else ''))
 
+    stats = stats or {}
+    for title, headers, rows in (
+        ('Source Coverage', ['Ordinal', 'Source', 'Status', 'Raw', 'Unique', 'Added', 'Duplicates'], [[a.get('ordinal'), f'{a.get("source_type")}/{a.get("source_value")}', a.get('status'), a.get('raw_items_received'), a.get('unique_within_source'), a.get('unique_added_to_run'), a.get('duplicates_already_seen_in_run')] for a in stats.get('source_attempts', [])]),
+        ('Provenance Matches', ['Video ID', 'URL', 'Matches', 'Repeats', 'New to DB'], [[p.get('video_id'), p.get('canonical_url'), len(p.get('matched_sources', [])), p.get('repeat_discoveries'), p.get('new_to_database')] for p in stats.get('provenance', [])]),
+        ('Run Summary', ['Field', 'Value'], [[
+            k,
+            json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v,
+        ] for k, v in stats.items() if k not in ('source_attempts', 'provenance')]),
+    ):
+        extra = wb.create_sheet(title); extra.append(headers)
+        for row in rows: extra.append(row)
     wb.save(str(path))
     logger.info(f"XLSX report saved: {path}")
     return str(path)

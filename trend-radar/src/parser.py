@@ -3,6 +3,8 @@ import re
 import logging
 from typing import Any, Optional
 
+from run_data import normalize_published_at
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,11 +230,11 @@ def _parse_item(item: dict) -> Optional[dict]:
                 or stats.get('share_count')
                 or stats.get('shares')
             ),
-            'publish_time': str(
-                stats.get('createTime')
-                or struct.get('createTime')
-                or ''
-            ),
+            'publish_time': str(stats.get('createTime', struct.get('createTime', ''))),
+            'published_at': normalize_published_at(next((value for value in (
+                stats.get('createTime'), stats.get('create_time'), stats.get('published_at'),
+                struct.get('createTime'), struct.get('create_time'), struct.get('published_at'),
+            ) if value is not None), None)),
             'author_followers': _safe_int(
                 author_stats.get('followerCount')
                 or stats.get('followerCount')
