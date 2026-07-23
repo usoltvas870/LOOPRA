@@ -30,7 +30,7 @@ class DataTrustTests(unittest.TestCase):
         videos = compute_scores([{'video_id': '1', 'url': 'https://x/video/1', 'views': 100, 'likes': 10, 'comments': 1, 'shares': 1, 'freshness_bucket': 'current'}])
         stats = {'run_id': 'r', 'source_attempts': [{'ordinal': 1, 'source_type': 'hashtag', 'source_value': 'x', 'status': 'success', 'raw_items_received': 1, 'unique_within_source': 1, 'unique_added_to_run': 1, 'duplicates_already_seen_in_run': 0, 'collection_method': 'api'}], 'provenance': [{'video_id': '1', 'canonical_url': 'https://x/video/1', 'matched_sources': [{}, {}], 'repeat_discoveries': 1}]}
         report = generate_report(stats, videos)
-        self.assertIn('Source Coverage', report); self.assertIn('Cross-source Overlap', report); self.assertIn('Score breakdown', report)
+        self.assertIn('Source Coverage', report); self.assertIn('Cross-source Overlap', report); self.assertIn('Scores (reach/engagement/freshness/momentum)', report)
         with tempfile.TemporaryDirectory() as directory:
             import report as report_module
             old = report_module.REPORTS_DIR; report_module.REPORTS_DIR = Path(directory)

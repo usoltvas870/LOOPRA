@@ -25,12 +25,11 @@ XLSX_HEADERS = [
     ('Likes', 12),
     ('Comments', 12),
     ('Shares', 12),
-    ('Engagement Rate', 16),
-    ('Comment Density', 16),
-    ('Viral Score', 14),
-    ('Subscriber Potential', 20),
-    ('Final Score', 12),
-    ('AI Analysis', 80),
+    ('Published At', 20), ('Age Hours', 12), ('Freshness Bucket', 18),
+    ('Like Rate', 14), ('Comment Rate', 16), ('Share Rate', 14), ('Total Engagement Rate', 22),
+    ('Reach Score', 14), ('Engagement Score', 18), ('Freshness Score', 16),
+    ('Momentum Proxy', 16), ('Confidence', 12), ('Classification', 18),
+    ('Final Score', 12), ('Ranking Reasons', 55), ('Caveats', 70), ('Missing Fields', 30),
 ]
 
 
@@ -41,7 +40,7 @@ def generate_report(
     playlists: list[dict] | None = None,
 ) -> str:
     lines = [
-        '# Nura TikTok Viral Screening Report',
+        '# NURA TikTok Manual Trend Review Report',
         '',
         f'**Дата:** {stats.get("date", datetime.now().strftime("%Y-%m-%d %H:%M"))}',
         f'**Run ID:** {stats.get("run_id", "N/A")}',
@@ -54,20 +53,23 @@ def generate_report(
         f'- Роликов в отчёте: {len(top_videos)}',
         f'- Min просмотров: {stats.get("min_views", 10000)}',
         '',
-        '### Легенда метрик',
+        '### Как читать ranking',
         '',
         '| Метрика | Что показывает | Когда важна |',
         '|---|---|---|',
-        '| **Final Score** | Вирусный потенциал (качество вовлечения) | Выбрать контент для адаптации под Nura |',
-        '| **Subscriber Potential** | Способность набирать подписчиков (охват × вовлечение) | Выбрать ролик для посева / рекламы |',
-        '| **Engagement Rate** | % зрителей, которые совершили действие | Оценить качество контента |',
-        '| **Viral Score** | Во сколько раз просмотры превышают подписчиков | Найти видео, ушедшее в рекомендации |',
+        '| **Final Score** | Объяснимый ranking для ручного просмотра, не прогноз вирусности | Упорядочить кандидатов |',
+        '| **Reach score** | Подтверждённый абсолютный охват, с log-нормализацией в запуске | Найти proven examples |',
+        '| **Engagement score** | Like/comment/share rates со стабилизацией малого объёма | Сравнить реакцию аудитории |',
+        '| **Momentum proxy** | Age-normalized reach из одного наблюдения, не true velocity | Найти свежие сигналы |',
         '',
         '## Топ роликов',
         '',
     ]
 
     lines[5:5] = ['## Run Summary', '', f'- Mode: {stats.get("mode", "N/A")}', f'- Start/end: {stats.get("started_at", "N/A")} / {stats.get("completed_at", "N/A")}', '']
+    search_config = stats.get('search_config', {})
+    lines += ['', '## NURA Search Configuration', '']
+    lines += [f'- Keywords: {", ".join(search_config.get("keywords", [])) or "none"}', f'- Hashtags: {", ".join(search_config.get("hashtags", [])) or "none"}', f'- Competitors: {", ".join(search_config.get("competitors", [])) or "none"}', f'- Max results per source: {search_config.get("max_results_per_source", "N/A")}']
     lines += ['', '## Source Coverage', '', '| # | Source | Status | Raw | Unique | Added | Duplicates | Method |', '|---:|---|---|---:|---:|---:|---:|---|']
     for attempt in stats.get('source_attempts', []):
         lines.append(f'| {attempt.get("ordinal")} | {attempt.get("source_type")}/{attempt.get("source_value")} | {attempt.get("status")} | {attempt.get("raw_items_received", 0)} | {attempt.get("unique_within_source", 0)} | {attempt.get("unique_added_to_run", 0)} | {attempt.get("duplicates_already_seen_in_run", 0)} | {attempt.get("collection_method")} |')
@@ -94,6 +96,15 @@ def generate_report(
             )
     lines += ['', '## Data Quality Warnings', '']
     lines += [f'- {warning}' for warning in warnings] or ['- None.']
+    classifications = {}
+    for video in top_videos:
+        classification = video.get('classification', 'INSUFFICIENT_DATA')
+        classifications[classification] = classifications.get(classification, 0) + 1
+    complete = sum(not video.get('missing_fields') for video in top_videos)
+    lines += ['', '## TOP MANUAL REVIEW CANDIDATES', '',
+              f'- Complete metrics: {complete}/{len(top_videos)}',
+              f'- Classification distribution: {classifications}',
+              '- Open each URL and decide the hook, meaning and visual mechanic manually.']
 
     analysis_map = {}
     if ai_analyses:
@@ -111,14 +122,13 @@ def generate_report(
         lines.append(f'- **Лайки:** {_fmt(v.get("likes"))}')
         lines.append(f'- **Комментарии:** {_fmt(v.get("comments"))}')
         lines.append(f'- **Репосты:** {_fmt(v.get("shares"))}')
-        lines.append(f'- **Engagement Rate:** {v.get("engagement_rate", 0):.2%}')
-        lines.append(f'- **Comment Density:** {v.get("comment_density", 0):.4%}')
-        if v.get('viral_score') is not None:
-            lines.append(f'- **Viral Score:** {v.get("viral_score", 0):.1f}x')
-        lines.append(f'- **Final Score:** {v.get("final_score", 0)}')
-        lines.append(f'- **Freshness:** {v.get("freshness_bucket", "unknown")} ({v.get("published_at") or "unknown"})')
-        lines.append(f'- **Score breakdown:** {v.get("score_breakdown", {})}')
-        lines.append(f'- **Subscriber Potential:** {v.get("subscriber_potential", 0)}/10')
+        lines.append(f'- **Published / age:** {v.get("published_at") or "unknown"} / {v.get("age_hours") if v.get("age_hours") is not None else "unknown"} h')
+        lines.append(f'- **Rates (like/comment/share/total):** {_percent(v.get("like_rate"))} / {_percent(v.get("comment_rate"))} / {_percent(v.get("share_rate"))} / {_percent(v.get("total_engagement_rate"))}')
+        lines.append(f'- **Scores (reach/engagement/freshness/momentum):** {v.get("reach_score", 0)} / {v.get("engagement_score", 0)} / {v.get("freshness_score", 0)} / {v.get("momentum_proxy", 0)}')
+        lines.append(f'- **Final / confidence / classification:** {v.get("final_score", 0)} / {v.get("data_confidence", "LOW")} / {v.get("classification", "INSUFFICIENT_DATA")}')
+        lines.append(f'- **Reasons:** {"; ".join(v.get("ranking_reasons", []))}')
+        lines.append(f'- **Caveats:** {"; ".join(v.get("caveats", []))}')
+        lines.append(f'- **Missing fields:** {", ".join(v.get("missing_fields", [])) or "none"}')
         lines.append('')
 
         video_id = v.get('video_id')
@@ -193,6 +203,10 @@ def _fmt(value) -> str:
         return str(value)
 
 
+def _percent(value) -> str:
+    return 'missing' if value is None else f'{value:.2%}'
+
+
 def save_report(markdown: str) -> str:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime('%Y-%m-%d_%H-%M')
@@ -206,6 +220,7 @@ def save_report(markdown: str) -> str:
 def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None, stats: dict | None = None) -> str | None:
     try:
         from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
         from openpyxl.styles import Font, Alignment, PatternFill
     except ImportError:
         logger.warning("openpyxl not installed. Run: pip install openpyxl")
@@ -228,16 +243,11 @@ def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None, stats: d
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_align
-        ws.column_dimensions[chr(64 + col_idx) if col_idx <= 26 else 'A'].width = max(
-            ws.column_dimensions[chr(64 + col_idx) if col_idx <= 26 else 'A'].width or 8, width
-        )
+        column_letter = get_column_letter(col_idx)
+        ws.column_dimensions[column_letter].width = max(ws.column_dimensions[column_letter].width or 8, width)
 
     for row_idx, v in enumerate(top_videos, 2):
         video_id = v.get('video_id', '')
-        analysis = ''
-        if analysis_map and video_id in analysis_map:
-            analysis = analysis_map[video_id].get('ai_analysis', '')
-
         ws.cell(row=row_idx, column=1, value=row_idx - 1)
         ws.cell(row=row_idx, column=2, value=video_id)
         ws.cell(row=row_idx, column=3, value=v.get('url', ''))
@@ -249,12 +259,9 @@ def save_xlsx(top_videos: list[dict], analysis_map: dict | None = None, stats: d
         ws.cell(row=row_idx, column=9, value=v.get('likes'))
         ws.cell(row=row_idx, column=10, value=v.get('comments'))
         ws.cell(row=row_idx, column=11, value=v.get('shares'))
-        ws.cell(row=row_idx, column=12, value=v.get('engagement_rate'))
-        ws.cell(row=row_idx, column=13, value=v.get('comment_density'))
-        ws.cell(row=row_idx, column=14, value=v.get('viral_score'))
-        ws.cell(row=row_idx, column=15, value=v.get('subscriber_potential'))
-        ws.cell(row=row_idx, column=16, value=v.get('final_score'))
-        ws.cell(row=row_idx, column=17, value='AI analysis:\n' + (analysis[:10000] if analysis else ''))
+        values = [v.get('published_at'), v.get('age_hours'), v.get('freshness_bucket'), v.get('like_rate'), v.get('comment_rate'), v.get('share_rate'), v.get('total_engagement_rate'), v.get('reach_score'), v.get('engagement_score'), v.get('freshness_score'), v.get('momentum_proxy'), v.get('data_confidence'), v.get('classification'), v.get('final_score'), '; '.join(v.get('ranking_reasons', [])), '; '.join(v.get('caveats', [])), ', '.join(v.get('missing_fields', []))]
+        for column, value in enumerate(values, 12):
+            ws.cell(row=row_idx, column=column, value=value)
 
     stats = stats or {}
     for title, headers, rows in (

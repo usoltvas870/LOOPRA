@@ -116,29 +116,30 @@ DIAGNOSTIC_MODE=true ENABLE_AI_ANALYSIS=false ENABLE_TELEGRAM=false python run_r
 Без входа радар найдёт видео только у некоторых открытых аккаунтов.  
 Чтобы всё работало полноценно — нужно сохранить cookies реального аккаунта.
 
-### Безопасное обновление cookies
+### Проверка и безопасное обновление cookies
 
 ```bash
-python refresh_tiktok_cookies.py
+python refresh_tiktok_cookies.py --check
 ```
 
-Helper открывает Chromium в видимом режиме и удерживает его до нажатия Enter в терминале. Пользователь входит только в браузере. Перед обновлением создаётся backup, новые cookies сохраняются сначала в pending-файл, затем проверяются в новом browser context; рабочий cookie-файл заменяется только после двух успешных проверок. Credentials и содержимое cookies нельзя передавать агенту или выводить в терминал.
-
-### Способ 2 — логин во время запуска
-
-1. Установите `HEADLESS=false` в `.env`
-2. Запустите: `python run_radar.py`
-3. Откроется окно браузера — **вручную войдите** в TikTok (email/телефон + пароль)
-4. После входа скрипт продолжит сбор и **автоматически сохранит cookies**
-5. При следующих запусках cookies будут подгружаться
+`--check` запускает короткий isolated preflight и выводит один `AUTH_RESULT`. Он
+не читает основной Chrome profile пользователя. Если выводится
+`session_refresh_required`, запусти `python refresh_tiktok_cookies.py --timeout 300`.
+Helper открывает отдельный Chromium в видимом режиме; пользователь входит только
+в нём. Перед обновлением создаётся backup, новые cookies сохраняются сначала в
+pending-файл, затем проверяются в новом browser context; рабочий cookie-файл
+заменяется только после двух успешных проверок. Credentials и содержимое cookies
+нельзя передавать агенту или выводить в терминал.
 
 ### Если cookies протухли
 
-Не удаляйте cookie-файл автоматически. Запустите `python refresh_tiktok_cookies.py` и выполните ручной вход в браузере.
+Не удаляйте cookie-файл автоматически. Запустите `python refresh_tiktok_cookies.py --check`, а затем при необходимости `python refresh_tiktok_cookies.py --timeout 300`.
 
 ### Current operational limitation
 
-Collector зависит от действующей TikTok-сессии. Login wall возвращает `authentication_required`; до подтверждения авторизации parser нельзя считать сломанным. Текущий recovery status: безопасная диагностика реализована, первый актуальный сбор ещё не подтверждён.
+Collector зависит от действующей TikTok-сессии. `challenge_detected`,
+`session_refresh_required` и `session_check_failed` нужно отличать от ошибок
+parser или scoring. До успешного preflight не запускай полный сбор.
 
 ## Структура проекта
 

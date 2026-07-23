@@ -2,15 +2,24 @@
 
 ## Принцип работы
 
-Скрипт собирает TikTok-видео из трёх групп источников (конкуренты, хештеги, ключевые слова + ротационный пул), оценивает их вирусный потенциал и генерирует отчёт с AI-анализом топ-10.
+Скрипт собирает TikTok-видео из трёх групп источников (конкуренты, хештеги, ключевые слова + ротационный пул) и формирует объяснимый отчёт для ручного отбора. `Final Score` не является прогнозом вирусности.
 
 ### Этапы
 
 1. **Сбор** — Playwright открывает страницы TikTok, перехватывает API-ответы (полная статистика) или вытягивает данные из DOM/SSR-разметки
 2. **Обогащение** — для видео без статистики заходит на страницу `/video/ID` и вытягивает SSR JSON с просмотрами, лайками, автором и, если TikTok отдаёт `createTime`, датой публикации
-3. **Скóринг** — считает метрики вирусности (Engagement Rate, Viral Score, Final Score)
-4. **AI-анализ** — топ-10 отправляются в DeepSeek (генерация 3 сценариев для TikTok + Instagram-карусели)
-5. **Отчёт** — Markdown + XLSX (метрики) + XLSX (сценарии в формате продакшн-таблицы) + `.txt` с полным AI-разбором
+3. **Скóринг** — считает reach, engagement, freshness, momentum proxy, confidence и classification.
+4. **Отчёт** — Markdown + XLSX с URL, provenance, исходными метриками, score breakdown, причинами и caveats.
+5. **Ручной отбор** — пользователь открывает ссылки и сам определяет хук, смысл, визуальную механику и формат теста.
+
+Для текущего ручного NURA-run не включай AI-анализ или генерацию сценариев:
+
+```powershell
+$env:ENABLE_AI_ANALYSIS='false'
+$env:ENABLE_TELEGRAM='false'
+$env:MAX_RESULTS_PER_SOURCE='10'
+python run_radar.py
+```
 
 ## Настройка
 
@@ -43,12 +52,38 @@
 
 ### Просроченные куки
 
-При старте скрипт проверяет валидность кук. Если они протухли:
-1. Завершает запуск с `RADAR_RESULT=authentication_timeout` и exit code `4`.
-2. Не ждёт бесконечно и не автоматизирует логин, пароль, OTP или CAPTCHA.
-3. Обнови cookies вручную разрешённым способом и запусти снова.
+Ежедневный запуск:
 
-Финальный `RADAR_RESULT` печатается ровно один раз; `success` означает exit code `0`.
+```powershell
+python refresh_tiktok_cookies.py --check
+python run_radar.py
+```
+
+`--check` использует только изолированный cookie-state Radar, не читает обычный
+Chrome profile и печатает ровно один итог: `AUTH_RESULT=session_valid`,
+`session_refresh_required`, `challenge_detected` или `session_check_failed`.
+Если требуется обновление, запусти:
+
+```powershell
+python refresh_tiktok_cookies.py --timeout 300
+```
+
+Откроется отдельное управляемое окно TikTok. Войди или подтверди сессию только в
+этом окне; скрипт не обходит CAPTCHA и не просит пароль/OTP в терминале. После
+двух проверок состояние атомарно заменит cookie file, а прежнее сохранится в
+`data/cookie_backups/`. При `challenge_detected`, profile lock, timeout или
+`session_check_failed` не запускай Radar: закрой только окно Radar, проверь сеть
+или завершение challenge вручную и повтори preflight.
+
+Финальный `RADAR_RESULT` печатается ровно один раз; `success` означает exit code `0`. Auth preflight отделяет session/challenge/network состояния от ошибок scoring и collection.
+
+## Как читать manual report
+
+В `TOP MANUAL REVIEW CANDIDATES` есть reach score, engagement score,
+freshness score, momentum proxy, confidence, classification, причины и
+ограничения каждого ролика. `momentum proxy` основан на одном наблюдении и не
+является измеренной скоростью роста. Отсутствующий share отмечен как missing,
+а не как измеренный ноль. Полная методика: `scoring_logic.md`.
 
 ## Проверяемость данных
 

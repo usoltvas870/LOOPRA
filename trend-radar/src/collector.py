@@ -13,6 +13,7 @@ from playwright.async_api import async_playwright, Browser
 from parser import extract_video_data, extract_from_api_responses, parse_detail_page_stats
 from utils import get_config_int, get_config, async_random_sleep, extract_video_id, get_cookie_path
 from run_data import apply_freshness, utc_iso
+from auth import AUTH_CHALLENGE, AUTH_REFRESH_REQUIRED, AUTH_SESSION_VALID, inspect_page_authentication, write_state_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -123,28 +124,26 @@ class TikTokCollector:
             if valid:
                 self.authentication_state = 'authenticated'
             if not valid and self.cookie_path.exists():
+                failure_reason = 'challenge_detected' if validation_reason == 'challenge_detected' else 'authentication_required'
                 if self.diagnostic_mode or self.headless:
                     raise RadarOperationalError(
-                        'authentication_required',
+                        failure_reason,
                         f'TikTok authentication is required ({validation_reason}).',
                     )
-                self.last_authentication_state = 'login_overlay'
+                self.last_authentication_state = validation_reason
                 raise RadarOperationalError(
-                    'authentication_timeout',
-                    f'TikTok authentication is required ({validation_reason}); interactive login is not automated.',
+                    failure_reason,
+                    f'TikTok authentication preflight failed ({validation_reason}); run refresh_tiktok_cookies.py.',
                 )
 
         logger.info('Browser started')
 
     async def close(self):
-        if not self.diagnostic_mode and self.owns_browser and self.context and self.cookie_path:
+        if not self.diagnostic_mode and self.authentication_state == 'authenticated' and self.owns_browser and self.context and self.cookie_path:
             try:
                 cookies = await self.context.cookies()
-                import json
-                self.cookie_path.parent.mkdir(parents=True, exist_ok=True)
                 storage_data = {'cookies': cookies, 'origins': []}
-                with open(self.cookie_path, 'w', encoding='utf-8') as f:
-                    json.dump(storage_data, f)
+                write_state_atomic(self.cookie_path, storage_data)
                 logger.info(f'Saved {len(cookies)} cookies to {self.cookie_path}')
             except Exception as e:
                 logger.warning(f'Failed to save cookies: {e}')
@@ -269,33 +268,23 @@ class TikTokCollector:
             logger.info('No cookie file found, running without cookies')
             return False, 'cookie file is missing'
 
-        check_profile = os.getenv('COOKIE_CHECK_PROFILE', 'amatrixxx').replace('@', '').strip()
         page = await self.context.new_page()
         try:
             await page.goto(
-                f'https://www.tiktok.com/@{check_profile}',
-                wait_until='load',
+                'https://www.tiktok.com/foryou?lang=ru-RU',
+                wait_until='domcontentloaded',
                 timeout=20000,
             )
-            await asyncio.sleep(3)
-
-            blocked, reason = await self._is_blocked(page, 'cookie_check')
-            if blocked:
-                logger.warning(
-                    'COOKIES ARE EXPIRED OR INVALID! '
-                    f'Detected: {reason}. '
-                    'Please refresh: export cookies from browser to data/tiktok_cookies.json'
-                )
-                return False, reason
-
-            has_ssr = await page.evaluate(
-                'document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__") !== null'
-            )
-            logger.info(
-                f'Cookies valid — profile loaded '
-                f'({"SSR data found" if has_ssr else "no SSR, but no login wall"})'
-            )
-            return True, ''
+            await asyncio.sleep(2)
+            diagnostic = await inspect_page_authentication(page)
+            if diagnostic.result == AUTH_SESSION_VALID:
+                logger.info('Cookie preflight passed: %s', diagnostic.reason)
+                return True, ''
+            if diagnostic.result == AUTH_CHALLENGE:
+                return False, 'challenge_detected'
+            if diagnostic.result == AUTH_REFRESH_REQUIRED:
+                return False, 'login_detected'
+            return False, diagnostic.reason
         except Exception as e:
             logger.warning(f'Cookie validation error: {e}')
             return False, str(e)

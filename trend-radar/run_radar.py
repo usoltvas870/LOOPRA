@@ -167,6 +167,12 @@ async def main() -> int:
             'videos_found': len(videos),
             'new_videos': new_count,
             'min_views': min_views,
+            'search_config': {
+                'competitors': competitors,
+                'hashtags': hashtags + rotational_h,
+                'keywords': keywords + rotational_k,
+                'max_results_per_source': get_config_int('MAX_RESULTS_PER_SOURCE', 20),
+            },
             'mode': get_config_bool('HEADLESS', True) and 'headless' or 'visible',
             'source_attempts': getattr(collector, 'source_attempts', []),
             'provenance': getattr(collector, 'provenance', []),
@@ -192,6 +198,14 @@ async def main() -> int:
                     'emerging', 'current', 'recent_evergreen',
                     'historical_evergreen', 'unknown',
                 )
+            },
+            'metric_completeness': {
+                'complete': sum(all(video.get(field) is not None for field in ('views', 'likes', 'comments', 'shares')) for video in real_videos),
+                'incomplete': sum(not all(video.get(field) is not None for field in ('views', 'likes', 'comments', 'shares')) for video in real_videos),
+            },
+            'classification_distribution': {
+                classification: sum(1 for video in scored if video.get('classification') == classification)
+                for classification in ('EMERGING', 'CURRENT', 'PROVEN', 'EVERGREEN', 'LOW_SIGNAL', 'INSUFFICIENT_DATA')
             },
             'run_videos': [
                 {
