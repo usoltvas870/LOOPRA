@@ -131,6 +131,28 @@ downloading and automatic TOP-20 acquisition are not implemented, and OCR,
 transcription and AI analysis remain prohibited until at least four of the five
 selected candidates have usable media.
 
+## Stage 3I — Range consistency diagnostic
+
+Stage 3I adds an isolated `diagnose_tiktok_ranges.py` helper; it is not wired
+into browser acquisition or multi-candidate orchestration. It obtains the
+already-observed media URL only in the active page's memory, issues bounded
+page-context range fetches, and persists only allowlisted diagnostic fields.
+It never writes signed URLs, query values, cookies, headers, HTML, or chunk
+bodies.
+
+The rank-2 diagnostic on 2026-07-24 requested `bytes=0-16383` and received
+HTTP 403 with a non-video-sized 504-byte response. Consequently start/middle/
+end/repeat consistency and the browser-to-Python transfer bridge are **not
+proven**, and full assembly was not run. This is a current replay rejection,
+not evidence that the earlier successful 206 probe is invalid or that the
+signed URL has a single known failure cause.
+
+The same page-context helper did prove controlled cancellation: a 1 ms
+browser-side `AbortController` returned `RANGE_FETCH_BROWSER_TIMEOUT` before
+the 12-second Python guard, and the page remained usable. When cancellation
+occurred before a `ReadableStream` reader existed, evidence explicitly records
+`reader_cleanup: not_started` rather than claiming a reader was cancelled.
+
 ### Stage 3F targeted player-network diagnostic (2026-07-24)
 
 The browser adapter now starts at most three bounded lifecycle tasks directly
