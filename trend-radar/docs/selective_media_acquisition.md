@@ -254,3 +254,39 @@ this stage. They require a separate Stage 3G design decision. The 40 MiB limit,
 host/MIME validation, rejection of HTTP 206 ranges, manifest-only selection and
 the prohibition on OCR, transcription, AI analysis and automatic TOP-20
 acquisition are unchanged.
+
+## Stage 3M — Format Inspection long-video policy (2026-07-24)
+
+Format Inspection remains an offline consumer of an already validated local
+artifact; it never changes acquisition validity, records, selection, or reuse
+semantics. Its canonical duration source is `ffprobe` `format.duration`. The
+old sampler rounded a uniform terminal timestamp to milliseconds, so rank 2's
+`461.466667` seconds became `461.467` and rank 3's `6.266667` seconds became
+`6.267`: both are outside the decodable timeline and FFmpeg emitted an empty
+image. Seeking after input also made each long-video attempt decode from the
+start.
+
+The inspector now produces a deterministic, deduplicated plan that is strictly
+inside the media duration, with a 50 ms terminal margin after millisecond
+rounding. FFmpeg seeks before input, each frame has a 20-second subprocess
+limit, and the inspection has a 180-second total limit. A failed terminal frame
+is retried once at an earlier valid timestamp. Per-frame requested/effective
+timestamps, retry count and classified failures are retained in `inspection.json`.
+Successful frames alone feed the contact sheets and metrics. All frames gives
+`COMPLETED`; at least three successful frames gives `DEGRADED`; fewer gives
+`FAILED`, with unavailable metrics recorded as `null` and warnings rather than
+invented values. OCR, transcription and AI analysis remain unavailable.
+
+On the existing canonical run `20260724_150816`, all acquisition artifacts
+remained unchanged and all five inspections completed: rank 1 (20.176009 s,
+15/15 frames), rank 2 (461.466667 s, 16/16), rank 3 (6.266667 s, 11/11), rank
+4 (639.733333 s, 16/16), and rank 5 (7.633333 s, 12/12). All have sampled-frame
+evidence and an audio-stream fact. The run took 4.25, 5.406, 3.657, 5.922 and
+4.406 seconds respectively; no retry or partial status was needed.
+
+The Target closed report was not reproduced by this offline work. Code audit
+confirms the current browser capture awaits every bounded body task both before
+selection and in `finally`, removes the response listener, and only then closes
+the page; no browser lifecycle change was justified. A five-artifact OCR input
+gate is therefore open for a separately approved Stage 4A, but OCR/STT/AI and
+automatic TOP-20 capture are not implemented by this stage.
