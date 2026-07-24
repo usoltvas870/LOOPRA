@@ -69,6 +69,20 @@ def test_page_native_variant_is_allowlisted_and_passed_to_page() -> None:
     assert "Cookie" not in _RANGE_FETCH_SCRIPT
 
 
+def test_fetch_option_variants_are_fixed_and_never_accept_headers() -> None:
+    from range_diagnostics import FETCH_VARIANTS
+
+    assert set(FETCH_VARIANTS) == {
+        "default", "credentials_only", "credentials_referrer", "credentials_cache",
+        "page_native_bundle", "page_native",
+    }
+    assert FETCH_VARIANTS["credentials_only"] == {"credentials": "include"}
+    assert FETCH_VARIANTS["credentials_referrer"] == {"credentials": "include", "referrer": "document"}
+    assert FETCH_VARIANTS["credentials_cache"] == {"credentials": "include", "cache": "no-store"}
+    assert FETCH_VARIANTS["page_native_bundle"]["redirect"] == "follow"
+    assert "headers" not in FETCH_VARIANTS["page_native_bundle"]
+
+
 def test_arbitrary_fetch_variant_is_rejected() -> None:
     with pytest.raises(ValueError, match="default or page_native"):
         asyncio.run(fetch_page_range(object(), "https://example.invalid/video/fixture.mp4", label="start", start=0, end=3, browser_timeout_ms=10, python_timeout_seconds=1, fetch_variant="custom"))
@@ -133,7 +147,7 @@ def test_fresh_session_tracks_generations_player_state_and_redacted_evidence(mon
         calls.append((label, fetch_variant, media_url))
         if label == "cancellation":
             return RangeProbeResult(label, start, end, "RANGE_FETCH_BROWSER_TIMEOUT", None, None, None, None, None, 1, browser_timeout_ms, python_timeout_seconds, True, True, "not_started")
-        status = "PASS" if fetch_variant == "page_native" else "RANGE_FETCH_FORBIDDEN"
+        status = "PASS" if fetch_variant == "credentials_only" else "RANGE_FETCH_FORBIDDEN"
         return RangeProbeResult(label, start, end, status, start if status == "PASS" else None, end if status == "PASS" else None, 100 if status == "PASS" else None, end - start + 1, "a" * 64, 1, browser_timeout_ms, python_timeout_seconds, False, False, "cancelled")
 
     async def fake_activate(page) -> bool:
@@ -143,23 +157,30 @@ def test_fresh_session_tracks_generations_player_state_and_redacted_evidence(mon
     async def fake_player_diagnostics(page) -> dict:
         return {"video_element_count": 1}
 
+    async def fake_bridge(*args, **kwargs):
+        from range_replay_diagnostics import RangeBridgeResult
+        return RangeBridgeResult("PASS", 4, 1, "a" * 64, "removed")
+
     monkeypatch.setattr(session, "fetch_page_range", fake_fetch)
     monkeypatch.setattr(session, "activate_first_video_once", fake_activate)
     monkeypatch.setattr(session, "page_player_diagnostics", fake_player_diagnostics)
+    monkeypatch.setattr(session, "prove_page_range_bridge", fake_bridge)
 
     result = asyncio.run(run_fresh_range_session(
         _Page(), "https://example.invalid/candidate/2",
         probe_bytes=4, python_timeout_seconds=12, settle_ms=0,
     ))
 
-    assert result["classification"] == "PAGE_NATIVE_FETCH_REQUIRED"
-    assert [item["response_generation"] for item in result["experiments"]] == [1, 2, 2, 2]
-    assert [item["player_state"] for item in result["experiments"]] == ["playing", "playing", "paused", "paused"]
+    assert result["classification"] == "PAGE_CONTEXT_FETCH_REQUIRED"
+    assert [item["response_generation"] for item in result["experiments"]] == [1, 2, 2, 2, 2, 2, 2, 2]
+    assert [item["player_state"] for item in result["experiments"]] == ["playing", "playing", "paused", "paused", "paused", "paused", "paused", "paused"]
     assert all(item["url_age_ms"] >= 0 for item in result["experiments"])
     assert result["experiments"][0]["media_url_hash_prefix"] != result["experiments"][1]["media_url_hash_prefix"]
     assert "secret" not in str(result)
     assert "https://" not in str(result)
-    assert result["consistency"].startswith("NOT_RUN")
+    assert result["minimal_fetch_variant"] == "credentials_only"
+    assert result["consistency"] == "PASS"
+    assert result["stream_bridge"]["status"] == "PASS"
     assert result["cancellation"]["abort_confirmed"]
     assert result["page_remained_usable"]
-    assert [label for label, _, _ in calls] == ["immediate", "reload", "player_paused", "page_native", "cancellation"]
+    assert [label for label, _, _ in calls] == ["immediate", "reload", "player_paused", "option_credentials_only", "start", "repeat_start", "middle", "end", "cancellation"]

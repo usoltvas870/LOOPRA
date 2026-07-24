@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
+import tempfile
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from browser_media_capture import activate_first_video_once, page_player_diagnostics
-from range_diagnostics import RangeProbeResult, fetch_page_range
+from range_diagnostics import RangeProbeResult, consistency_verdict, fetch_page_range
+from range_replay_diagnostics import assemble_verified_ranges, prove_page_range_bridge
 
 
 @dataclass(frozen=True)
@@ -72,12 +76,15 @@ def classify_session(experiments: list[SessionExperiment]) -> str:
         native = probes.get("page_native")
         if native and native.status == "PASS":
             return "PAGE_NATIVE_FETCH_REQUIRED"
+        if any(item.name.startswith("option_") and item.probe and item.probe.status == "PASS" for item in experiments):
+            return "PAGE_CONTEXT_FETCH_REQUIRED"
         return "RANGE_FETCH_FORBIDDEN"
     return "RANGE_SESSION_INCONCLUSIVE"
 
 
 async def run_fresh_range_session(page, canonical_url: str, *, probe_bytes: int, python_timeout_seconds: int,
-                                  settle_ms: int = 3_000, delay_ms: int = 2_000) -> dict:
+                                  settle_ms: int = 3_000, delay_ms: int = 2_000,
+                                  assembly_target: Path | None = None) -> dict:
     """Run the Stage 3J decision tree in one page; no URL or headers leave this function."""
     generation = 0
     latest: MediaResponseReference | None = None
@@ -110,9 +117,10 @@ async def run_fresh_range_session(page, canonical_url: str, *, probe_bytes: int,
         return latest
 
     async def probe(name: str, reference: MediaResponseReference, *, player_state: str,
-                    fetch_variant: str = "default") -> RangeProbeResult:
+                    fetch_variant: str = "default", start: int = 0, end: int | None = None) -> RangeProbeResult:
+        requested_end = probe_bytes - 1 if end is None else end
         result = await fetch_page_range(
-            page, reference.url, label=name, start=0, end=probe_bytes - 1,
+            page, reference.url, label=name, start=start, end=requested_end,
             python_timeout_seconds=python_timeout_seconds, fetch_variant=fetch_variant,
         )
         experiments.append(SessionExperiment(name, reference.generation, reference.url_hash_prefix, player_state,
@@ -134,7 +142,56 @@ async def run_fresh_range_session(page, canonical_url: str, *, probe_bytes: int,
             await page.evaluate("() => { const video = document.querySelector('video'); if (video) video.pause(); }")
             paused_state = await player_state()
             await probe("player_paused", refreshed, player_state=paused_state)
-            await probe("page_native", refreshed, player_state=paused_state, fetch_variant="page_native")
+            minimal_variant = None
+            for variant in ("credentials_only", "credentials_referrer", "credentials_cache", "page_native_bundle"):
+                label = "page_native" if variant == "page_native_bundle" else f"option_{variant}"
+                option_probe = await probe(label, refreshed, player_state=paused_state, fetch_variant=variant)
+                if option_probe.status == "PASS":
+                    minimal_variant = variant
+                    break
+            if minimal_variant is not None:
+                first_start = await probe("start", refreshed, player_state=paused_state, fetch_variant=minimal_variant)
+                second_start = await probe("repeat_start", refreshed, player_state=paused_state, fetch_variant=minimal_variant)
+                total = first_start.total_bytes
+                consistency = "FAIL"
+                bridge = None
+                if total is not None and first_start.status == "PASS" and second_start.status == "PASS":
+                    middle_start = (total // 2 // probe_bytes) * probe_bytes
+                    middle_start = min(max(probe_bytes, middle_start), max(probe_bytes, total - probe_bytes))
+                    end_start = max(0, total - probe_bytes)
+                    middle = await probe("middle", refreshed, player_state=paused_state, fetch_variant=minimal_variant,
+                                         start=middle_start, end=min(total - 1, middle_start + probe_bytes - 1))
+                    final = await probe("end", refreshed, player_state=paused_state, fetch_variant=minimal_variant,
+                                        start=end_start, end=total - 1)
+                    consistency = consistency_verdict([first_start, middle, final, second_start])
+                    if consistency == "PASS":
+                        temporary_path = str(Path(tempfile.gettempdir()) / f"loopra-range-{secrets.token_hex(12)}.part")
+                        bridge_result = await prove_page_range_bridge(
+                            page, refreshed.url, temporary_path=Path(temporary_path),
+                            start=0, end=probe_bytes - 1, expected_sha256=first_start.body_sha256,
+                            python_timeout_seconds=python_timeout_seconds,
+                        )
+                        bridge = bridge_result.__dict__
+                        if bridge_result.status == "PASS" and assembly_target is not None:
+                            assembly_result = await assemble_verified_ranges(
+                                page, refreshed.url, target_path=assembly_target, total_bytes=total,
+                                python_timeout_seconds=python_timeout_seconds,
+                            )
+                            assembly = assembly_result.__dict__
+                        else:
+                            assembly = None
+                    else:
+                        assembly = None
+                else:
+                    assembly = None
+                # These fields are assembled below without URL or response data.
+                gate_result = {"minimal_fetch_variant": minimal_variant, "consistency": consistency, "stream_bridge": bridge, "assembly": assembly}
+            else:
+                gate_result = {"minimal_fetch_variant": None, "consistency": "NOT_RUN: no page-native 206", "stream_bridge": None, "assembly": None}
+        else:
+            gate_result = {"minimal_fetch_variant": None, "consistency": "NOT_RUN: default path did not reach option isolation", "stream_bridge": None, "assembly": None}
+    else:
+        gate_result = {"minimal_fetch_variant": None, "consistency": "NOT_RUN: fresh response unavailable", "stream_bridge": None, "assembly": None}
 
     cancellation = await fetch_page_range(page, first.url, label="cancellation", start=0, end=probe_bytes - 1,
                                           browser_timeout_ms=1, python_timeout_seconds=python_timeout_seconds)
@@ -146,5 +203,5 @@ async def run_fresh_range_session(page, canonical_url: str, *, probe_bytes: int,
         "cancellation": cancellation.to_dict(),
         "page_remained_usable": await page.evaluate("() => document.readyState") == "complete",
         "player": {"video_element_count": player.get("video_element_count"), "final_state": await player_state()},
-        "consistency": "NOT_RUN: matching repeatable 206 start probes were not established",
+        **gate_result,
     }

@@ -17,6 +17,25 @@ DEFAULT_BROWSER_TIMEOUT_MS = 8_000
 DEFAULT_PYTHON_TIMEOUT_SECONDS = 12
 MAX_PROBE_BYTES = 2 * 1024 * 1024
 
+# These are deliberately names, not caller-provided fetch dictionaries.  The
+# page context owns credentials and redirects; Python never receives headers.
+FETCH_VARIANTS = {
+    "default": {},
+    "credentials_only": {"credentials": "include"},
+    "credentials_referrer": {"credentials": "include", "referrer": "document"},
+    "credentials_cache": {"credentials": "include", "cache": "no-store"},
+    "page_native_bundle": {
+        "credentials": "include",
+        "cache": "no-store",
+        "redirect": "follow",
+        "referrer": "document",
+        "referrer_policy": "strict-origin-when-cross-origin",
+    },
+}
+# Compatibility name for Stage 3J evidence.  New code should use the explicit
+# page_native_bundle identifier in records and reports.
+FETCH_VARIANTS["page_native"] = FETCH_VARIANTS["page_native_bundle"]
+
 
 @dataclass(frozen=True)
 class RangeProbeResult:
@@ -95,8 +114,8 @@ async def fetch_page_range(
         raise ValueError("timeouts must be positive")
     if browser_timeout_ms >= python_timeout_seconds * 1000:
         raise ValueError("browser timeout must be shorter than Python timeout")
-    if fetch_variant not in {"default", "page_native"}:
-        raise ValueError("fetch_variant must be default or page_native")
+    if fetch_variant not in FETCH_VARIANTS:
+        raise ValueError("fetch_variant must be default or page_native, or another allowlisted diagnostic variant")
 
     started = time.monotonic()
     try:
@@ -168,13 +187,15 @@ _RANGE_FETCH_SCRIPT = """async ({url, start, end, browserTimeoutMs, maxBytes, fe
     const timer = setTimeout(() => { abortRequested = true; controller.abort(); }, browserTimeoutMs);
     try {
         const options = {headers: {'Range': `bytes=${start}-${end}`}, signal: controller.signal};
-        if (fetchVariant === 'page_native') {
-            options.credentials = 'include';
-            options.cache = 'no-store';
-            options.redirect = 'follow';
-            options.referrer = document.URL;
-            options.referrerPolicy = 'strict-origin-when-cross-origin';
-        }
+        const variants = {
+            default: {},
+            credentials_only: {credentials: 'include'},
+            credentials_referrer: {credentials: 'include', referrer: document.URL},
+            credentials_cache: {credentials: 'include', cache: 'no-store'},
+            page_native_bundle: {credentials: 'include', cache: 'no-store', redirect: 'follow', referrer: document.URL, referrerPolicy: 'strict-origin-when-cross-origin'},
+            page_native: {credentials: 'include', cache: 'no-store', redirect: 'follow', referrer: document.URL, referrerPolicy: 'strict-origin-when-cross-origin'},
+        };
+        Object.assign(options, variants[fetchVariant]);
         const response = await fetch(url, options);
         reader = response.body?.getReader();
         if (!reader) return {result: 'reader_failed', reader_cleanup: 'no_reader'};

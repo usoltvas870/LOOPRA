@@ -31,8 +31,10 @@ async def run(args) -> dict:
         browser = await playwright.chromium.launch(headless=not args.visible)
         context = await browser.new_context(storage_state=state, locale="ru-RU", viewport={"width": 1280, "height": 800})
         page = await context.new_page()
+        assembly_target = ROOT / "media-inbox" / f"rank2_{candidate.video_id}.mp4" if args.assemble_rank2 else None
         result = await run_fresh_range_session(page, candidate.canonical_url, probe_bytes=args.probe_bytes,
-                                               python_timeout_seconds=args.python_timeout_seconds)
+                                               python_timeout_seconds=args.python_timeout_seconds,
+                                               assembly_target=assembly_target)
         auth = await inspect_page_authentication(page)
         return {"schema_version": "1.0", "candidate_rank": 2, "manifest_hash_prefix": manifest.manifest_hash[:12],
                 "auth": auth.result, **result}
@@ -53,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--probe-bytes", type=int, default=16 * 1024)
     parser.add_argument("--python-timeout-seconds", type=int, default=12)
     parser.add_argument("--visible", action="store_true")
+    parser.add_argument("--assemble-rank2", action="store_true", help="After all gates pass, write the rank-2 MP4 under ignored media-inbox.")
     args = parser.parse_args(argv)
     if args.probe_bytes < 1024 or args.probe_bytes > 2 * 1024 * 1024:
         parser.error("--probe-bytes must be between 1024 and 2097152")
