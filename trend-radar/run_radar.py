@@ -24,6 +24,11 @@ from ai_analyzer import analyze_top_videos
 from telegram import send_digest
 from report import generate_report, save_report, save_xlsx, save_ai_analyses, save_scenarios_xlsx, save_carousel_texts
 from run_data import utc_iso, write_journal
+from selection_manifest import (
+    SelectionManifestError,
+    build_selection_manifest,
+    write_selection_manifest,
+)
 
 logger = logging.getLogger('run_radar')
 
@@ -144,6 +149,16 @@ async def main() -> int:
         ]
         top_videos = (with_views[:30] + without_views[:max(0, 30 - len(with_views))])[:30]
         await collector.validate_candidate_links(top_videos)
+        selection_manifest = None
+        selection_manifest_path = None
+        try:
+            selection_manifest = build_selection_manifest(
+                top_videos,
+                radar_run_id=collector.run_id,
+            )
+            selection_manifest_path = write_selection_manifest(selection_manifest)
+        except SelectionManifestError as error:
+            logger.error("Canonical selection manifest was not exported: %s", error)
         verified_top_videos = [
             video for video in top_videos
             if video.get('link_status') in ('AVAILABLE', 'REDIRECTED_TO_CANONICAL')
@@ -248,6 +263,15 @@ async def main() -> int:
             }
             for video in top_videos
         ]
+        if selection_manifest and selection_manifest_path:
+            stats['selection_manifest'] = {
+                'schema_version': selection_manifest.schema_version,
+                'manifest_id': selection_manifest.manifest_id,
+                'manifest_hash': selection_manifest.manifest_hash,
+                'path': f'data/runs/{selection_manifest_path.name}',
+            }
+        else:
+            stats['selection_manifest'] = {'status': 'not_exported'}
         top_videos = verified_top_videos
         report_md = generate_report(stats, top_videos, ai_analyses, playlists)
         report_path = save_report(report_md)

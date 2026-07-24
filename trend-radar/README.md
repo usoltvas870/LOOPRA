@@ -102,6 +102,22 @@ DIAGNOSTIC_MODE=true ENABLE_AI_ANALYSIS=false ENABLE_TELEGRAM=false python run_r
 - Топ-30 роликов с метриками
 - AI-анализ (если включён)
 
+### Canonical TOP-20 selection manifest
+
+После существующего ranking Radar также сохраняет versioned JSON snapshot (schema
+version `1.0`) в
+`data/runs/selection_manifest_{run_id}.json`. Это machine-readable downstream
+contract для будущего Content Intelligence: он содержит не более первых 20
+кандидатов в уже рассчитанном порядке, их score/metrics snapshots и provenance.
+
+Manifest не пересчитывает score, не сортирует, не применяет complexity/AI/NURA
+filters и не получает media. При менее чем 20 ранжированных кандидатах он остаётся
+валидным с `selection_complete: false`. Повторная запись того же snapshot
+идемпотентна; другая версия данных для того же `run_id` завершается явной ошибкой.
+
+Существующий `data/trend_top.json` остаётся отдельным обратносуместимым TOP-10
+экспортом. Runtime artifacts находятся под `trend-radar/data/` и игнорируются Git.
+
 ## Ограничения
 
 - **MVP, не production.** Код предназначен для личного ознакомительного использования.
