@@ -92,8 +92,6 @@ async def _capture_browser_media(request: BrowserMediaCaptureRequest) -> Browser
         raise MediaAcquisitionError(f"authenticated browser session unavailable: {diagnostic.reason}")
 
     started_at = _utc_iso()
-    page_status: int | None = None
-    observed: list[tuple[int, object, dict]] = []
     playwright = browser = context = page = None
     try:
         from playwright.async_api import async_playwright
@@ -103,6 +101,31 @@ async def _capture_browser_media(request: BrowserMediaCaptureRequest) -> Browser
         context = await browser.new_context(
             storage_state=state, locale="ru-RU", viewport={"width": 1280, "height": 800}
         )
+        return await capture_browser_media_in_context(request, manifest, candidate, context, started_at)
+    finally:
+        if context is not None:
+            await context.close()
+        if browser is not None:
+            await browser.close()
+        if playwright is not None:
+            await playwright.stop()
+
+
+async def capture_browser_media_in_context(
+    request: BrowserMediaCaptureRequest, manifest, candidate, context, started_at: str | None = None
+) -> BrowserMediaCaptureRecord:
+    """Capture one candidate using an already authenticated context.
+
+    A fresh page is deliberately created and closed for every candidate so
+    response listeners cannot cross candidate boundaries.
+    """
+    run_root = request.output_root / _safe_component(manifest.radar_run_id)
+    candidate_root = run_root / _safe_component(candidate.video_id)
+    started_at = started_at or _utc_iso()
+    page = None
+    page_status: int | None = None
+    observed: list[tuple[int, object, dict]] = []
+    try:
         page = await context.new_page()
 
         def on_response(response) -> None:
@@ -119,30 +142,17 @@ async def _capture_browser_media(request: BrowserMediaCaptureRequest) -> Browser
             raise MediaAcquisitionError(f"authenticated candidate page unavailable: {page_auth.reason}")
         if not observed:
             raise MediaAcquisitionError("no confirmed browser MP4 response was observed")
-
         _, response, facts = select_media_response(observed)
         body = await response.body()
         return _persist_capture(
-            candidate_root=candidate_root,
-            run_root=run_root,
-            manifest=manifest,
-            candidate=candidate,
-            facts=facts,
-            body=body,
-            page_status=page_status,
-            authenticated_session_status=page_auth.result,
-            started_at=started_at,
+            candidate_root=candidate_root, run_root=run_root, manifest=manifest, candidate=candidate,
+            facts=facts, body=body, page_status=page_status,
+            authenticated_session_status=page_auth.result, started_at=started_at,
             maximum_file_bytes=request.maximum_file_bytes,
         )
     finally:
         if page is not None:
             await page.close()
-        if context is not None:
-            await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright is not None:
-            await playwright.stop()
 
 
 def response_facts(response) -> dict:

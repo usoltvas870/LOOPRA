@@ -31,7 +31,7 @@ copied through a `.part` file, finalized atomically, validated with `ffprobe`,
 and hashed only after finalization. A valid run-scoped record and matching file
 are reused on a later identical request.
 
-## Browser-bound response capture (Stage 3C spike)
+## Browser-bound response capture (Stages 3C–3D)
 
 Stage 3C adds a separate, bounded `authenticated_browser_response` adapter.
 It accepts the same canonical selection manifest, defaults to rank 1, and can
@@ -53,10 +53,27 @@ metadata, redacted URL host/path, URL hash, captured byte count, media hash,
 and ffprobe facts. A valid matching artifact is returned as `REUSED` without
 starting a browser. Corrupt artifacts are not reused.
 
-The spike was accepted on one rank-1 candidate only. This is not automatic
-TOP-20 acquisition or a standalone downloader; each new capture remains
-browser/session-bound. OCR, transcription, AI analysis, and production
-adaptation are outside this boundary.
+Stage 3D hardens this adapter into a bounded acquisition run. The CLI defaults
+to the first five manifest entries, or accepts up to five unique
+`--candidate-id` values; both paths preserve manifest rank order. It never
+accepts an arbitrary TikTok or media URL. Candidates are processed sequentially
+in one authenticated Playwright context, with a fresh page and response listener
+for each candidate. A candidate failure is recorded and does not discard later
+successes.
+
+Each run writes an atomic UTF-8 JSON summary at
+`data/acquisitions/<run-id>/browser-acquisition-*.json`. It contains portable
+candidate references, concise status snapshots, hashes and ffprobe facts; it
+never serializes cookie values, auth headers or signed URL queries. `COMPLETED`
+means every selected candidate completed or reused; `PARTIAL` means at least one
+usable artifact and a failure; `FAILED` means no usable artifact. CLI exit codes
+are 0, 2 and 1 respectively.
+
+Before browser launch, matching records, hashes and ffprobe output are checked.
+Valid artifacts return `REUSED`; resume retries only unfinished candidates.
+Corrupt artifacts are not reused. This is not automatic TOP-20 acquisition or a
+standalone downloader; OCR, transcription, AI analysis and production adaptation
+remain outside this boundary.
 
 The real acceptance used manifest run `20260724_150816`, rank 1, video ID
 `7665636437601094933`. Playwright returned the complete HTTP 200 response body:
@@ -66,3 +83,18 @@ The real acceptance used manifest run `20260724_150816`, rank 1, video ID
 also passed with 15 sampled frames, six estimated scenes, and
 `mostly_static=false`. A subsequent invocation returned `REUSED` from the
 validated local artifact without starting a browser.
+
+### Stage 3D real acceptance (2026-07-24)
+
+The bounded run used the same manifest, hash prefix `8ed5faca1422`, and ranks
+1–5 only. Rank 1 was reused; ranks 3 and 5 were newly captured as valid
+MP4/H.264 artifacts (565471 bytes / 6.266667 seconds and 228388 bytes /
+7.633333 seconds). Ranks 2 and 4 loaded authenticated candidate pages but
+produced no qualifying complete `video/mp4` response; both were recorded as
+isolated failures and processing continued. The result was `PARTIAL` with three
+usable artifacts. Resume reused ranks 1, 3 and 5 and retried only ranks 2 and 4.
+
+Existing Format Inspection passed for newly captured rank 5. The unchanged
+inspector failed for rank 3 at a rounded-duration frame boundary; that is a tool
+limitation, not an acquisition failure. No OCR, transcription, AI analysis,
+scoring, ranking or automatic TOP-20 acquisition was performed.
