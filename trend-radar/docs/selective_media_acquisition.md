@@ -98,3 +98,35 @@ Existing Format Inspection passed for newly captured rank 5. The unchanged
 inspector failed for rank 3 at a rounded-duration frame boundary; that is a tool
 limitation, not an acquisition failure. No OCR, transcription, AI analysis,
 scoring, ranking or automatic TOP-20 acquisition was performed.
+
+### Stage 3E response-selection hardening (2026-07-24)
+
+For a failed manifest candidate, the adapter now records bounded page facts and
+redacted observations for media-shaped responses: observation order, URL hash,
+host/path without query values, query parameter names, status, MIME, declared
+size, range metadata, resource type and explicit rejection codes. It never
+serializes bodies, cookies, headers, storage state or signed URLs. A page's
+video-element count, source kind (`blob`, `network` or `empty`) and safe player
+state are recorded; the first video may be activated once only when no selected
+response was observed.
+
+The only selector change is an evidence-driven maximum complete-file size of
+40 MiB. The original 8 MiB ceiling rejected the complete, allowlisted HTTP 200
+`video/mp4` responses for rank 2 (35,521,949 bytes) and rank 4 (22,295,510
+bytes), despite both pages having one blob-backed video player. Host validation,
+HTTPS, exact HTTP 200 requirement, `video/mp4` MIME, declared length, MP4
+signature, ffprobe, one-artifact policy and rejection of HTTP 206 range
+responses are unchanged. The 206 `video/mp4` login-static response remains
+rejected as an unsupported host/range response.
+
+On the same bounded diagnostic run, both newly selected full MP4 responses
+reported `BODY_UNAVAILABLE` when Playwright was asked for their body after the
+network observation. Therefore they remain failed acquisitions: no MP4 was
+written and the result remains three usable artifacts out of five. This is a
+precise browser-body retrieval gap, not a reason to accept range fragments,
+replay signed URLs or relax host/MIME validation.
+
+Stage 3E therefore closes as `PASS WITH GAPS`: range capture, standalone
+downloading and automatic TOP-20 acquisition are not implemented, and OCR,
+transcription and AI analysis remain prohibited until at least four of the five
+selected candidates have usable media.

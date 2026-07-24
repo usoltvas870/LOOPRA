@@ -27,7 +27,7 @@ class BrowserMediaAcquisitionRunRequest:
     output_root: Path
     candidate_ids: tuple[str, ...] = ()
     limit: int | None = None
-    maximum_file_bytes: int = 8 * 1024 * 1024
+    maximum_file_bytes: int = 40 * 1024 * 1024
 
 
 @dataclass(frozen=True)

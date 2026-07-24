@@ -15,7 +15,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from auth import AUTH_SESSION_VALID, inspect_page_authentication, storage_state_diagnostics
 from media_acquisition import MediaAcquisitionError, _ffprobe, _safe_component, _sha256
@@ -25,7 +25,9 @@ from selection_manifest import read_selection_manifest
 SCHEMA_VERSION = "1.0"
 ACQUISITION_METHOD = "authenticated_browser_response"
 MIN_FILE_BYTES = 1024
-DEFAULT_MAX_FILE_BYTES = 8 * 1024 * 1024
+# Rank 2/4 production evidence includes complete TikTok MP4 responses up to
+# 35,521,949 bytes. Keep a bounded headroom without admitting unbounded media.
+DEFAULT_MAX_FILE_BYTES = 40 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,34 @@ class BrowserMediaCaptureRecord:
     warnings: list[str]
     errors: list[str]
     tool_metadata: dict
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MediaResponseObservation:
+    """Portable, redacted reason why an observed response was or was not usable."""
+
+    observed_order: int
+    redacted_host: str | None
+    redacted_path_pattern: str
+    url_sha256: str
+    query_parameter_names: list[str]
+    status: int
+    resource_type: str
+    content_type: str
+    content_length: int | None
+    content_range: str | None
+    accept_ranges: str | None
+    candidate_classification: str
+    accepted: bool
+    rejection_codes: list[str]
+    body_attempted: bool = False
+    body_status: str | None = None
+    captured_byte_count: int | None = None
+    signature_result: str | None = None
+    ffprobe_result: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -125,11 +155,16 @@ async def capture_browser_media_in_context(
     page = None
     page_status: int | None = None
     observed: list[tuple[int, object, dict]] = []
+    observations: list[MediaResponseObservation] = []
+    page_diagnostics: dict = {}
     try:
         page = await context.new_page()
 
         def on_response(response) -> None:
             facts = response_facts(response)
+            if is_potential_media_response(facts):
+                observation = classify_media_response(facts, len(observations), request.maximum_file_bytes)
+                observations.append(observation)
             if is_confirmed_media_response(facts, request.maximum_file_bytes):
                 observed.append((len(observed), response, facts))
 
@@ -138,17 +173,50 @@ async def capture_browser_media_in_context(
         page_status = navigation.status if navigation else None
         await page.wait_for_timeout(8_000)
         page_auth = await inspect_page_authentication(page)
+        page_diagnostics = await page_player_diagnostics(page)
         if page_auth.result != AUTH_SESSION_VALID:
             raise MediaAcquisitionError(f"authenticated candidate page unavailable: {page_auth.reason}")
         if not observed:
-            raise MediaAcquisitionError("no confirmed browser MP4 response was observed")
+            if page_diagnostics["video_element_count"]:
+                page_diagnostics["activation_attempted"] = await activate_first_video_once(page)
+                if page_diagnostics["activation_attempted"]:
+                    await page.wait_for_timeout(3_000)
+            if not observed:
+                return _persist_failed_capture(
+                    candidate_root, run_root, manifest, candidate, page_status, page_auth.result,
+                    started_at, observations, page_diagnostics,
+                    "no confirmed browser MP4 response was observed",
+                )
         _, response, facts = select_media_response(observed)
-        body = await response.body()
+        selected_observation = next(
+            observation for observation in observations if observation.url_sha256 == facts["url_sha256"]
+        )
+        observations[observations.index(selected_observation)] = MediaResponseObservation(
+            **{**selected_observation.to_dict(), "body_attempted": True}
+        )
+        try:
+            body = await response.body()
+        except Exception:
+            selected_observation = observations[observations.index(next(
+                observation for observation in observations if observation.url_sha256 == facts["url_sha256"]
+            ))]
+            observations[observations.index(selected_observation)] = MediaResponseObservation(
+                **{
+                    **selected_observation.to_dict(), "body_status": "unavailable",
+                    "candidate_classification": "selected_body_unavailable",
+                    "rejection_codes": [*selected_observation.rejection_codes, "BODY_UNAVAILABLE"],
+                }
+            )
+            return _persist_failed_capture(
+                candidate_root, run_root, manifest, candidate, page_status, page_auth.result,
+                started_at, observations, page_diagnostics, "selected browser response body unavailable",
+            )
         return _persist_capture(
             candidate_root=candidate_root, run_root=run_root, manifest=manifest, candidate=candidate,
             facts=facts, body=body, page_status=page_status,
             authenticated_session_status=page_auth.result, started_at=started_at,
             maximum_file_bytes=request.maximum_file_bytes,
+            observations=observations, page_diagnostics=page_diagnostics,
         )
     finally:
         if page is not None:
@@ -167,8 +235,13 @@ def response_facts(response) -> dict:
     return {
         "host": parsed.hostname,
         "path": parsed.path,
-        "redacted_reference": f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+        "scheme": parsed.scheme,
+        "has_url_credentials": bool(parsed.username or parsed.password),
+        "redacted_reference": f"{parsed.scheme}://{parsed.hostname or ''}{parsed.path}",
+        "redacted_host": parsed.hostname,
+        "redacted_path_pattern": parsed.path,
         "url_sha256": hashlib.sha256(response.url.encode("utf-8")).hexdigest(),
+        "query_parameter_names": sorted({name for name, _ in parse_qsl(parsed.query, keep_blank_values=True)}),
         "status": response.status,
         "content_type": headers.get("content-type", "").split(";", 1)[0].lower(),
         "content_length": content_length,
@@ -176,6 +249,84 @@ def response_facts(response) -> dict:
         "content_range": headers.get("content-range"),
         "resource_type": response.request.resource_type,
     }
+
+
+def is_potential_media_response(facts: dict) -> bool:
+    """Keep diagnostics bounded to media-shaped responses, never response bodies."""
+    return bool(
+        facts["resource_type"] == "media"
+        or facts["content_type"].startswith("video/")
+        or facts["content_type"] == "application/octet-stream"
+        or "/video/" in facts["path"]
+    )
+
+
+def classify_media_response(facts: dict, observed_order: int, maximum_file_bytes: int) -> MediaResponseObservation:
+    rejection_codes: list[str] = []
+    host = facts["host"]
+    if facts["scheme"] != "https":
+        rejection_codes.append("UNSUPPORTED_SCHEME")
+    if facts["has_url_credentials"]:
+        rejection_codes.append("URL_CREDENTIALS_UNSUPPORTED")
+    if not host or not (host == "tiktok.com" or host.endswith(".tiktok.com")):
+        rejection_codes.append("UNSUPPORTED_HOST")
+    if facts["status"] == 206:
+        rejection_codes.append("RANGE_RESPONSE_UNSUPPORTED")
+    elif facts["status"] != 200:
+        rejection_codes.append("UNSUPPORTED_STATUS")
+    if facts["content_type"] == "application/octet-stream":
+        rejection_codes.append("OCTET_STREAM_WITHOUT_MEDIA_EVIDENCE")
+    elif facts["content_type"] != "video/mp4":
+        rejection_codes.append("NON_VIDEO_CONTENT_TYPE")
+    if "/video/" not in facts["path"]:
+        rejection_codes.append("NO_VIDEO_STREAM")
+    if facts["content_length"] is None:
+        rejection_codes.append("MISSING_CONTENT_LENGTH")
+    elif facts["content_length"] < MIN_FILE_BYTES:
+        rejection_codes.append("SIZE_BELOW_MINIMUM")
+    elif facts["content_length"] > maximum_file_bytes:
+        rejection_codes.append("SIZE_ABOVE_LIMIT")
+    accepted = not rejection_codes
+    return MediaResponseObservation(
+        observed_order=observed_order, redacted_host=facts["redacted_host"],
+        redacted_path_pattern=facts["redacted_path_pattern"], url_sha256=facts["url_sha256"],
+        query_parameter_names=facts["query_parameter_names"], status=facts["status"],
+        resource_type=facts["resource_type"], content_type=facts["content_type"],
+        content_length=facts["content_length"], content_range=facts["content_range"],
+        accept_ranges=facts["accept_ranges"], candidate_classification="accepted_media" if accepted else "rejected_media",
+        accepted=accepted, rejection_codes=rejection_codes,
+    )
+
+
+async def page_player_diagnostics(page) -> dict:
+    """Read browser-bound player facts without retaining player URLs or page HTML."""
+    return await page.evaluate("""() => {
+        const videos = [...document.querySelectorAll('video')];
+        const sourceKinds = videos.map((video) => {
+            const source = video.currentSrc || video.src || '';
+            return source.startsWith('blob:') ? 'blob' : source ? 'network' : 'empty';
+        });
+        return {
+            video_element_count: videos.length,
+            player_source_kinds: sourceKinds,
+            source_element_count: videos.reduce((count, video) => count + video.querySelectorAll('source').length, 0),
+            ready_states: videos.map((video) => video.readyState),
+            network_states: videos.map((video) => video.networkState),
+            durations: videos.map((video) => Number.isFinite(video.duration) ? video.duration : null),
+            dimensions: videos.map((video) => [video.videoWidth, video.videoHeight]),
+            activation_attempted: false,
+        };
+    }""")
+
+
+async def activate_first_video_once(page) -> bool:
+    return await page.evaluate("""async () => {
+        const video = document.querySelector('video');
+        if (!video) return false;
+        video.muted = true;
+        try { await video.play(); } catch (_) { }
+        return true;
+    }""")
 
 
 def is_confirmed_media_response(facts: dict, maximum_file_bytes: int) -> bool:
@@ -197,7 +348,9 @@ def select_media_response(observed: list[tuple[int, object, dict]]) -> tuple[int
 
 
 def _persist_capture(*, candidate_root, run_root, manifest, candidate, facts, body, page_status,
-                     authenticated_session_status, started_at, maximum_file_bytes) -> BrowserMediaCaptureRecord:
+                     authenticated_session_status, started_at, maximum_file_bytes,
+                     observations: list[MediaResponseObservation] | None = None,
+                     page_diagnostics: dict | None = None) -> BrowserMediaCaptureRecord:
     target = candidate_root / "browser_source.mp4"
     target_existed_before_capture = target.exists()
     try:
@@ -207,7 +360,7 @@ def _persist_capture(*, candidate_root, run_root, manifest, candidate, facts, bo
         validation = _validate_captured_file(target, maximum_file_bytes)
         record = _record(
             manifest, candidate, facts, page_status, authenticated_session_status, started_at,
-            "COMPLETED", run_root, target, len(body), validation, [], [],
+            "COMPLETED", run_root, target, len(body), validation, [], [], observations, page_diagnostics,
         )
         _write_json_atomic(candidate_root / "acquisition_record.json", record.to_dict())
         return record
@@ -216,7 +369,7 @@ def _persist_capture(*, candidate_root, run_root, manifest, candidate, facts, bo
             target.unlink(missing_ok=True)
         failed = _record(
             manifest, candidate, facts, page_status, authenticated_session_status, started_at,
-            "FAILED", run_root, None, None, {"valid": False}, [], [str(error)],
+            "FAILED", run_root, None, None, {"valid": False}, [], [str(error)], observations, page_diagnostics,
         )
         _write_json_atomic(candidate_root / "acquisition_record.json", failed.to_dict())
         return failed
@@ -297,8 +450,20 @@ def _read_reusable_record(candidate_root: Path, run_root: Path, manifest_hash: s
         return None
 
 
+def _persist_failed_capture(candidate_root, run_root, manifest, candidate, page_status, session_status,
+                            started_at, observations, page_diagnostics, error) -> BrowserMediaCaptureRecord:
+    record = _record(
+        manifest, candidate, {}, page_status, session_status, started_at, "FAILED", run_root,
+        None, None, {"valid": False}, [], [error], observations, page_diagnostics,
+    )
+    _write_json_atomic(candidate_root / "acquisition_record.json", record.to_dict())
+    return record
+
+
 def _record(manifest, candidate, facts, page_status, session_status, started_at, status, run_root,
-            media_path, captured_byte_count, validation, warnings, errors) -> BrowserMediaCaptureRecord:
+            media_path, captured_byte_count, validation, warnings, errors,
+            observations: list[MediaResponseObservation] | None = None,
+            page_diagnostics: dict | None = None) -> BrowserMediaCaptureRecord:
     relative_path = str(media_path.relative_to(run_root)).replace("\\", "/") if media_path else None
     return BrowserMediaCaptureRecord(
         schema_version=SCHEMA_VERSION,
@@ -328,7 +493,11 @@ def _record(manifest, candidate, facts, page_status, session_status, started_at,
         completed_at=_utc_iso(),
         warnings=warnings,
         errors=errors,
-        tool_metadata={"adapter": "browser_response", "browser_context_required": True},
+        tool_metadata={
+            "adapter": "browser_response", "browser_context_required": True,
+            "page_diagnostics": page_diagnostics or {},
+            "response_observations": [observation.to_dict() for observation in observations or []],
+        },
     )
 
 

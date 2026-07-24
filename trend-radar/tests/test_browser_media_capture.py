@@ -1,23 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
+import browser_media_capture as capture_module
 from browser_media_capture import (
     ACQUISITION_METHOD,
+    DEFAULT_MAX_FILE_BYTES,
     BrowserMediaCaptureRequest,
+    MediaResponseObservation,
     _read_reusable_record,
     _persist_capture,
     _select_candidate,
     _validate_body,
+    activate_first_video_once,
+    capture_browser_media_in_context,
+    classify_media_response,
     is_confirmed_media_response,
     response_facts,
 )
@@ -72,6 +80,171 @@ def test_response_facts_are_redacted_and_classified() -> None:
     assert is_confirmed_media_response(facts, 4096)
     assert not is_confirmed_media_response({**facts, "host": "eviltiktok.com"}, 4096)
     assert not is_confirmed_media_response({**facts, "status": 206}, 4096)
+
+
+def test_response_diagnostics_preserve_safe_rejection_reasons() -> None:
+    facts = response_facts(_Response())
+    accepted = classify_media_response(facts, 3, 4096)
+    assert accepted.accepted and accepted.rejection_codes == []
+    assert accepted.observed_order == 3
+    payload = accepted.to_dict()
+    serialized = json.dumps(payload)
+    assert payload["query_parameter_names"] == ["expires", "signature"]
+    assert "secret" not in serialized
+    assert _Response.url not in serialized
+    assert not {"cookies", "authorization", "headers", "response_body"} & payload.keys()
+    assert MediaResponseObservation(**json.loads(serialized)) == accepted
+    ranged = classify_media_response({**facts, "status": 206}, 0, 4096)
+    assert "RANGE_RESPONSE_UNSUPPORTED" in ranged.rejection_codes
+    malicious = classify_media_response({**facts, "host": "eviltiktok.com"}, 1, 4096)
+    assert "UNSUPPORTED_HOST" in malicious.rejection_codes
+    oversized = classify_media_response({**facts, "content_length": 4097}, 2, 4096)
+    assert "SIZE_ABOVE_LIMIT" in oversized.rejection_codes
+
+
+def test_default_limit_accepts_evidenced_large_mp4_but_remains_bounded() -> None:
+    facts = response_facts(_Response())
+    assert DEFAULT_MAX_FILE_BYTES == 40 * 1024 * 1024
+    evidenced = {**facts, "content_length": 35_521_949}
+    assert is_confirmed_media_response(evidenced, DEFAULT_MAX_FILE_BYTES)
+    oversized = {**facts, "content_length": DEFAULT_MAX_FILE_BYTES + 1}
+    assert not is_confirmed_media_response(oversized, DEFAULT_MAX_FILE_BYTES)
+    assert "SIZE_ABOVE_LIMIT" in classify_media_response(
+        oversized, 0, DEFAULT_MAX_FILE_BYTES
+    ).rejection_codes
+
+
+class _Navigation:
+    status = 200
+
+
+class _BodyUnavailableResponse(_Response):
+    async def body(self) -> bytes:
+        raise RuntimeError("fixture body unavailable")
+
+
+class _FakePage:
+    def __init__(self, response=None, *, video_element_count: int = 1) -> None:
+        self.response = response
+        self.video_element_count = video_element_count
+        self.listener = None
+        self.evaluate_calls = 0
+        self.activation_calls = 0
+        self.waits: list[int] = []
+        self.closed = False
+
+    def on(self, event: str, listener) -> None:
+        assert event == "response"
+        self.listener = listener
+
+    async def goto(self, url: str, **kwargs):
+        assert "/video/" in url
+        if self.response is not None:
+            self.listener(self.response)
+        return _Navigation()
+
+    async def wait_for_timeout(self, milliseconds: int) -> None:
+        self.waits.append(milliseconds)
+
+    async def evaluate(self, script: str):
+        self.evaluate_calls += 1
+        if "document.querySelectorAll('video')" in script:
+            return {
+                "video_element_count": self.video_element_count,
+                "player_source_kinds": ["blob"] if self.video_element_count else [],
+                "source_element_count": 0,
+                "ready_states": [4] if self.video_element_count else [],
+                "network_states": [1] if self.video_element_count else [],
+                "durations": [1.0] if self.video_element_count else [],
+                "dimensions": [[16, 16]] if self.video_element_count else [],
+                "activation_attempted": False,
+            }
+        self.activation_calls += 1
+        return bool(self.video_element_count)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _FakeContext:
+    def __init__(self, page: _FakePage) -> None:
+        self.page = page
+        self.new_page_calls = 0
+
+    async def new_page(self) -> _FakePage:
+        self.new_page_calls += 1
+        return self.page
+
+
+async def _valid_page_auth(_page):
+    return SimpleNamespace(result="session_valid", reason="fixture")
+
+
+def test_body_unavailable_is_typed_after_one_bounded_body_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage(_BodyUnavailableResponse())
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _valid_page_auth)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    record = asyncio.run(
+        capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+    )
+
+    assert record.status == "FAILED"
+    assert record.errors == ["selected browser response body unavailable"]
+    observation = record.tool_metadata["response_observations"][0]
+    assert observation["body_attempted"] is True
+    assert observation["body_status"] == "unavailable"
+    assert observation["candidate_classification"] == "selected_body_unavailable"
+    assert observation["rejection_codes"] == ["BODY_UNAVAILABLE"]
+    assert page.activation_calls == 0
+    assert page.closed and context.new_page_calls == 1
+    persisted = json.loads(
+        (tmp_path / "acquisitions" / "fixture" / "1" / "acquisition_record.json")
+        .read_text(encoding="utf-8")
+    )
+    assert persisted["tool_metadata"]["response_observations"][0] == observation
+
+
+def test_player_activation_is_attempted_once_and_timeout_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage()
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _valid_page_auth)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    record = asyncio.run(
+        capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+    )
+
+    assert record.status == "FAILED"
+    assert record.tool_metadata["page_diagnostics"]["activation_attempted"] is True
+    assert page.activation_calls == 1
+    assert page.waits == [8_000, 3_000]
+    assert page.closed
+
+
+def test_activation_helper_does_not_retry_playback() -> None:
+    page = _FakePage()
+    assert asyncio.run(activate_first_video_once(page)) is True
+    assert page.activation_calls == 1
 
 
 def test_manifest_selection_defaults_to_rank_one_and_rejects_unknown(tmp_path: Path) -> None:
