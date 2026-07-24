@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from selection_manifest import read_selection_manifest
+from evidence_resolution import EvidenceResolutionError, resolve_candidate_evidence
 
 
 INPUT_SCHEMA_VERSION = "0.1"
 CARD_SCHEMA_VERSION = "0.1"
 PROVIDER_RESULT_SCHEMA_VERSION = "0.1"
-BUILDER_VERSION = "0.1"
+BUILDER_VERSION = "0.2"
 MAX_OCR_EVENTS = 12
 MAX_TRANSCRIPT_SEGMENTS = 12
 MAX_FRAME_REFS = 12
@@ -105,8 +106,13 @@ def build_analysis_input(
     if not project_context.project_id or not project_context.context_version:
         raise ContentIntelligenceError("project context identity is required")
 
-    evidence, missing = _load_evidence(candidate.video_id, candidate.rank, manifest.manifest_hash,
-        acquisition_root, inspection_root, intelligence_evidence_root)
+    try:
+        resolved = resolve_candidate_evidence(candidate=candidate, manifest_hash=manifest.manifest_hash,
+            acquisition_root=acquisition_root, inspection_root=inspection_root,
+            intelligence_root=intelligence_evidence_root)
+    except EvidenceResolutionError as error:
+        raise ContentIntelligenceError(str(error)) from error
+    evidence, missing = resolved.evidence, list(resolved.missing)
     index = _build_evidence_index(candidate.video_id, evidence)
     payload = {
         "schema_version": INPUT_SCHEMA_VERSION,
@@ -129,6 +135,7 @@ def build_analysis_input(
         "evidence": evidence,
         "evidence_index": index,
         "missing_evidence": missing,
+        "evidence_diagnostics": list(resolved.diagnostics),
         "input_limits": {"ocr_events": MAX_OCR_EVENTS, "transcript_segments": MAX_TRANSCRIPT_SEGMENTS, "frame_refs": MAX_FRAME_REFS, "text_chars_per_item": MAX_TEXT_CHARS},
     }
     payload["input_hash"] = hash_payload(payload)
@@ -255,7 +262,7 @@ def run_fake_analysis(
     return run_manifest | {"results": results}
 
 
-def _load_evidence(video_id: str, rank: int, manifest_hash: str, acquisition_root: Path, inspection_root: Path, intelligence_root: Path) -> tuple[dict[str, Any], list[str]]:
+def _load_evidence_legacy(video_id: str, rank: int, manifest_hash: str, acquisition_root: Path, inspection_root: Path, intelligence_root: Path) -> tuple[dict[str, Any], list[str]]:
     paths = {
         "acquisition": acquisition_root / video_id / "acquisition_record.json",
         "inspection": inspection_root / video_id / "inspection.json",
