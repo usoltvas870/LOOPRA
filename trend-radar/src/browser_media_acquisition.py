@@ -66,7 +66,7 @@ class BrowserMediaAcquisitionRun:
     candidates: list[CandidateAcquisitionSummary]
     warnings: list[str]
     errors: list[str]
-    tool_version: str = "stage-3d"
+    tool_version: str = "stage-3l"
 
     def to_dict(self) -> dict:
         return asdict(self)

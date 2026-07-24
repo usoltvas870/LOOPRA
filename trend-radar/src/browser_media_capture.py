@@ -19,11 +19,13 @@ from urllib.parse import parse_qsl, urlsplit
 
 from auth import AUTH_SESSION_VALID, inspect_page_authentication, storage_state_diagnostics
 from media_acquisition import MediaAcquisitionError, _ffprobe, _safe_component, _sha256
+from page_range_media_capture import capture_page_ranges, is_range_replay_eligible
 from selection_manifest import read_selection_manifest
 
 
 SCHEMA_VERSION = "1.0"
 ACQUISITION_METHOD = "authenticated_browser_response"
+RANGE_ACQUISITION_METHOD = "authenticated_page_range_replay"
 MIN_FILE_BYTES = 1024
 # Rank 2/4 production evidence includes complete TikTok MP4 responses up to
 # 35,521,949 bytes. Keep a bounded headroom without admitting unbounded media.
@@ -215,6 +217,13 @@ async def capture_browser_media_in_context(
         _apply_body_diagnostics(observations, body_results)
         selected = _select_successful_body(observed, body_results)
         if selected is None:
+            fallback = await _try_range_fallback(
+                page, observed, body_results, candidate_root, run_root, manifest, candidate,
+                page_status, page_auth.result, started_at, request.maximum_file_bytes,
+                observations, page_diagnostics,
+            )
+            if fallback is not None:
+                return fallback
             return _persist_failed_capture(
                 candidate_root, run_root, manifest, candidate, page_status, page_auth.result,
                 started_at, observations, page_diagnostics, "selected browser response body unavailable",
@@ -354,6 +363,34 @@ def _select_successful_body(observed: list[tuple[int, object, dict]], body_resul
         body = body_results.get(facts["url_sha256"], {}).get("body")
         if body is not None:
             return 0, facts, body
+    return None
+
+
+async def _try_range_fallback(page, observed, body_results, candidate_root, run_root, manifest, candidate,
+                              page_status, session_status, started_at, maximum_file_bytes,
+                              observations, page_diagnostics):
+    """Use page-context replay only for a proven large primary-body failure."""
+    for _, response, facts in sorted(observed, key=lambda item: item[0]):
+        body_status = body_results.get(facts["url_sha256"], {}).get("body_status")
+        if not is_range_replay_eligible(facts, body_status, maximum_file_bytes):
+            continue
+        target = candidate_root / "range_source.mp4"
+        result = await capture_page_ranges(page, response.url, target_path=target, total_bytes=facts["content_length"])
+        if result.status == "COMPLETED":
+            record = _record(
+                manifest, candidate, facts, page_status, session_status, started_at, "COMPLETED", run_root,
+                target, result.captured_bytes,
+                {"sha256": result.media_sha256, "ffprobe": result.ffprobe_validation}, [], [], observations,
+                page_diagnostics, acquisition_method=RANGE_ACQUISITION_METHOD,
+                adapter_metadata={"adapter": "page_range_replay", "chunk_count": result.chunk_count,
+                                  "range_retries": 0},
+            )
+            _write_json_atomic(candidate_root / "acquisition_record.json", record.to_dict())
+            return record
+        return _persist_failed_capture(
+            candidate_root, run_root, manifest, candidate, page_status, session_status, started_at,
+            observations, page_diagnostics, result.error_code or "RANGE_VALIDATION_FAILED",
+        )
     return None
 
 
@@ -555,7 +592,7 @@ def _read_reusable_record(candidate_root: Path, run_root: Path, manifest_hash: s
         return None
     try:
         record = BrowserMediaCaptureRecord(**json.loads(record_path.read_text(encoding="utf-8")))
-        if (record.status not in {"COMPLETED", "REUSED"} or record.acquisition_method != ACQUISITION_METHOD
+        if (record.status not in {"COMPLETED", "REUSED"} or record.acquisition_method not in {ACQUISITION_METHOD, RANGE_ACQUISITION_METHOD}
                 or record.selection_manifest_hash != manifest_hash or record.candidate_video_id != video_id
                 or not record.local_media_path):
             return None
@@ -581,7 +618,8 @@ def _persist_failed_capture(candidate_root, run_root, manifest, candidate, page_
 def _record(manifest, candidate, facts, page_status, session_status, started_at, status, run_root,
             media_path, captured_byte_count, validation, warnings, errors,
             observations: list[MediaResponseObservation] | None = None,
-            page_diagnostics: dict | None = None) -> BrowserMediaCaptureRecord:
+            page_diagnostics: dict | None = None, acquisition_method: str = ACQUISITION_METHOD,
+            adapter_metadata: dict | None = None) -> BrowserMediaCaptureRecord:
     relative_path = str(media_path.relative_to(run_root)).replace("\\", "/") if media_path else None
     return BrowserMediaCaptureRecord(
         schema_version=SCHEMA_VERSION,
@@ -591,7 +629,7 @@ def _record(manifest, candidate, facts, page_status, session_status, started_at,
         candidate_video_id=candidate.video_id,
         candidate_rank=candidate.rank,
         canonical_page_url=candidate.canonical_url,
-        acquisition_method=ACQUISITION_METHOD,
+        acquisition_method=acquisition_method,
         status=status,
         authenticated_session_status=session_status,
         browser_page_status=page_status,
@@ -615,6 +653,7 @@ def _record(manifest, candidate, facts, page_status, session_status, started_at,
             "adapter": "browser_response", "browser_context_required": True,
             "page_diagnostics": page_diagnostics or {},
             "response_observations": [observation.to_dict() for observation in observations or []],
+            **(adapter_metadata or {}),
         },
     )
 

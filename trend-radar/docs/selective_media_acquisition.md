@@ -99,6 +99,47 @@ inspector failed for rank 3 at a rounded-duration frame boundary; that is a tool
 limitation, not an acquisition failure. No OCR, transcription, AI analysis,
 scoring, ranking or automatic TOP-20 acquisition was performed.
 
+## Stage 3L — Page-context range replay integration (2026-07-24)
+
+The browser acquisition keeps `authenticated_browser_response` as its primary
+path. A separate production `authenticated_page_range_replay` adapter is used
+only when that path sees an allowlisted large (8–40 MiB) HTTPS TikTok
+`video/mp4` response with `Accept-Ranges: bytes` and the in-page body is
+unavailable or times out. Small complete responses never enter this fallback.
+
+The signed URL remains in the live candidate page only. Each range request uses
+the page's native `fetch` with `credentials: include`; the adapter does not
+construct `Cookie` or `Authorization` headers, export browser state, retain raw
+headers, or serialize URL/query values. It verifies start/middle/end/repeated
+start ranges before assembly, then streams 256 KiB sequential ranges through
+bounded 64 KiB page-to-Python fragments. The Python side selects the `.part`
+path, checks fragment ordering and exact byte totals, hashes incrementally,
+cleans partial output on every failure, atomically finalizes the MP4, and
+requires a valid ffprobe video stream. Audio remains optional.
+
+`acquisition_record.json` records the method, relative local path, byte count,
+SHA-256, ffprobe facts and the range chunk count. It does not include signed
+URLs, cookies, credential headers, raw headers, fragments, bodies, OCR,
+transcripts or AI output. Valid artifacts of either browser method pass the
+same manifest/hash/path/ffprobe validation and return `REUSED` without opening
+a browser.
+
+Real acceptance used canonical manifest `20260724_150816` (hash prefix
+`8ed5faca1422`) and ranks 1–5 only. Rank 2 completed through page-range replay:
+35,521,949 bytes, SHA-256 prefix `c357a9b2`, H.264/AAC, 576×1024,
+461.466667 seconds. Its immediate second run returned `REUSED`. Rank 4 first
+reported the isolated `RANGE_FETCH_PYTHON_TIMEOUT`, then completed on resume
+through the same method: 22,295,510 bytes, SHA-256 prefix `139c4a7d`, H.264/AAC,
+576×1024, 639.733333 seconds. The initial five-candidate run was `PARTIAL` with
+four reusable artifacts; resume retried only rank 4 and completed all five. A
+following run returned 5/5 `REUSED` without browser/network work.
+
+The existing Format Inspection tool was invoked for the long rank-2 artifact.
+It produced partial runtime evidence but failed its terminal-duration frame
+sample; this is separate from ffprobe acquisition validity and no inspector
+algorithm was changed. Automatic TOP-20 acquisition, OCR, transcription, AI
+analysis, Content Intelligence Cards and NURA adaptation remain unimplemented.
+
 ### Stage 3E response-selection hardening (2026-07-24)
 
 For a failed manifest candidate, the adapter now records bounded page facts and
