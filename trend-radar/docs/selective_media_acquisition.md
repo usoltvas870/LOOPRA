@@ -290,3 +290,57 @@ selection and in `finally`, removes the response listener, and only then closes
 the page; no browser lifecycle change was justified. A five-artifact OCR input
 gate is therefore open for a separately approved Stage 4A, but OCR/STT/AI and
 automatic TOP-20 capture are not implemented by this stage.
+
+## Stage 4A — Local Windows OCR evidence (2026-07-24)
+
+Stage 4A is an offline, manifest-bound OCR slice over the existing Format
+Inspection sampled frames. It does not launch a browser, make network calls,
+change acquisition, resample videos, or interpret the video's meaning.
+
+The selected engine is the installed Windows Runtime `Windows.Media.Ocr` API,
+called through a bounded PowerShell process by `extract_ocr_evidence.py` and
+`src/ocr_evidence.py`. It requires Windows, PowerShell, the system WinRT OCR
+component, and the requested local language pack. The audited environment has
+`en-US` and `ru`; no Tesseract binary, Python OCR wrapper, or ML OCR model was
+installed. This is therefore a Windows-specific local adapter, not a portable
+cross-platform OCR abstraction.
+
+The CLI accepts a canonical selection manifest plus an explicit inspection
+root, and selects at most five manifest candidates in immutable manifest order.
+It reads only successful `inspection.json` frame references under that
+candidate root. Each observation retains the sampled timestamp, frame-relative
+reference, SHA-256, raw engine text, mechanically normalized NFC text,
+word boxes, elapsed time and optional confidence. Windows OCR does not expose
+confidence, so it is stored as `null`, never invented. Raw output remains a
+machine observation (`human_verified: false`), not a human-verified transcript.
+
+Observations are ordered by sampled timestamp and engine reading order. Adjacent
+identical punctuation-light normalized text is grouped deterministically. The
+first non-empty resulting event becomes `first_text_hook`; it records only the
+text, first observed sampled timestamp, and supporting observation IDs. It does
+not classify meaning, hook type, emotional mechanism, CTA, audience, or viral
+potential. If no usable text exists, the hook is `null` with
+`no_reliable_text_observed`.
+
+Runtime evidence is stored under
+`data/content-intelligence/<run-id>/candidates/<video-id>/ocr/ocr_result.json`
+and is ignored by Git through the existing `trend-radar/data/` rule. The writer
+is atomic. A matching result is reused only when the schema, candidate identity,
+manifest hash, inspection-result hash, requested language, Windows engine
+version, `original` preprocessing profile, and every successful frame hash still
+match. No source media, sampled frame or full third-party OCR
+transcript is tracked in Git.
+
+Preprocessing is intentionally limited to the original frame in this slice.
+Synthetic integration checks cover large English and Russian text. The native
+engine may return unreliable text for stylized, small, rotated, or non-Latin
+TikTok captions; downstream users must rely on the preserved evidence and
+`COMPLETED`, `COMPLETED_EMPTY`, `FAILED`, `DEGRADED` statuses rather than assume
+transcript accuracy. Speech transcription, AI analysis, and Content
+Intelligence Cards remain unimplemented.
+
+The real offline acceptance used the canonical manifest's ranks 1–5 and
+processed 70 existing sampled frames without technical failures: ranks 1–5 had
+15/16/11/16/12 requested frames and 13/13/11/5/12 unique text events,
+respectively. These counts are operational evidence only; this document does
+not reproduce third-party captions or claim an OCR accuracy percentage.
