@@ -130,3 +130,28 @@ Stage 3E therefore closes as `PASS WITH GAPS`: range capture, standalone
 downloading and automatic TOP-20 acquisition are not implemented, and OCR,
 transcription and AI analysis remain prohibited until at least four of the five
 selected candidates have usable media.
+
+### Stage 3F targeted player-network diagnostic (2026-07-24)
+
+The browser adapter now starts at most three bounded lifecycle tasks directly
+from qualifying `response` events. Each task waits for `response.finished()`
+for at most 30 seconds, then requests `response.body()` while the candidate
+page and authenticated context are still open. The task is awaited before the
+listener is removed and the page is closed. Diagnostics retain only redacted
+lifecycle timestamps, response metadata, body status and a redacted exception
+class/message; they do not retain response bodies, headers, cookies or signed
+URLs.
+
+Real rank 2 (35,521,949 bytes) and rank 4 (22,295,510 bytes) both produced a
+complete, allowlisted HTTP 200 `video/mp4` response but timed out waiting for
+`response.finished()` after 30 seconds. `response.body()` was therefore never
+called. This rules out late page cleanup as the observed `BODY_UNAVAILABLE`
+cause and classifies both responses as active player-bound streaming resources.
+Neither response came from a service worker. No MP4 was saved; ranks 1, 3 and
+5 remain the only reusable artifacts, so the run remains `PARTIAL` (3/5).
+
+Context-bound replay, route interception and CDP capture were not attempted in
+this stage. They require a separate Stage 3G design decision. The 40 MiB limit,
+host/MIME validation, rejection of HTTP 206 ranges, manifest-only selection and
+the prohibition on OCR, transcription, AI analysis and automatic TOP-20
+acquisition are unchanged.

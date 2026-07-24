@@ -28,6 +28,8 @@ MIN_FILE_BYTES = 1024
 # Rank 2/4 production evidence includes complete TikTok MP4 responses up to
 # 35,521,949 bytes. Keep a bounded headroom without admitting unbounded media.
 DEFAULT_MAX_FILE_BYTES = 40 * 1024 * 1024
+BODY_CAPTURE_TIMEOUT_SECONDS = 30
+MAX_BODY_CAPTURE_TASKS = 3
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,18 @@ class MediaResponseObservation:
     captured_byte_count: int | None = None
     signature_result: str | None = None
     ffprobe_result: dict | None = None
+    response_event_at: str | None = None
+    response_finished_wait_started_at: str | None = None
+    response_finished_wait_completed_at: str | None = None
+    body_attempt_started_at: str | None = None
+    body_attempt_completed_at: str | None = None
+    body_attempt_context: str | None = None
+    page_open_at_body_attempt: bool | None = None
+    context_open_at_body_attempt: bool | None = None
+    from_service_worker: bool | None = None
+    exception_type: str | None = None
+    redacted_exception_message: str | None = None
+    selected_strategy: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -155,8 +169,10 @@ async def capture_browser_media_in_context(
     page = None
     page_status: int | None = None
     observed: list[tuple[int, object, dict]] = []
+    body_tasks: list[tuple[int, object, dict, asyncio.Task]] = []
     observations: list[MediaResponseObservation] = []
     page_diagnostics: dict = {}
+    on_response = None
     try:
         page = await context.new_page()
 
@@ -166,7 +182,15 @@ async def capture_browser_media_in_context(
                 observation = classify_media_response(facts, len(observations), request.maximum_file_bytes)
                 observations.append(observation)
             if is_confirmed_media_response(facts, request.maximum_file_bytes):
-                observed.append((len(observed), response, facts))
+                observed_order = len(observed)
+                observed.append((observed_order, response, facts))
+                if len(body_tasks) < MAX_BODY_CAPTURE_TASKS:
+                    body_tasks.append((
+                        observed_order,
+                        response,
+                        facts,
+                        asyncio.create_task(_capture_response_body(response, page)),
+                    ))
 
         page.on("response", on_response)
         navigation = await page.goto(candidate.canonical_url, wait_until="domcontentloaded", timeout=45_000)
@@ -187,30 +211,15 @@ async def capture_browser_media_in_context(
                     started_at, observations, page_diagnostics,
                     "no confirmed browser MP4 response was observed",
                 )
-        _, response, facts = select_media_response(observed)
-        selected_observation = next(
-            observation for observation in observations if observation.url_sha256 == facts["url_sha256"]
-        )
-        observations[observations.index(selected_observation)] = MediaResponseObservation(
-            **{**selected_observation.to_dict(), "body_attempted": True}
-        )
-        try:
-            body = await response.body()
-        except Exception:
-            selected_observation = observations[observations.index(next(
-                observation for observation in observations if observation.url_sha256 == facts["url_sha256"]
-            ))]
-            observations[observations.index(selected_observation)] = MediaResponseObservation(
-                **{
-                    **selected_observation.to_dict(), "body_status": "unavailable",
-                    "candidate_classification": "selected_body_unavailable",
-                    "rejection_codes": [*selected_observation.rejection_codes, "BODY_UNAVAILABLE"],
-                }
-            )
+        body_results = await _await_body_tasks(body_tasks)
+        _apply_body_diagnostics(observations, body_results)
+        selected = _select_successful_body(observed, body_results)
+        if selected is None:
             return _persist_failed_capture(
                 candidate_root, run_root, manifest, candidate, page_status, page_auth.result,
                 started_at, observations, page_diagnostics, "selected browser response body unavailable",
             )
+        _, facts, body = selected
         return _persist_capture(
             candidate_root=candidate_root, run_root=run_root, manifest=manifest, candidate=candidate,
             facts=facts, body=body, page_status=page_status,
@@ -219,6 +228,9 @@ async def capture_browser_media_in_context(
             observations=observations, page_diagnostics=page_diagnostics,
         )
     finally:
+        await _await_body_tasks(body_tasks)
+        if page is not None and on_response is not None and hasattr(page, "off"):
+            page.off("response", on_response)
         if page is not None:
             await page.close()
 
@@ -248,7 +260,112 @@ def response_facts(response) -> dict:
         "accept_ranges": headers.get("accept-ranges"),
         "content_range": headers.get("content-range"),
         "resource_type": response.request.resource_type,
+        "from_service_worker": bool(getattr(response, "from_service_worker", False)),
     }
+
+
+async def _capture_response_body(response, page) -> dict:
+    """Read a selected response before its page can be closed.
+
+    This deliberately keeps only a bounded body in memory.  It records no URL,
+    headers, body bytes, or exception stack trace in the diagnostic result.
+    """
+    result = {
+        "body": None,
+        "body_status": "unavailable",
+        "response_event_at": _utc_iso(),
+        "response_finished_wait_started_at": _utc_iso(),
+        "response_finished_wait_completed_at": None,
+        "body_attempt_started_at": None,
+        "body_attempt_completed_at": None,
+        "body_attempt_context": "response_event_task",
+        "page_open_at_body_attempt": None,
+        "context_open_at_body_attempt": None,
+        "exception_type": None,
+        "redacted_exception_message": None,
+        "selected_strategy": "immediate_response_event",
+    }
+    try:
+        await asyncio.wait_for(response.finished(), timeout=BODY_CAPTURE_TIMEOUT_SECONDS)
+        result["response_finished_wait_completed_at"] = _utc_iso()
+        result["body_attempt_started_at"] = _utc_iso()
+        result["page_open_at_body_attempt"] = not page.is_closed()
+        # The caller owns the context and does not close it until all tasks end.
+        result["context_open_at_body_attempt"] = True
+        result["body"] = await asyncio.wait_for(response.body(), timeout=BODY_CAPTURE_TIMEOUT_SECONDS)
+        result["body_status"] = "captured"
+    except Exception as error:
+        result["exception_type"] = type(error).__name__
+        if isinstance(error, TimeoutError) and result["body_attempt_started_at"] is None:
+            result["body_status"] = "response_finished_timeout"
+            result["redacted_exception_message"] = (
+                f"response finished wait exceeded {BODY_CAPTURE_TIMEOUT_SECONDS} seconds"
+            )
+        else:
+            result["redacted_exception_message"] = _redact_exception_message(str(error))
+    finally:
+        result["body_attempt_completed_at"] = _utc_iso()
+    return result
+
+
+async def _await_body_tasks(body_tasks: list[tuple[int, object, dict, asyncio.Task]]) -> dict[str, dict]:
+    """Await all bounded lifecycle tasks so their failures cannot be lost."""
+    results: dict[str, dict] = {}
+    for _, _, facts, task in body_tasks:
+        try:
+            results[facts["url_sha256"]] = await task
+        except asyncio.CancelledError:
+            results[facts["url_sha256"]] = {
+                "body": None, "body_status": "unavailable", "exception_type": "CancelledError",
+                "redacted_exception_message": "body capture task cancelled",
+                "selected_strategy": "immediate_response_event",
+            }
+    return results
+
+
+def _apply_body_diagnostics(observations: list[MediaResponseObservation], body_results: dict[str, dict]) -> None:
+    for index, observation in enumerate(observations):
+        result = body_results.get(observation.url_sha256)
+        if result is None:
+            continue
+        captured = result.get("body")
+        unavailable = captured is None
+        rejection_codes = [*observation.rejection_codes, "BODY_UNAVAILABLE"] if unavailable else observation.rejection_codes
+        if result["body_status"] == "response_finished_timeout":
+            rejection_codes.append("RESPONSE_FINISHED_TIMEOUT")
+        observations[index] = MediaResponseObservation(**{
+            **observation.to_dict(),
+            "body_attempted": True,
+            "body_status": result["body_status"],
+            "captured_byte_count": len(captured) if captured is not None else None,
+            "candidate_classification": "selected_body_unavailable" if unavailable else observation.candidate_classification,
+            "rejection_codes": rejection_codes,
+            **{key: result.get(key) for key in (
+                "response_event_at", "response_finished_wait_started_at", "response_finished_wait_completed_at",
+                "body_attempt_started_at", "body_attempt_completed_at", "body_attempt_context",
+                "page_open_at_body_attempt", "context_open_at_body_attempt", "exception_type",
+                "redacted_exception_message", "selected_strategy",
+            )},
+        })
+
+
+def _select_successful_body(observed: list[tuple[int, object, dict]], body_results: dict[str, dict]):
+    for _, _, facts in sorted(observed, key=lambda item: item[0]):
+        body = body_results.get(facts["url_sha256"], {}).get("body")
+        if body is not None:
+            return 0, facts, body
+    return None
+
+
+def _redact_exception_message(message: str) -> str:
+    """Keep a concise exception reason without retaining URLs or secret-like values."""
+    message = message.replace("\r", " ").replace("\n", " ")
+    for marker in ("http://", "https://"):
+        start = message.find(marker)
+        if start >= 0:
+            end = message.find(" ", start)
+            message = f"{message[:start]}<redacted-url>{'' if end < 0 else message[end:]}"
+    return message[:240]
 
 
 def is_potential_media_response(facts: dict) -> bool:
@@ -295,6 +412,7 @@ def classify_media_response(facts: dict, observed_order: int, maximum_file_bytes
         content_length=facts["content_length"], content_range=facts["content_range"],
         accept_ranges=facts["accept_ranges"], candidate_classification="accepted_media" if accepted else "rejected_media",
         accepted=accepted, rejection_codes=rejection_codes,
+        from_service_worker=facts.get("from_service_worker"),
     )
 
 

@@ -71,6 +71,9 @@ class _Response:
     request = _Request()
     headers = {"content-type": "video/mp4; charset=binary", "content-length": "2048", "accept-ranges": "bytes"}
 
+    async def finished(self) -> None:
+        return None
+
 
 def test_response_facts_are_redacted_and_classified() -> None:
     facts = response_facts(_Response())
@@ -165,6 +168,9 @@ class _FakePage:
     async def close(self) -> None:
         self.closed = True
 
+    def is_closed(self) -> bool:
+        return self.closed
+
 
 class _FakeContext:
     def __init__(self, page: _FakePage) -> None:
@@ -204,6 +210,9 @@ def test_body_unavailable_is_typed_after_one_bounded_body_attempt(
     observation = record.tool_metadata["response_observations"][0]
     assert observation["body_attempted"] is True
     assert observation["body_status"] == "unavailable"
+    assert observation["body_attempt_context"] == "response_event_task"
+    assert observation["exception_type"] == "RuntimeError"
+    assert observation["redacted_exception_message"] == "fixture body unavailable"
     assert observation["candidate_classification"] == "selected_body_unavailable"
     assert observation["rejection_codes"] == ["BODY_UNAVAILABLE"]
     assert page.activation_calls == 0
@@ -213,6 +222,78 @@ def test_body_unavailable_is_typed_after_one_bounded_body_attempt(
         .read_text(encoding="utf-8")
     )
     assert persisted["tool_metadata"]["response_observations"][0] == observation
+
+
+def test_finished_timeout_is_classified_without_attempting_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    class _NeverFinishedResponse(_Response):
+        async def finished(self) -> None:
+            await asyncio.sleep(1)
+
+        async def body(self) -> bytes:
+            raise AssertionError("body must not be attempted before finished")
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage(_NeverFinishedResponse())
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _valid_page_auth)
+    monkeypatch.setattr(capture_module, "BODY_CAPTURE_TIMEOUT_SECONDS", 0.01)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    record = asyncio.run(
+        capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+    )
+
+    observation = record.tool_metadata["response_observations"][0]
+    assert observation["body_status"] == "response_finished_timeout"
+    assert observation["exception_type"] == "TimeoutError"
+    assert observation["body_attempt_started_at"] is None
+    assert observation["rejection_codes"] == ["BODY_UNAVAILABLE", "RESPONSE_FINISHED_TIMEOUT"]
+
+
+def test_body_is_retrieved_after_finished_while_page_is_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    events: list[str] = []
+
+    class _LifecycleResponse(_Response):
+        async def finished(self) -> None:
+            events.append("finished")
+
+        async def body(self) -> bytes:
+            events.append("body")
+            return b"\x00" * 8 + b"ftypisom" + b"\x00" * 2048
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage(_LifecycleResponse())
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _valid_page_auth)
+    monkeypatch.setattr(capture_module, "_persist_capture", lambda **kwargs: kwargs)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    result = asyncio.run(
+        capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+    )
+
+    assert events == ["finished", "body"]
+    observation = result["observations"][0]
+    assert observation.body_status == "captured"
+    assert observation.page_open_at_body_attempt is True
+    assert observation.context_open_at_body_attempt is True
+    assert page.closed
 
 
 def test_player_activation_is_attempted_once_and_timeout_is_bounded(
