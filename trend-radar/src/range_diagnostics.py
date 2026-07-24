@@ -86,6 +86,7 @@ async def fetch_page_range(
     end: int,
     browser_timeout_ms: int = DEFAULT_BROWSER_TIMEOUT_MS,
     python_timeout_seconds: int = DEFAULT_PYTHON_TIMEOUT_SECONDS,
+    fetch_variant: str = "default",
 ) -> RangeProbeResult:
     """Fetch one bounded range with browser-side cancellation and reader cleanup."""
     if start < 0 or end < start or end - start + 1 > MAX_PROBE_BYTES:
@@ -94,6 +95,8 @@ async def fetch_page_range(
         raise ValueError("timeouts must be positive")
     if browser_timeout_ms >= python_timeout_seconds * 1000:
         raise ValueError("browser timeout must be shorter than Python timeout")
+    if fetch_variant not in {"default", "page_native"}:
+        raise ValueError("fetch_variant must be default or page_native")
 
     started = time.monotonic()
     try:
@@ -102,6 +105,7 @@ async def fetch_page_range(
                 "url": media_url, "start": start, "end": end,
                 "browserTimeoutMs": browser_timeout_ms,
                 "maxBytes": end - start + 1,
+                "fetchVariant": fetch_variant,
             }),
             timeout=python_timeout_seconds,
         )
@@ -155,7 +159,7 @@ def _elapsed_ms(started: float) -> int:
     return round((time.monotonic() - started) * 1000)
 
 
-_RANGE_FETCH_SCRIPT = """async ({url, start, end, browserTimeoutMs, maxBytes}) => {
+_RANGE_FETCH_SCRIPT = """async ({url, start, end, browserTimeoutMs, maxBytes, fetchVariant}) => {
     const controller = new AbortController();
     let abortRequested = false;
     let abortConfirmed = false;
@@ -163,7 +167,15 @@ _RANGE_FETCH_SCRIPT = """async ({url, start, end, browserTimeoutMs, maxBytes}) =
     let readerCleanup = 'not_started';
     const timer = setTimeout(() => { abortRequested = true; controller.abort(); }, browserTimeoutMs);
     try {
-        const response = await fetch(url, {headers: {'Range': `bytes=${start}-${end}`}, signal: controller.signal});
+        const options = {headers: {'Range': `bytes=${start}-${end}`}, signal: controller.signal};
+        if (fetchVariant === 'page_native') {
+            options.credentials = 'include';
+            options.cache = 'no-store';
+            options.redirect = 'follow';
+            options.referrer = document.URL;
+            options.referrerPolicy = 'strict-origin-when-cross-origin';
+        }
+        const response = await fetch(url, options);
         reader = response.body?.getReader();
         if (!reader) return {result: 'reader_failed', reader_cleanup: 'no_reader'};
         const bytes = [];

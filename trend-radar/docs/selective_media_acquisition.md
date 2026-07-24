@@ -153,6 +153,42 @@ the 12-second Python guard, and the page remained usable. When cancellation
 occurred before a `ReadableStream` reader existed, evidence explicitly records
 `reader_cleanup: not_started` rather than claiming a reader was cancelled.
 
+## Stage 3J — Fresh media URL and range-session diagnostic
+
+Stage 3J adds the separate `diagnose_tiktok_range_session.py` helper and
+`range_session_diagnostics.py` module. They are diagnostic-only and do not
+change browser capture, local acquisition, or multi-candidate orchestration.
+The listener is installed before navigation and retains each signed URL only in
+memory. The evidence contains a response generation, URL age and a short hash
+prefix, never the URL, query values, cookies, headers, or a response body.
+
+On 2026-07-24, rank 2 produced `RANGE_FETCH_FORBIDDEN` for the immediate
+fresh-response default fetch (URL age approximately 5,250 ms), after reload
+with a new response generation (approximately 5,516 ms), and after pausing the
+player (approximately 5,625 ms).
+The bounded page-native variant then returned HTTP 206 `video/mp4` for
+`bytes=0-16383`, with `Content-Range: bytes 0-16383/35521949` and a 16,384-byte
+body at URL age approximately 5,719 ms. That variant uses browser-native safe
+semantics only: `credentials: include`, `cache: no-store`, redirects, and the
+current document as referrer; it never supplies `Cookie` or `Authorization`
+headers.
+
+This proves that freshness alone, reload and the observed playing/paused state
+did not resolve the 403 in this run, while one concrete safe page-context fetch
+configuration did. It does not yet isolate the minimum individual option that
+is required, nor prove repeatability of 206. Therefore consistency probes,
+stream bridge and full MP4 assembly were **not run**. Controlled cancellation
+still passed and the page remained usable. The usable count remains 3/5; the
+five-candidate acquisition and OCR gates remain closed. The next bounded
+decision is Stage 3K — Page-Context Range Replay Hardening.
+
+The existing authentication helper reads the Playwright storage-state file in
+Python to create the browser context. Cookie values are not printed or included
+in diagnostic output, and no `Cookie` or `Authorization` header is constructed
+or passed manually to the range fetch. Automatic TOP-20 acquisition, OCR,
+transcription and AI analysis remain unimplemented. The separate rank-3 Format
+Inspection duration-rounding gap is unchanged.
+
 ### Stage 3F targeted player-network diagnostic (2026-07-24)
 
 The browser adapter now starts at most three bounded lifecycle tasks directly
