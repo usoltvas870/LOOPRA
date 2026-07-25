@@ -80,6 +80,8 @@ def resolve_candidate_evidence(*, candidate, manifest_hash: str, acquisition_roo
         expected_media = loaded.get("acquisition", {}).get("media_sha256")
         actual_media = artifact.get("inspection_media_sha256") if name == "ocr" else artifact.get("media_sha256")
         _require(actual_media == expected_media, f"{name.upper()}_MEDIA_HASH_MISMATCH")
+        if name == "ocr":
+            _validate_ocr(artifact, inspection, inspection_path)
         loaded[name] = artifact
         loaded[f"{name}_path"] = path
 
@@ -134,6 +136,31 @@ def _validate_inspection(inspection: dict, video_id: str, media_sha: str | None,
             continue
         frame_path = _contained(path.parent / "frames", frame.get("frame_path"))
         _require(frame_path.is_file(), "INSPECTION_FRAME_MISSING")
+
+
+def _validate_ocr(ocr: dict, inspection: dict | None, inspection_path: Path) -> None:
+    _require(inspection is not None, "OCR_CANONICAL_INSPECTION_MISSING")
+    _require(ocr.get("schema_version") == "1.1", "OCR_SCHEMA_UNSUPPORTED")
+    _require(ocr.get("inspection_result_ref") == "inspection.json", "OCR_LEGACY_INSPECTION_REFERENCE")
+    _require(ocr.get("inspection_result_sha256") == hash_file(inspection_path), "OCR_INSPECTION_HASH_MISMATCH")
+    _require(ocr.get("inspection_schema_version") == INSPECTION_SCHEMA_VERSION, "OCR_INSPECTION_SCHEMA_MISMATCH")
+    _require(ocr.get("result_sha256") == _ocr_result_hash(ocr), "OCR_RESULT_HASH_MISMATCH")
+    frames = {f"frames/{item['frame_path']}": item for item in inspection.get("sampling", {}).get("frame_results", []) if item.get("status") == "success"}
+    observations = ocr.get("ordered_observations", [])
+    _require(isinstance(observations, list) and len(observations) == len(frames), "OCR_FRAME_SET_MISMATCH")
+    _require(ocr.get("requested_frame_count") == len(frames) and ocr.get("processed_frame_count") == len(observations), "OCR_FRAME_COUNT_MISMATCH")
+    for observation in observations:
+        _require(observation.get("status") in {"COMPLETED", "COMPLETED_EMPTY"}, "OCR_OBSERVATION_STATUS_INVALID")
+        frame = frames.get(observation.get("frame_ref"))
+        _require(frame is not None, "OCR_FRAME_REFERENCE_INVALID")
+        _require(frame.get("effective_timestamp_seconds") == observation.get("sampled_at_sec"), "OCR_FRAME_TIMESTAMP_MISMATCH")
+        path = _contained(inspection_path.parent, observation.get("frame_ref"))
+        _require(path.is_file() and hash_file(path) == observation.get("frame_sha256"), "OCR_FRAME_HASH_MISMATCH")
+
+
+def _ocr_result_hash(ocr: dict) -> str:
+    payload = dict(ocr); payload.pop("result_sha256", None)
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
 
 
 def _bounded(loaded: dict, inspection_root: Path, intelligence_root: Path) -> dict:

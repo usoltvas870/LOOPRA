@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -11,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src")]
 
-from ocr_evidence import OcrEvidenceError, OcrRunRequest, WindowsMediaOcrEngine, normalize_text, run_ocr_evidence
+from ocr_evidence import OcrEvidenceError, OcrReferenceMigrationRequest, OcrRunRequest, WindowsMediaOcrEngine, migrate_ocr_evidence_references, normalize_text, run_ocr_evidence
 from selection_manifest import build_selection_manifest, write_selection_manifest
 
 
@@ -91,6 +92,92 @@ def test_out_of_bounds_box_is_a_frame_failure(tmp_path: Path) -> None:
     result = run_ocr_evidence(OcrRunRequest(manifest, inspections, tmp_path / "out"), InvalidBoxEngine())
     candidate = result["candidates"][0]
     assert candidate["status"] == "FAILED" and candidate["failed_frame_count"] == 3
+
+
+def test_ref_only_migration_is_atomic_and_idempotent(tmp_path: Path) -> None:
+    manifest, inspections = _fixture(tmp_path)
+    inspection_path = inspections / "1" / "inspection.json"
+    inspection = json.loads(inspection_path.read_text(encoding="utf-8"))
+    inspection.update({"schema_version": "1.1", "video_id": "1"})
+    inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+    output = tmp_path / "out"
+    run_ocr_evidence(OcrRunRequest(manifest, inspections, output), FakeEngine())
+    target = output / "fixture" / "candidates" / "1" / "ocr" / "ocr_result.json"
+    legacy = json.loads(target.read_text(encoding="utf-8"))
+    legacy.update({"schema_version": "1.0", "inspection_result_ref": "C:/legacy/inspection.json"})
+    legacy.pop("inspection_schema_version", None); legacy.pop("result_sha256", None)
+    target.write_text(json.dumps(legacy), encoding="utf-8")
+    original = target.read_bytes()
+    preserved = {key: legacy[key] for key in ("ordered_observations", "text_events", "first_text_hook", "engine")}
+    request = OcrReferenceMigrationRequest(manifest, inspections, output)
+    assert migrate_ocr_evidence_references(request)["candidates"][0]["status"] == "READY"
+    migrated = migrate_ocr_evidence_references(OcrReferenceMigrationRequest(manifest, inspections, output, apply=True))
+    assert migrated["candidates"][0]["status"] == "MIGRATED"
+    value = json.loads(target.read_text(encoding="utf-8"))
+    assert value["inspection_result_ref"] == "inspection.json"
+    assert {key: value[key] for key in preserved} == preserved
+    assert value["migration"]["type"] == "REF_ONLY"
+    backup = next((target.parent / "legacy-backups").glob("*.json"))
+    assert backup.read_bytes() == original
+    target.write_bytes(original)
+    repeated = migrate_ocr_evidence_references(OcrReferenceMigrationRequest(manifest, inspections, output, apply=True))
+    assert repeated["candidates"][0]["status"] == "MIGRATED"
+    assert backup.read_bytes() == original
+    assert migrate_ocr_evidence_references(OcrReferenceMigrationRequest(manifest, inspections, output, apply=True))["candidates"][0]["status"] == "ALREADY_CANONICAL"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("candidate", "rank", "manifest", "media", "frame_hash", "timestamp", "frame_count", "engine", "language"),
+)
+def test_ref_only_migration_rejects_identity_mismatch(tmp_path: Path, mutation: str) -> None:
+    manifest, inspections = _fixture(tmp_path)
+    inspection_path = inspections / "1" / "inspection.json"
+    inspection = json.loads(inspection_path.read_text(encoding="utf-8"))
+    inspection.update({"schema_version": "1.1", "video_id": "1"})
+    inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+    output = tmp_path / "out"
+    run_ocr_evidence(OcrRunRequest(manifest, inspections, output), FakeEngine())
+    target = output / "fixture" / "candidates" / "1" / "ocr" / "ocr_result.json"
+    legacy = json.loads(target.read_text(encoding="utf-8"))
+    legacy.update({"schema_version": "1.0", "inspection_result_ref": "C:/legacy/inspection.json"})
+    legacy.pop("inspection_schema_version", None); legacy.pop("result_sha256", None)
+    if mutation == "candidate": legacy["candidate_video_id"] = "other"
+    elif mutation == "rank": legacy["rank"] = 2
+    elif mutation == "manifest": legacy["selection_manifest_hash"] = "f" * 64
+    elif mutation == "media": legacy["inspection_media_sha256"] = "f" * 64
+    elif mutation == "frame_hash": legacy["ordered_observations"][0]["frame_sha256"] = "f" * 64
+    elif mutation == "timestamp": legacy["ordered_observations"][0]["sampled_at_sec"] = 99
+    elif mutation == "frame_count": legacy["ordered_observations"].pop()
+    elif mutation == "engine": legacy["engine"]["engine_version"] = ""
+    elif mutation == "language": legacy["requested_language"] = "de-DE"
+    target.write_text(json.dumps(legacy), encoding="utf-8")
+    result = migrate_ocr_evidence_references(OcrReferenceMigrationRequest(manifest, inspections, output, apply=True))
+    assert result["status"] == "FAILED"
+    assert result["candidates"][0]["status"] == "REJECTED"
+    assert not (target.parent / "legacy-backups").exists()
+
+
+def test_ref_only_migration_backup_conflict_blocks_replace(tmp_path: Path) -> None:
+    manifest, inspections = _fixture(tmp_path)
+    inspection_path = inspections / "1" / "inspection.json"
+    inspection = json.loads(inspection_path.read_text(encoding="utf-8"))
+    inspection.update({"schema_version": "1.1", "video_id": "1"})
+    inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+    output = tmp_path / "out"
+    run_ocr_evidence(OcrRunRequest(manifest, inspections, output), FakeEngine())
+    target = output / "fixture" / "candidates" / "1" / "ocr" / "ocr_result.json"
+    legacy = json.loads(target.read_text(encoding="utf-8"))
+    legacy.update({"schema_version": "1.0", "inspection_result_ref": "C:/legacy/inspection.json"})
+    legacy.pop("inspection_schema_version", None); legacy.pop("result_sha256", None)
+    target.write_text(json.dumps(legacy), encoding="utf-8")
+    original = target.read_bytes()
+    backup = target.parent / "legacy-backups" / f"ocr.1.0.{hashlib.sha256(original).hexdigest()[:12]}.json"
+    backup.parent.mkdir(parents=True); backup.write_bytes(b"conflict")
+    result = migrate_ocr_evidence_references(OcrReferenceMigrationRequest(manifest, inspections, output, apply=True))
+    assert result["status"] == "FAILED"
+    assert result["candidates"][0]["status"] == "REJECTED"
+    assert target.read_bytes() == original
 
 
 @pytest.mark.skipif(os.environ.get("LOOPRA_RUN_WINDOWS_OCR_INTEGRATION") != "1", reason="set LOOPRA_RUN_WINDOWS_OCR_INTEGRATION=1 to probe local Windows OCR")

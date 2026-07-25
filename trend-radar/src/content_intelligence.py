@@ -237,12 +237,17 @@ def run_fake_analysis(
         selected = selected[:limit]
     provider = FakeDeterministicProvider()
     context_hash = hash_payload(project_context.to_dict())
-    run_id = f"fake-{manifest.radar_run_id}-{manifest.manifest_hash[:12]}-{context_hash[:8]}"
+    analysis_inputs = [
+        (candidate, build_analysis_input(manifest_path, candidate.video_id, acquisition_root=acquisition_root,
+            inspection_root=inspection_root, intelligence_evidence_root=intelligence_evidence_root,
+            project_context=project_context))
+        for candidate in selected
+    ]
+    evidence_set_hash = hash_payload([item["input_hash"] for _, item in analysis_inputs])
+    run_id = f"fake-{manifest.radar_run_id}-{manifest.manifest_hash[:12]}-{context_hash[:8]}-{evidence_set_hash[:12]}"
     run_root = output_root / run_id
     results = []
-    for candidate in selected:
-        analysis_input = build_analysis_input(manifest_path, candidate.video_id, acquisition_root=acquisition_root,
-            inspection_root=inspection_root, intelligence_evidence_root=intelligence_evidence_root, project_context=project_context)
+    for candidate, analysis_input in analysis_inputs:
         candidate_root = run_root / "candidates" / candidate.video_id
         result_path = candidate_root / "provider_result.json"
         card_path = candidate_root / "content_intelligence_card.json"
@@ -257,7 +262,7 @@ def run_fake_analysis(
         _write_new_or_identical(result_path, provider_result)
         _write_new_or_identical(card_path, card)
         results.append({"video_id": candidate.video_id, "rank": candidate.rank, "status": card["status"], "reuse": False, "card_path": _portable(card_path, run_root), "claim_counts": _claim_counts(card)})
-    run_manifest = {"schema_version": "0.1", "analysis_run_id": run_id, "fake": True, "provider": provider.metadata(), "selection_manifest_hash": manifest.manifest_hash, "project_context_hash": context_hash, "candidates": [{"video_id": item.video_id, "rank": item.rank} for item in selected]}
+    run_manifest = {"schema_version": "0.1", "analysis_run_id": run_id, "fake": True, "provider": provider.metadata(), "selection_manifest_hash": manifest.manifest_hash, "project_context_hash": context_hash, "evidence_set_hash": evidence_set_hash, "candidates": [{"video_id": item.video_id, "rank": item.rank} for item in selected]}
     _write_new_or_identical(run_root / "run_manifest.json", run_manifest)
     return run_manifest | {"results": results}
 
