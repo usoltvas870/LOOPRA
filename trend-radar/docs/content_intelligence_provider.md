@@ -1,4 +1,4 @@
-# Content Intelligence real-provider contract (Stage 5D)
+# Content Intelligence real-provider contract (Stages 5D–5F)
 
 Status: one bounded DeepSeek provider path for rank 1 only.
 
@@ -8,7 +8,7 @@ from `DEEPSEEK_API_KEY`; they are neither logged nor accepted by the CLI. The
 legacy `src/ai_analyzer.py` remains retained for backward compatibility and is
 not imported by Content Intelligence.
 
-`ContentIntelligencePromptContract` version `1.0` uses DeepSeek JSON Output:
+`ContentIntelligencePromptContract` version `2.0` uses DeepSeek JSON Output:
 `response_format: {"type": "json_object"}`, an explicit JSON instruction and a
 bounded synthetic JSON example. This follows the official
 [DeepSeek JSON Output guide](https://api-docs.deepseek.com/guides/json_mode/).
@@ -132,3 +132,75 @@ the source videos. The five cards were structurally grounded and distinct, but
 all carry evidence-quality warnings (principally OCR/transcript uncertainty).
 The aggregate gate is therefore `PARTIAL`: prompt/output hardening should be
 considered before any broader execution policy.
+
+## Stage 5F prompt and output hardening
+
+Stage 5F preserves the fixed DeepSeek V4 Flash transport contract, the evidence
+resolver and all upstream evidence producers. It adds a deterministic,
+privacy-minimized `evidence_quality` summary to the provider payload and reuse
+identity. The summary reports only event/segment counts, early-evidence
+availability, missing sources and a conservative `HIGH` / `MEDIUM` / `LOW`
+tier; it is not an accuracy score.
+
+Prompt version `2.0` makes that tier binding: sparse or missing evidence must
+produce calibrated uncertainty and a specific warning rather than invented
+scene, author or audience details. It also requires a clear separation between
+the transferable source mechanism and a materially rewritten NURA adaptation.
+The adaptation returns its mechanism, production elements not copied, a NURA
+idea, a rewritten hook and the project constraints applied.
+
+The bounded local quality validator rejects missing adaptation sections,
+unknown or absent inference evidence, unsafe NURA language and a LOW-quality
+card without an evidence warning. It reports duplicate claim text as a warning.
+This validator is deliberately not a substitute for human editorial review and
+does not use embeddings or external NLP dependencies. A prompt-version change
+invalidates prior real-card reuse while leaving prompt-1.0 runtime cards intact.
+
+### Stage 5F canary status
+
+The first v2.0 rank-1 canary reached the provider (HTTP 200, one primary call)
+but was blocked by the new local validator before a card was accepted. The
+validator treated a paraphrased applied constraint as unmatched and interpreted
+safe negative safety wording as prohibited language. Per the bounded canary
+policy, ranks 2–5 and a replacement network call are not run after that quality
+failure. This is a validator-calibration blocker, not evidence of a successful
+five-card prompt hardening gate.
+
+### Stage 5F-FIX recovery
+
+The first v2.0 raw response was lost because the old persistence path wrote
+`provider_raw_response.json` only after quality validation and card
+construction. Stage 5F-FIX keeps prompt identity `2.0` and changes persistence
+ordering. Every successful HTTP attempt now writes an ignored candidate-scoped
+`attempts/attempt-NN/response.json` before assistant-content extraction or any
+Content Intelligence validation. The artifact contains bounded identity,
+whitelisted response metadata, the sanitized provider envelope, exact response
+byte SHA-256 and size. Writes use same-directory temporary files, fsync, atomic
+replace and read-back verification.
+
+`applied_constraints` is an explanatory free-text list, not a constraint-ID
+registry. Validation checks type, non-empty bounded entries and normalized
+duplicates; prose mismatch is not a hard failure. Actual compliance remains the
+responsibility of separate project-policy and safety rules. Safety validation
+normalizes Unicode and evaluates prohibited concepts in bounded clauses.
+Explicit negations such as “не терапия”, “не ставит диагноз” and “does not
+diagnose” are accepted. Positive claims and reversals such as “не просто
+терапия” or “не обещает, а гарантирует” remain hard failures.
+
+One explicitly authorized replacement rank-1 call completed with HTTP 200 and
+the attempt artifact was persisted before validation. The card passed technical,
+evidence, safety and local quality validation; a credentialless transport-guard
+run then reused it without network. Ranks 2–5 completed sequentially in four
+additional primary calls with no corrective retries. All five v2 cards have
+zero provider-emitted FACT claims and quality status PASS. Two credentialless
+five-card reuse passes returned 5/5 REUSED with zero transport/network calls and
+stable runtime hashes.
+
+Compared with prompt 1.0, prompt 2.0 consistently exposes the source mechanism,
+elements not copied, a concrete NURA adaptation, a rewritten hook and applied
+constraints. Grounding and safety remain valid; uncertainty is more explicitly
+tied to deterministic evidence quality. The gate is `PARTIAL`: the five-card
+sample is technically reusable and more actionable, but output remains
+AI-generated, not human-verified, and editorial distinctiveness has only a
+bounded local audit. Ranks 6–20 are untouched; no TOP-20 report or Production
+Brief exists.

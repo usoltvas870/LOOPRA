@@ -12,8 +12,9 @@ from content_intelligence import ContentIntelligenceError, ProjectAnalysisContex
 from content_intelligence_provider import (
     MODEL_ID, DeepSeekContentIntelligenceProvider, ProviderTransportError,
     _reuse_identity, _reuse_real, _validate_request_body,
-    _run_status, _without_reasoning_content, build_provider_payload, load_project_context,
+    _run_status, _safety_findings, _without_reasoning_content, build_evidence_quality_summary, build_provider_payload, load_project_context,
     run_real_analysis,
+    validate_local_quality,
 )
 from test_content_intelligence import _fixture
 
@@ -33,6 +34,60 @@ def test_provider_payload_is_bounded_and_private(tmp_path: Path) -> None:
     assert "source.mp4" not in serialized
     assert payload["ocr"]["events"][0]["text"] == "x" * 240
     assert len(payload["transcription"]["segments"][0]["text"]) == 240
+    assert payload["evidence_quality"]["tier"] in {"HIGH", "MEDIUM", "LOW"}
+
+
+def test_evidence_quality_is_deterministic_and_low_requires_warning(tmp_path: Path) -> None:
+    value, snapshot = _input(tmp_path)
+    first = build_evidence_quality_summary(value)
+    assert first == build_evidence_quality_summary(value)
+    value["missing_evidence"] = ["transcription"]
+    quality = build_evidence_quality_summary(value)
+    assert quality["tier"] == "LOW"
+    card = {"claims": [{"producer": "deepseek", "text": "Вероятностный вывод.", "evidence_refs": ["ocr:first_hook"]}], "project_adaptation": {"source_mechanism": "Контраст ожидания.", "production_elements_not_copied": "Чужая подача не копируется.", "adaptation_idea": "Спокойный вопрос о паттерне.", "suggested_hook": "Что в этой ситуации повторяется?", "applied_constraints": ["Do not promise results or predictions."]}, "warnings": []}
+    result = validate_local_quality(card, quality, snapshot | {"safety_constraints": ["Do not promise results or predictions."]})
+    assert result["status"] == "FAIL"
+    assert "low evidence quality requires a provider warning" in result["errors"]
+
+
+@pytest.mark.parametrize("text", (
+    "Это не терапия.", "NURA не является терапией.", "NURA не ставит диагноз.",
+    "NURA не гарантирует результат.", "NURA не заменяет психолога.",
+    "This is not therapy.", "NURA does not diagnose.", "No guaranteed outcome.",
+))
+def test_safety_accepts_explicit_negation(text: str) -> None:
+    assert _safety_findings([text]) == []
+
+
+@pytest.mark.parametrize("text", (
+    "Это терапия.", "NURA ставит диагноз.", "Гарантирует результат.",
+    "Точно предсказывает будущее.", "Заменяет психолога.", "Я чувствую вашу боль.",
+    "Это не просто терапия.", "Это не только терапия.",
+    "Не обещает, а гарантирует результат.",
+    "Это не диагноз, но точное определение расстройства.",
+))
+def test_safety_rejects_positive_and_adversative_claims(text: str) -> None:
+    assert _safety_findings([text])
+
+
+def test_attempt_response_is_persisted_before_invalid_assistant_json(tmp_path: Path) -> None:
+    value, snapshot = _input(tmp_path)
+    payload = build_provider_payload(value, snapshot)
+    envelope = {"choices": [{"message": {"content": "not-json"}, "finish_reason": "stop"}]}
+    provider = DeepSeekContentIntelligenceProvider(
+        api_key="test-key",
+        transport=httpx.MockTransport(lambda request: httpx.Response(
+            200, json=envelope, headers={"content-type": "application/json", "x-request-id": "req-1"},
+        )),
+    )
+    attempt = tmp_path / "attempts" / "attempt-01" / "response.json"
+    with pytest.raises(ContentIntelligenceError, match="PROVIDER_INVALID_JSON"):
+        provider.analyze(value, payload, attempt_path=attempt)
+    artifact = json.loads(attempt.read_text(encoding="utf-8"))
+    assert artifact["attempt_number"] == 1
+    assert artifact["response_body"] == envelope
+    assert artifact["response_body_sha256"]
+    assert "test-key" not in attempt.read_text(encoding="utf-8")
 
 
 def test_provider_rejects_fact_claim_before_card(tmp_path: Path) -> None:

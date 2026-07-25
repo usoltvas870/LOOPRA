@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
+import unicodedata
+from datetime import datetime, timezone
+from hashlib import sha256
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,7 +20,7 @@ from content_intelligence import (
     build_card, hash_payload, validate_provider_result,
 )
 
-PROMPT_VERSION = "1.0"
+PROMPT_VERSION = "2.0"
 OUTPUT_SCHEMA_VERSION = "1.0"
 PROVIDER_ID = "deepseek"
 MODEL_ID = "deepseek-v4-flash"
@@ -51,11 +55,14 @@ class ContentIntelligencePromptContract:
             "Return JSON only, with no Markdown.",
             "Do not return candidate identity, rank, metrics, scoring, classification, caption source, OCR text, transcript, or visual facts as authoritative data.",
             "Never create FACT claims. Every claim must be INFERENCE or AI_INTERPRETATION.",
-            "Every evidence-dependent claim must cite only an evidence_id from evidence_index. If support is insufficient, omit the conclusion and add a warning.",
-            "OCR and transcript are machine observations and are not human-verified.",
-            "Analyse transferable mechanism; do not reconstruct the script, imitate the author, or copy visual production.",
+            "Every evidence-dependent claim must cite only an evidence_id from evidence_index. If support is insufficient, omit the conclusion and add a specific warning.",
+            "Treat evidence_quality as binding: HIGH permits cautious mechanism inference; MEDIUM requires calibrated wording; LOW permits only a limitation-aware hypothesis, never invented details.",
+            "OCR and transcript are machine observations and are not human-verified. Do not compensate for sparse, missing, early, or conflicting evidence with invented scene, author, or audience details.",
+            "Separate source mechanism from NURA adaptation. Explain the transferable attention mechanism, then rewrite it for NURA; do not reconstruct the script, imitate the author, or copy visual production.",
             "NURA is a calm AI guide: no human lived experience, therapy, diagnosis, guaranteed result, or deterministic prediction.",
             "Production complexity never changes ranking.",
+            "project_adaptation must include source_mechanism, production_elements_not_copied, adaptation_idea, suggested_hook, and applied_constraints. Make the hook materially different from source wording and name at least one supplied production or safety constraint.",
+            "Avoid generic phrases that could describe any video. Anchor each inference in the cited candidate evidence and use uncertainty language when evidence_quality is not HIGH.",
             "Write Russian output because the project context requires it.",
             "Return exactly one JSON object. Example: {\"claims\":[{\"claim_id\":\"example-1\",\"claim_type\":\"INFERENCE\",\"field\":\"format\",\"text\":\"Синтетический вероятностный вывод.\",\"evidence_refs\":[\"evidence-example\"],\"confidence\":null}],\"project_adaptation\":{},\"warnings\":[]}.",
         ))
@@ -65,7 +72,7 @@ class ContentIntelligencePromptContract:
             "schema_version": self.output_schema_version,
             "required": ["claims", "project_adaptation", "warnings"],
             "claim": {"claim_id": "string", "claim_type": ["INFERENCE", "AI_INTERPRETATION"], "field": "string", "text": "string <= 1000 chars", "evidence_refs": "list[evidence_id]", "confidence": "number|null"},
-            "project_adaptation": "object with safe, materially rewritten Russian recommendations",
+            "project_adaptation": {"source_mechanism": "string", "production_elements_not_copied": "string", "adaptation_idea": "string", "suggested_hook": "string", "applied_constraints": "list[string]"},
             "warnings": "list[string]",
         }
 
@@ -103,12 +110,36 @@ def build_provider_payload(analysis_input: dict[str, Any], context_snapshot: dic
         "transcription": {"first_words": evidence.get("transcription", {}).get("first_spoken_words"), "segments": [{"segment_id": item.get("segment_id"), "text": _clip(str(item.get("text") or ""), MAX_TRANSCRIPT_CHARS), "start_seconds": item.get("start_seconds"), "end_seconds": item.get("end_seconds")} for item in transcript]},
         "frame_summaries": [{"ref_id": item["ref_id"], "timestamp_seconds": item.get("timestamp_seconds")} for item in safe_index if item.get("kind") == "format_frame"][:MAX_FRAME_REFS],
         "missing_evidence": analysis_input["missing_evidence"],
+        "evidence_quality": build_evidence_quality_summary(analysis_input),
         "evidence_index": safe_index,
         "project_context": context_snapshot,
         "truncation": {"caption_max_chars": MAX_CAPTION_CHARS, "ocr_events_included": len(ocr_events), "transcript_segments_included": len(transcript)},
     }
     _validate_provider_payload(payload)
     return payload
+
+
+def build_evidence_quality_summary(analysis_input: dict[str, Any]) -> dict[str, Any]:
+    """Return a small deterministic quality signal; it never asserts accuracy."""
+    evidence = analysis_input["evidence"]
+    ocr_events = evidence.get("ocr", {}).get("events", [])
+    transcript_segments = evidence.get("transcription", {}).get("segments", [])
+    missing = list(analysis_input.get("missing_evidence", []))
+    has_early = bool(evidence.get("ocr", {}).get("first_text_hook") or evidence.get("transcription", {}).get("first_spoken_words"))
+    if missing or not has_early or (not ocr_events and not transcript_segments):
+        tier = "LOW"
+    elif len(ocr_events) >= 3 and len(transcript_segments) >= 2:
+        tier = "HIGH"
+    else:
+        tier = "MEDIUM"
+    return {
+        "tier": tier,
+        "ocr_event_count": len(ocr_events),
+        "transcript_segment_count": len(transcript_segments),
+        "early_evidence_available": has_early,
+        "missing_sources": missing,
+        "policy": "machine_observations_not_human_verified",
+    }
 
 
 class DeepSeekContentIntelligenceProvider:
@@ -134,7 +165,11 @@ class DeepSeekContentIntelligenceProvider:
     def credentials_available(self) -> bool:
         return bool(self._api_key)
 
-    def analyze(self, analysis_input: dict[str, Any], provider_payload: dict[str, Any], *, corrective_errors: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    def analyze(
+        self, analysis_input: dict[str, Any], provider_payload: dict[str, Any], *,
+        corrective_errors: list[str] | None = None, attempt_path: Path | None = None,
+        attempt_number: int = 1,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         if not self.credentials_available:
             raise ContentIntelligenceError("BLOCKED_PROVIDER_CREDENTIALS")
         body = self.build_request_body(provider_payload)
@@ -159,9 +194,30 @@ class DeepSeekContentIntelligenceProvider:
             raise _provider_error("PROVIDER_HTTP_400_INVALID_FORMAT", response, latency_ms)
         if response.status_code != 200:
             raise _provider_error(f"PROVIDER_HTTP_{response.status_code}", response, latency_ms)
-        if "application/json" not in response.headers.get("content-type", "") or len(response.content) > MAX_RESPONSE_BYTES:
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            if attempt_path is not None:
+                _write(attempt_path, _attempt_artifact(
+                    analysis_input, provider_payload, attempt_number, response, None,
+                    response_hash=sha256(response.content).hexdigest(), truncated=True,
+                ))
+            raise ContentIntelligenceError("PROVIDER_RESPONSE_TOO_LARGE")
+        if "application/json" not in response.headers.get("content-type", ""):
             raise ContentIntelligenceError("PROVIDER_RESPONSE_UNSAFE")
-        raw = response.json()
+        try:
+            raw = response.json()
+        except json.JSONDecodeError as error:
+            if attempt_path is not None:
+                _write(attempt_path, _attempt_artifact(
+                    analysis_input, provider_payload, attempt_number, response,
+                    response.text, response_hash=sha256(response.content).hexdigest(),
+                ))
+            raise ContentIntelligenceError("PROVIDER_INVALID_JSON") from error
+        persisted_raw, reasoning_metadata = _without_reasoning_content(raw)
+        if attempt_path is not None:
+            _write(attempt_path, _attempt_artifact(
+                analysis_input, provider_payload, attempt_number, response,
+                persisted_raw, response_hash=sha256(response.content).hexdigest(),
+            ))
         try:
             content = raw["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
@@ -170,7 +226,6 @@ class DeepSeekContentIntelligenceProvider:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise ContentIntelligenceError("PROVIDER_INVALID_JSON") from error
         result = {"schema_version": "0.1", "provider": self.metadata(), "candidate_identity": {"video_id": analysis_input["candidate_identity"]["video_id"], "rank": analysis_input["candidate_identity"]["rank"]}, "claims": parsed.get("claims"), "project_adaptation": parsed.get("project_adaptation"), "warnings": parsed.get("warnings", [])}
-        persisted_raw, reasoning_metadata = _without_reasoning_content(raw)
         metadata = {"provider_id": self.provider_id, "model_id": self.model_id, "request_id": response.headers.get("x-request-id"), "prompt_version": PROMPT_VERSION, "output_schema_version": OUTPUT_SCHEMA_VERSION, "payload_hash": hash_payload(provider_payload), "response_hash": hash_payload(persisted_raw), "latency_ms": latency_ms, "usage": raw.get("usage"), "finish_reason": raw.get("choices", [{}])[0].get("finish_reason"), "cost": None, **reasoning_metadata}
         return result, persisted_raw, metadata
 
@@ -277,16 +332,27 @@ def run_real_analysis(manifest_path: Path, *, candidate_id: str | None = None, c
                 continue
         attempts = 0
         last_error: ContentIntelligenceError | None = None
+        raw: dict[str, Any] | None = None
         while True:
             attempts += 1
             try:
-                result, raw, metadata = provider.analyze(analysis_input, payload, corrective_errors=[str(last_error)] if last_error else None)
+                attempt_path = root / "attempts" / f"attempt-{attempts:02d}" / "response.json"
+                result, raw, metadata = provider.analyze(
+                    analysis_input, payload,
+                    corrective_errors=[str(last_error)] if last_error else None,
+                    attempt_path=attempt_path, attempt_number=attempts,
+                )
                 validated = validate_provider_result(result, analysis_input, provider)
                 card = build_card(analysis_input, validated)
+                quality = validate_local_quality(card, payload["evidence_quality"], snapshot)
+                if quality["status"] == "FAIL":
+                    raise ContentIntelligenceError("LOCAL_QUALITY_INVALID: " + "; ".join(quality["errors"]))
+                card["evidence_quality"] = payload["evidence_quality"]
+                card["quality"] = quality
                 card["project_context_hash"] = context_hash; card["reuse_identity"] = reuse_identity
                 card["card_hash"] = hash_payload({key: value for key, value in card.items() if key != "card_hash"})
                 metadata["attempt_count"] = attempts; metadata["validation_status"] = "VALID"
-                _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot); _write(root / "provider_raw_response.json", raw); _write(root / "provider_request_metadata.json", metadata); _write(root / "content_intelligence_card.json", card); _write(root / "validation.json", {"status": "VALID", "claim_count": len(card["claims"]), "evidence_refs": len(analysis_input["evidence_index"])})
+                _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot); _write(root / "provider_raw_response.json", raw); _write(root / "provider_request_metadata.json", metadata); _write(root / "content_intelligence_card.json", card); _write(root / "validation.json", {"status": "VALID", "claim_count": len(card["claims"]), "evidence_refs": len(analysis_input["evidence_index"]), "quality": quality})
                 results.append(_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": str(card["status"]), "network": "CALLED", "attempts": attempts, "card_hash": card["card_hash"], "card_ref": f"candidates/{candidate.video_id}/content_intelligence_card.json", "claim_counts": _claim_counts(card), "http_status": 200, "metadata": _safe_metadata(metadata)})
                 break
             except ContentIntelligenceError as error:
@@ -298,6 +364,8 @@ def run_real_analysis(manifest_path: Path, *, candidate_id: str | None = None, c
                 _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot)
                 metadata = error.metadata if isinstance(error, ProviderTransportError) else {}
                 _write(root / "provider_request_metadata.json", {"status": str(error), "payload_hash": hash_payload(payload), "attempt_count": attempts, **metadata})
+                if raw is not None:
+                    _write(root / "provider_raw_response.json", raw)
                 results.append(_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": "FAILED", "network": "CALLED", "attempts": attempts, "error": str(error), "http_status": metadata.get("http_status")})
                 if _is_global_blocker(error): global_blocker = True
                 break
@@ -337,7 +405,90 @@ def _dry_run_summary(candidate: Any, analysis_input: dict[str, Any], payload: di
         "missing_evidence": analysis_input["missing_evidence"], "request_hash": hash_payload(request_body),
         "reuse_identity": reuse_identity, "response_format": request_body["response_format"],
         "thinking": request_body["thinking"], "network": "NOT_RUN",
+        "evidence_quality": payload["evidence_quality"],
     }
+
+
+def validate_local_quality(card: dict[str, Any], evidence_quality: dict[str, Any], context_snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Detect bounded objective defects; editorial merit remains human-reviewable."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    adaptation = card.get("project_adaptation")
+    required = ("source_mechanism", "production_elements_not_copied", "adaptation_idea", "suggested_hook", "applied_constraints")
+    if not isinstance(adaptation, dict):
+        errors.append("project_adaptation must be an object")
+        adaptation = {}
+    for field in required[:-1]:
+        if not isinstance(adaptation.get(field), str) or not adaptation[field].strip():
+            errors.append(f"missing adaptation field: {field}")
+    constraints = adaptation.get("applied_constraints")
+    if not isinstance(constraints, list) or not any(isinstance(item, str) and item.strip() for item in constraints):
+        errors.append("missing adaptation field: applied_constraints")
+    else:
+        normalized_constraints = [_normalize_text(str(item)) for item in constraints]
+        if any(not item or len(item) > 500 for item in normalized_constraints):
+            errors.append("applied_constraints entries must be non-empty and bounded")
+        if len(normalized_constraints) != len(set(normalized_constraints)):
+            errors.append("duplicate applied_constraints")
+        if any(len(item.split()) < 3 for item in normalized_constraints):
+            warnings.append("applied_constraints explanation is generic")
+    texts = [str(claim.get("text", "")).strip().casefold() for claim in card.get("claims", []) if claim.get("producer") != "deterministic_input_builder"]
+    if len(texts) != len(set(texts)):
+        warnings.append("duplicate provider claim text")
+    if any(not claim.get("evidence_refs") for claim in card.get("claims", []) if claim.get("producer") != "deterministic_input_builder"):
+        errors.append("provider inference without evidence reference")
+    safety = _safety_findings(texts + [str(value) for value in adaptation.values()])
+    errors.extend(f"NURA safety: {item['code']} at {item['field_path']}" for item in safety)
+    if evidence_quality["tier"] == "LOW":
+        warnings.append("low evidence quality requires human review")
+        if not card.get("warnings"):
+            errors.append("low evidence quality requires a provider warning")
+    status = "FAIL" if errors else ("PASS_WITH_WARNINGS" if warnings else "PASS")
+    return {
+        "validator_version": "2.0",
+        "status": status, "errors": errors, "warnings": warnings,
+        "findings": safety, "similarity_diagnostic": "not_run_single_card",
+    }
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().replace("ё", "е").split())
+
+
+def _safety_findings(values: list[str]) -> list[dict[str, Any]]:
+    concepts = {
+        "THERAPY": r"\b(терап\w*|лечени\w*|therapy|treatment)\b",
+        "DIAGNOSIS": r"\b(диагноз\w*|диагност\w*|diagnos\w*)\b",
+        "DISORDER_DETERMINATION": r"\b(определ\w*.{0,28}расстройств\w*|determin\w*.{0,28}disorder\w*)\b",
+        "GUARANTEE": r"\b(гарантир\w*|гарантирован\w*|guarante\w*)\b",
+        "PREDICTION": r"\b(точно\s+предска\w*|гарантир\w*.{0,20}предска\w*|guarante\w*.{0,20}predict\w*)\b",
+        "REPLACEMENT": r"\b(заменя\w*|заменит\w*|replac\w*)\b.{0,24}\b(психолог\w*|врач\w*|psychologist|doctor)\b",
+        "LIVED_EXPERIENCE": r"\b(я\s+чувств\w*|мой\s+опыт|я\s+пережил\w*|i\s+feel|my\s+lived\s+experience)\b",
+    }
+    safe_prefix = re.compile(r"(?:\bне\b|\bбез\b|\bnot\b|\bno\b|\bdoes\s+not\b|\bdo\s+not\b).{0,28}$")
+    adversative = re.compile(
+        r"\b(не\s+(?:просто|только)|not\s+(?:just|only|merely)|а|но|but|yet)\b"
+    )
+    findings: list[dict[str, Any]] = []
+    for field_index, value in enumerate(values):
+        text = _normalize_text(value)
+        clauses = [item.strip() for item in re.split(r"[.!?;\n]+", text) if item.strip()][:40]
+        for clause_index, clause in enumerate(clauses):
+            for concept, pattern in concepts.items():
+                for match in re.finditer(pattern, clause):
+                    prefix = clause[max(0, match.start() - 36):match.start()]
+                    safe = bool(safe_prefix.search(prefix)) and not adversative.search(prefix)
+                    if safe:
+                        continue
+                    findings.append({
+                        "code": f"UNSAFE_{concept}",
+                        "concept": concept,
+                        "field_path": f"quality_text[{field_index}]",
+                        "clause_index": clause_index,
+                        "matched_rule": concept.lower(),
+                        "severity": "HARD_FAIL",
+                    })
+    return findings
 
 
 def _find_reusable_real_card(output_root: Path, preferred_root: Path, analysis_input: dict[str, Any], context_hash: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -427,6 +578,33 @@ def _validate_request_body(body: dict[str, Any]) -> None:
 
 
 def _clip(value: str, limit: int) -> str: return value[:limit]
+def _attempt_artifact(
+    analysis_input: dict[str, Any], provider_payload: dict[str, Any], attempt_number: int,
+    response: httpx.Response, body: Any, *, response_hash: str, truncated: bool = False,
+) -> dict[str, Any]:
+    identity = analysis_input["candidate_identity"]
+    return {
+        "schema_version": "1.0",
+        "provider_id": PROVIDER_ID,
+        "model_id": MODEL_ID,
+        "candidate": {"video_id": identity["video_id"], "rank": identity["rank"]},
+        "prompt_version": PROMPT_VERSION,
+        "request_identity": hash_payload(provider_payload),
+        "attempt_number": attempt_number,
+        "http_status": response.status_code,
+        "response_headers": {
+            key: response.headers.get(key)
+            for key in ("content-type", "x-request-id")
+            if response.headers.get(key) is not None
+        },
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "response_body": body,
+        "response_body_sha256": response_hash,
+        "response_bytes": len(response.content),
+        "truncated": truncated,
+        "finish_reason": body.get("choices", [{}])[0].get("finish_reason") if isinstance(body, dict) else None,
+        "usage": body.get("usage") if isinstance(body, dict) else None,
+    }
 def _validate_provider_payload(payload: dict[str, Any]) -> None:
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(serialized) > MAX_PAYLOAD_CHARS: raise ContentIntelligenceError("INPUT_TOO_LARGE")
@@ -434,9 +612,15 @@ def _validate_provider_payload(payload: dict[str, Any]) -> None:
     if any(token in lowered for token in ("c:\\", "/home/", "cookie", "base64", "data:video", "authorization")): raise ContentIntelligenceError("provider payload contains prohibited private data")
 def _write(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as temp: temp.write(encoded); name = temp.name
+    encoded = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as temp:
+        temp.write(encoded)
+        temp.flush()
+        os.fsync(temp.fileno())
+        name = temp.name
     Path(name).replace(path)
+    if path.read_text(encoding="utf-8") != encoded:
+        raise ContentIntelligenceError("ATOMIC_WRITE_VERIFICATION_FAILED")
 def _reuse_real(path: Path, analysis_input: dict[str, Any], context_hash: str) -> dict[str, Any] | None:
     try: card = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError): return None
