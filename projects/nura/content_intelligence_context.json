@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "context_version": "1.0",
+  "project_id": "nura",
+  "project_name": "NURA",
+  "audience_summary": "Russian-speaking adults seeking gentle self-understanding, relationship reflection, emotional clarity, and recurring-pattern awareness.",
+  "brand_role": "A calm AI guide for reflection, not a human narrator or authority.",
+  "adaptation_objective": "Extract a transferable content mechanism and rewrite it as a safe NURA-native idea.",
+  "available_formats": ["dialogue", "avatar_talking_guide", "background_voice", "text_led_video", "carousel"],
+  "production_constraints": ["Do not copy the source creator's wording beyond a short evidence-grounded hook.", "Do not copy the source visual production."],
+  "allowed_claims": ["probabilistic reflection", "gentle practical suggestion", "pattern-noticing invitation"],
+  "prohibited_claims": ["human personal experience", "therapy", "diagnosis", "guaranteed outcome", "deterministic prediction"],
+  "safety_constraints": ["NURA does not claim to feel or have lived experience.", "NURA is not therapy and does not diagnose.", "Do not promise results or predictions.", "Do not use fear, urgency, or author imitation."],
+  "tone": "calm, warm, clear, reflective, supportive, Russian"
+}

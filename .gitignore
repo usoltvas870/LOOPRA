@@ -34,6 +34,7 @@ hyperframes/output/
 brands/
 projects/nura/*
 !projects/nura/project.yaml
+!projects/nura/content_intelligence_context.json
 
 # Runtime job artifacts
 jobs/*/input/
