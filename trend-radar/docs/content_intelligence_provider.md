@@ -95,3 +95,40 @@ call counts were zero. A second idempotency pass also returned `REUSED`, and
 hashes of all seven runtime files remained unchanged before, between and after
 the passes. This clean block proves the final reuse contract without rewriting
 the history of the earlier duplicate call.
+
+## Stage 5E five-candidate real acceptance
+
+Stage 5E is a bounded acceptance run for canonical manifest ranks 1–5 only.
+Candidates are validated and processed strictly in manifest order. Rank 1 is
+checked for an existing valid real card before credentials or transport are
+created; ranks 2–5 are then processed sequentially and only when a valid card
+is absent. The provider client is created once only if a network call is
+required. Ranks 6–20, TOP-20 reports and Production Briefs remain out of scope.
+
+The new-call budget is four primary calls, at most one corrective retry per
+candidate and two corrective retries for the whole run. A retry is limited to
+empty HTTP-200 content, invalid JSON, or a schema-invalid provider result.
+Authentication, account, rate-limit, request-contract, identity, evidence and
+claim-policy failures are not retried. A global blocker skips remaining network
+candidates while preserving already written candidate runtime.
+
+Every candidate result is independently validated for immutable identity,
+provider/model/context identity, no AI-emitted `FACT` claims, candidate-scoped
+evidence references, finite values and NURA safety. The deterministic card
+builder still adds its own immutable candidate-identity `FACT`; it is not an AI
+claim. Runtime cards, raw responses, request metadata and the atomic run
+summary remain Git-ignored. The summary contains only portable runtime
+references, aggregates and bounded metadata, never credentials, full prompts,
+or full OCR/transcript corpus.
+
+The accepted run reused rank 1 and made four primary V4 Flash calls for ranks
+2–5, with no corrective retries. All five cards passed technical validation;
+their provider claims contained zero `FACT` claims. A separate credentialless,
+transport-free reuse pass returned five `REUSED` cards, and a second pass was
+idempotent. The output remains AI-generated and `human_verified: false`.
+
+Quality remains a local provider-output audit rather than human verification of
+the source videos. The five cards were structurally grounded and distinct, but
+all carry evidence-quality warnings (principally OCR/transcript uncertainty).
+The aggregate gate is therefore `PARTIAL`: prompt/output hardening should be
+considered before any broader execution policy.

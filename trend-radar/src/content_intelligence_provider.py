@@ -206,53 +206,107 @@ class DeepSeekContentIntelligenceProvider:
         return {"provider_id": self.provider_id, "provider_version": self.provider_version, "model_id": self.model_id, "configuration": self.configuration, "fake": False}
 
 
-def run_real_analysis(manifest_path: Path, *, candidate_id: str, acquisition_root: Path, inspection_root: Path, intelligence_evidence_root: Path, output_root: Path, context_path: Path, allow_network: bool, dry_run: bool = False, reuse_only: bool = False) -> dict[str, Any]:
+MAX_REAL_CANDIDATES = 5
+MAX_CORRECTIVE_RETRIES = 2
+
+
+def run_real_analysis(manifest_path: Path, *, candidate_id: str | None = None, candidate_ids: tuple[str, ...] = (), acquisition_root: Path, inspection_root: Path, intelligence_evidence_root: Path, output_root: Path, context_path: Path, allow_network: bool, dry_run: bool = False, reuse_only: bool = False) -> dict[str, Any]:
+    """Run the bounded Stage 5E acceptance in immutable manifest order.
+
+    Reuse is deliberately resolved before credentials or a provider client are
+    needed.  This keeps the clean acceptance path both credentialless and
+    network-free.
+    """
     if reuse_only and allow_network:
         raise ContentIntelligenceError("reuse-only mode forbids --allow-network")
     if not allow_network and not dry_run and not reuse_only:
         raise ContentIntelligenceError("real provider requires --allow-network")
     context, snapshot, context_hash = load_project_context(context_path)
-    analysis_input = build_analysis_input(manifest_path, candidate_id, acquisition_root=acquisition_root, inspection_root=inspection_root, intelligence_evidence_root=intelligence_evidence_root, project_context=context)
-    if analysis_input["candidate_identity"]["rank"] != 1:
-        raise ContentIntelligenceError("Stage 5D real mode accepts rank 1 only")
-    payload = build_provider_payload(analysis_input, snapshot)
+    from selection_manifest import read_selection_manifest
+
+    manifest = read_selection_manifest(manifest_path)
+    requested = tuple(candidate_ids) or ((candidate_id,) if candidate_id else ())
+    if not requested:
+        raise ContentIntelligenceError("real provider mode requires at least one candidate")
+    if len(set(requested)) != len(requested):
+        raise ContentIntelligenceError("duplicate real candidates are not allowed")
+    allowed = [item for item in manifest.candidates if item.rank <= MAX_REAL_CANDIDATES]
+    allowed_ids = {item.video_id for item in allowed}
+    if set(requested) - allowed_ids:
+        raise ContentIntelligenceError("Stage 5E real mode accepts canonical ranks 1 through 5 only")
+    selected = [item for item in allowed if item.video_id in requested]
+    if len(selected) > MAX_REAL_CANDIDATES:
+        raise ContentIntelligenceError("Stage 5E real mode accepts at most five candidates")
+
     identity_provider = DeepSeekContentIntelligenceProvider(api_key="")
-    request_body = identity_provider.build_request_body(payload)
-    run_id = f"real-{analysis_input['input_hash'][:12]}-{context_hash[:8]}-{PROVIDER_ID}-{MODEL_ID}-{PROMPT_VERSION}"
-    root = output_root / run_id / "candidates" / candidate_id
-    reuse_identity = _reuse_identity(analysis_input, context_hash, identity_provider)
-    summary = {"status": "DRY_RUN", "video_id": candidate_id, "rank": 1, "provider": PROVIDER_ID, "model": MODEL_ID, "prompt_version": PROMPT_VERSION, "input_hash": analysis_input["input_hash"], "context_hash": context_hash, "payload_chars": len(json.dumps(payload, ensure_ascii=False)), "payload_bytes": len(json.dumps(payload, ensure_ascii=False).encode("utf-8")), "evidence_refs": len(payload["evidence_index"]), "endpoint": "api.deepseek.com/chat/completions", "request_keys": list(request_body), "response_format": request_body["response_format"], "thinking": request_body["thinking"], "message_roles": [message["role"] for message in request_body["messages"]], "request_hash": hash_payload(request_body), "reuse_identity": reuse_identity, "network": "NOT_RUN"}
+    run_id = f"real-{manifest.radar_run_id}-{manifest.manifest_hash[:12]}-{context_hash[:8]}-{PROVIDER_ID}-{MODEL_ID}-{PROMPT_VERSION}"
+    run_root = output_root / run_id
+    prepared = []
+    for candidate in selected:
+        analysis_input = build_analysis_input(manifest_path, candidate.video_id, acquisition_root=acquisition_root, inspection_root=inspection_root, intelligence_evidence_root=intelligence_evidence_root, project_context=context)
+        payload = build_provider_payload(analysis_input, snapshot)
+        request_body = identity_provider.build_request_body(payload)
+        prepared.append((candidate, analysis_input, payload, request_body, _reuse_identity(analysis_input, context_hash, identity_provider)))
+
     if dry_run:
-        _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot); _write(root / "provider_request_metadata.json", summary)
-        return summary
-    card_path = root / "content_intelligence_card.json"
-    existing = _reuse_real(card_path, analysis_input, context_hash)
-    if existing:
-        return summary | {"status": AnalysisStatus.REUSED, "network": "NOT_CALLED", "card_hash": existing["card_hash"]}
-    if reuse_only:
+        results = [_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": "DRY_RUN"} for candidate, analysis_input, payload, request_body, reuse_identity in prepared]
+        _write(run_root / "dry_run.json", _run_summary(run_id, manifest, context_hash, results, "DRY_RUN"))
+        return {"status": "DRY_RUN", "analysis_run_id": run_id, "results": results}
+
+    results: list[dict[str, Any]] = []
+    provider: DeepSeekContentIntelligenceProvider | None = None
+    corrective_retries = 0
+    global_blocker = False
+    for candidate, analysis_input, payload, request_body, reuse_identity in prepared:
+        if global_blocker:
+            results.append({"video_id": candidate.video_id, "rank": candidate.rank, "status": "SKIPPED_AFTER_GLOBAL_BLOCKER"})
+            continue
+        root = run_root / "candidates" / candidate.video_id
+        existing, card_ref = _find_reusable_real_card(output_root, root, analysis_input, context_hash)
+        if existing:
+            results.append(_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": "REUSED", "network": "NOT_CALLED", "card_hash": existing["card_hash"], "card_ref": card_ref, "claim_counts": _claim_counts(existing)})
+            continue
+        if reuse_only:
+            results.append({"video_id": candidate.video_id, "rank": candidate.rank, "status": "FAILED", "error": "REUSE_ONLY_MISS"})
+            continue
+        if provider is None:
+            provider = DeepSeekContentIntelligenceProvider()
+            if not provider.credentials_available:
+                results.append({"video_id": candidate.video_id, "rank": candidate.rank, "status": "FAILED", "error": "BLOCKED_PROVIDER_CREDENTIALS"})
+                global_blocker = True
+                continue
+        attempts = 0
+        last_error: ContentIntelligenceError | None = None
+        while True:
+            attempts += 1
+            try:
+                result, raw, metadata = provider.analyze(analysis_input, payload, corrective_errors=[str(last_error)] if last_error else None)
+                validated = validate_provider_result(result, analysis_input, provider)
+                card = build_card(analysis_input, validated)
+                card["project_context_hash"] = context_hash; card["reuse_identity"] = reuse_identity
+                card["card_hash"] = hash_payload({key: value for key, value in card.items() if key != "card_hash"})
+                metadata["attempt_count"] = attempts; metadata["validation_status"] = "VALID"
+                _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot); _write(root / "provider_raw_response.json", raw); _write(root / "provider_request_metadata.json", metadata); _write(root / "content_intelligence_card.json", card); _write(root / "validation.json", {"status": "VALID", "claim_count": len(card["claims"]), "evidence_refs": len(analysis_input["evidence_index"])})
+                results.append(_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": str(card["status"]), "network": "CALLED", "attempts": attempts, "card_hash": card["card_hash"], "card_ref": f"candidates/{candidate.video_id}/content_intelligence_card.json", "claim_counts": _claim_counts(card), "http_status": 200, "metadata": _safe_metadata(metadata)})
+                break
+            except ContentIntelligenceError as error:
+                last_error = error
+                retryable = str(error) in {"PROVIDER_EMPTY_CONTENT", "PROVIDER_INVALID_JSON", "unsupported provider result schema"}
+                if retryable and attempts == 1 and corrective_retries < MAX_CORRECTIVE_RETRIES:
+                    corrective_retries += 1
+                    continue
+                _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot)
+                metadata = error.metadata if isinstance(error, ProviderTransportError) else {}
+                _write(root / "provider_request_metadata.json", {"status": str(error), "payload_hash": hash_payload(payload), "attempt_count": attempts, **metadata})
+                results.append(_dry_run_summary(candidate, analysis_input, payload, request_body, reuse_identity, context_hash) | {"status": "FAILED", "network": "CALLED", "attempts": attempts, "error": str(error), "http_status": metadata.get("http_status")})
+                if _is_global_blocker(error): global_blocker = True
+                break
+    final_status = _run_status(results)
+    summary = _run_summary(run_id, manifest, context_hash, results, final_status, corrective_retries)
+    _write(run_root / "run_summary.json", summary)
+    if reuse_only and any(item["status"] == "FAILED" for item in results):
         raise ContentIntelligenceError("REUSE_ONLY_MISS")
-    provider = DeepSeekContentIntelligenceProvider()
-    last_error: ContentIntelligenceError | None = None
-    for attempt in (1, 2):
-        try:
-            result, raw, metadata = provider.analyze(analysis_input, payload, corrective_errors=[str(last_error)] if last_error else None)
-            validated = validate_provider_result(result, analysis_input, provider)
-            card = build_card(analysis_input, validated)
-            card["project_context_hash"] = context_hash
-            card["reuse_identity"] = reuse_identity
-            card["card_hash"] = hash_payload({key: value for key, value in card.items() if key != "card_hash"})
-            metadata["attempt_count"] = attempt; metadata["validation_status"] = "VALID"
-            _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot); _write(root / "provider_raw_response.json", raw); _write(root / "provider_request_metadata.json", metadata); _write(root / "content_intelligence_card.json", card); _write(root / "validation.json", {"status": "VALID", "claim_count": len(card["claims"]), "evidence_refs": len(analysis_input["evidence_index"])})
-            return summary | {"status": card["status"], "network": "CALLED", "attempts": attempt, "card_hash": card["card_hash"], "claim_counts": _claim_counts(card), "metadata": metadata}
-        except ContentIntelligenceError as error:
-            _write(root / "analysis_input.json", analysis_input); _write(root / "provider_payload.json", payload); _write(root / "project_context_snapshot.json", snapshot)
-            if isinstance(error, ProviderTransportError):
-                _write(root / "provider_error.json", error.metadata)
-                _write(root / "provider_request_metadata.json", {"status": error.code, **error.metadata, "payload_hash": hash_payload(payload), "attempt_count": attempt})
-            last_error = error
-            if attempt == 2 or str(error) not in {"PROVIDER_EMPTY_CONTENT", "PROVIDER_INVALID_JSON", "AI provider cannot emit FACT claims", "claim contains an unknown evidence reference"}:
-                raise
-    raise last_error or ContentIntelligenceError("FAILED_PROVIDER_OUTPUT_INVALID")
+    return summary
 
 
 def run_minimal_probe(*, output_root: Path, allow_network: bool) -> dict[str, Any]:
@@ -267,6 +321,69 @@ def run_minimal_probe(*, output_root: Path, allow_network: bool) -> dict[str, An
     except ProviderTransportError as error:
         _write(root / "probe_error.json", error.metadata)
         raise
+
+
+def _dry_run_summary(candidate: Any, analysis_input: dict[str, Any], payload: dict[str, Any], request_body: dict[str, Any], reuse_identity: str, context_hash: str) -> dict[str, Any]:
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    evidence = analysis_input["evidence"]
+    return {
+        "video_id": candidate.video_id, "rank": candidate.rank, "input_hash": analysis_input["input_hash"],
+        "context_hash": context_hash, "provider": PROVIDER_ID, "model": MODEL_ID,
+        "prompt_version": PROMPT_VERSION, "payload_chars": len(encoded.decode("utf-8")),
+        "payload_bytes": len(encoded), "evidence_refs": len(payload["evidence_index"]),
+        "ocr_included": len(payload["ocr"]["events"]), "ocr_total": len(evidence.get("ocr", {}).get("events", [])),
+        "transcript_included": len(payload["transcription"]["segments"]), "transcript_total": len(evidence.get("transcription", {}).get("segments", [])),
+        "frames_included": len(payload["frame_summaries"]), "frames_total": len(evidence.get("inspection", {}).get("frames", [])),
+        "missing_evidence": analysis_input["missing_evidence"], "request_hash": hash_payload(request_body),
+        "reuse_identity": reuse_identity, "response_format": request_body["response_format"],
+        "thinking": request_body["thinking"], "network": "NOT_RUN",
+    }
+
+
+def _find_reusable_real_card(output_root: Path, preferred_root: Path, analysis_input: dict[str, Any], context_hash: str) -> tuple[dict[str, Any] | None, str | None]:
+    paths = [preferred_root / "content_intelligence_card.json"]
+    paths.extend(sorted(output_root.glob(f"real-*/candidates/{analysis_input['candidate_identity']['video_id']}/content_intelligence_card.json")))
+    for path in paths:
+        card = _reuse_real(path, analysis_input, context_hash)
+        if card:
+            return card, str(path.relative_to(output_root)).replace("\\", "/")
+    return None, None
+
+
+def _safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {key: metadata.get(key) for key in ("latency_ms", "usage", "finish_reason", "request_id", "attempt_count", "validation_status", "payload_hash", "response_hash")}
+
+
+def _is_global_blocker(error: ContentIntelligenceError) -> bool:
+    return str(error) in {"BLOCKED_PROVIDER_CREDENTIALS", "PROVIDER_AUTHENTICATION_FAILED", "PROVIDER_BALANCE_OR_ACCOUNT_BLOCKED", "PROVIDER_RATE_LIMITED", "PROVIDER_HTTP_400_INVALID_FORMAT", "REQUEST_CONTRACT_INVALID"}
+
+
+def _run_status(results: list[dict[str, Any]]) -> str:
+    statuses = [item["status"] for item in results]
+    if statuses and all(status == "REUSED" for status in statuses): return "REUSED"
+    if statuses and all(status in {"COMPLETED", "DEGRADED", "REUSED"} for status in statuses): return "COMPLETED"
+    if any(status in {"COMPLETED", "DEGRADED", "REUSED"} for status in statuses): return "PARTIAL"
+    return "FAILED"
+
+
+def _run_summary(run_id: str, manifest: Any, context_hash: str, results: list[dict[str, Any]], status: str, corrective_retries: int = 0) -> dict[str, Any]:
+    usage = [item.get("metadata", {}).get("usage") or {} for item in results]
+    return {
+        "schema_version": "1.0", "analysis_run_id": run_id, "radar_run_id": manifest.radar_run_id,
+        "manifest_hash": manifest.manifest_hash, "project_id": "nura", "project_context_hash": context_hash,
+        "provider_id": PROVIDER_ID, "model_id": MODEL_ID, "prompt_version": PROMPT_VERSION,
+        "provider_settings": {"response_format": {"type": "json_object"}, "thinking": {"type": "disabled"}, "temperature": 0.2, "max_tokens": 1800},
+        "requested_ranks": [item["rank"] for item in results], "candidate_results": results,
+        "reused_count": sum(item["status"] == "REUSED" for item in results),
+        "completed_count": sum(item["status"] in {"COMPLETED", "DEGRADED"} for item in results),
+        "failed_count": sum(item["status"] == "FAILED" for item in results),
+        "skipped_count": sum(item["status"] == "SKIPPED_AFTER_GLOBAL_BLOCKER" for item in results),
+        "network_calls": sum(int(item.get("attempts", 0)) for item in results if item.get("network") == "CALLED"),
+        "corrective_retries": corrective_retries,
+        "aggregate_latency_ms": sum(int((item.get("metadata") or {}).get("latency_ms") or 0) for item in results),
+        "aggregate_usage": {"prompt_tokens": sum(int(item.get("prompt_tokens", 0) or 0) for item in usage), "completion_tokens": sum(int(item.get("completion_tokens", 0) or 0) for item in usage), "total_tokens": sum(int(item.get("total_tokens", 0) or 0) for item in usage)},
+        "final_status": status, "warnings": [], "errors": [item.get("error") for item in results if item.get("error")],
+    }
 
 
 class ProviderTransportError(ContentIntelligenceError):

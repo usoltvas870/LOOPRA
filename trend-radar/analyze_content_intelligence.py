@@ -27,7 +27,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--output-root", type=Path, default=ROOT / "data" / "content-intelligence" / "fake")
     value.add_argument("--no-reuse", action="store_true")
     value.add_argument("--json", action="store_true")
-    value.add_argument("--provider-real", action="store_true", help="Use the fixed DeepSeek Stage 5D adapter (rank 1 only).")
+    value.add_argument("--provider-real", action="store_true", help="Use the fixed DeepSeek Stage 5E adapter for canonical ranks 1 through 5.")
     value.add_argument("--allow-network", action="store_true", help="Required together with --provider-real to make a network request.")
     value.add_argument("--dry-run", action="store_true", help="Build and validate the real-provider payload without network.")
     value.add_argument("--reuse-only", action="store_true", help="Reuse a validated real result; fail without any provider transport on a miss.")
@@ -42,9 +42,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.reuse_only and not args.provider_real:
             raise ContentIntelligenceError("--reuse-only requires --provider-real")
         if args.provider_real:
-            if len(args.candidate_id) != 1:
-                raise ContentIntelligenceError("real provider mode requires exactly one --candidate-id")
-            result = run_real_analysis(args.manifest, candidate_id=args.candidate_id[0],
+            if not args.candidate_id:
+                raise ContentIntelligenceError("real provider mode requires explicit --candidate-id values")
+            result = run_real_analysis(args.manifest, candidate_ids=tuple(args.candidate_id),
                 acquisition_root=args.acquisition_root or ROOT / "data" / "acquisitions" / run_id,
                 inspection_root=args.inspection_root or ROOT / "data" / "format-inspections" / run_id,
                 intelligence_evidence_root=args.evidence_root or ROOT / "data" / "content-intelligence" / run_id / "candidates",

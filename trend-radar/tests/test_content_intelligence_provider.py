@@ -12,7 +12,7 @@ from content_intelligence import ContentIntelligenceError, ProjectAnalysisContex
 from content_intelligence_provider import (
     MODEL_ID, DeepSeekContentIntelligenceProvider, ProviderTransportError,
     _reuse_identity, _reuse_real, _validate_request_body,
-    _without_reasoning_content, build_provider_payload, load_project_context,
+    _run_status, _without_reasoning_content, build_provider_payload, load_project_context,
     run_real_analysis,
 )
 from test_content_intelligence import _fixture
@@ -193,3 +193,24 @@ def test_project_context_hash_is_deterministic(tmp_path: Path) -> None:
     first = load_project_context(source)[2]
     second = load_project_context(source)[2]
     assert first == second
+
+
+def test_run_status_distinguishes_completed_partial_failed_and_reused() -> None:
+    assert _run_status([{"status": "REUSED"}, {"status": "REUSED"}]) == "REUSED"
+    assert _run_status([{"status": "REUSED"}, {"status": "COMPLETED"}]) == "COMPLETED"
+    assert _run_status([{"status": "COMPLETED"}, {"status": "FAILED"}]) == "PARTIAL"
+    assert _run_status([{"status": "FAILED"}, {"status": "SKIPPED_AFTER_GLOBAL_BLOCKER"}]) == "FAILED"
+
+
+def test_real_run_rejects_duplicate_candidate_before_network(tmp_path: Path) -> None:
+    paths = _fixture(tmp_path)
+    _, snapshot = _input(tmp_path / "context")
+    context_path = tmp_path / "context.json"
+    context_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    with pytest.raises(ContentIntelligenceError, match="duplicate real candidates"):
+        run_real_analysis(
+            paths["manifest"], candidate_ids=("video-1", "video-1"),
+            acquisition_root=paths["acquisition"], inspection_root=paths["inspection"],
+            intelligence_evidence_root=paths["evidence"], output_root=tmp_path / "out",
+            context_path=context_path, allow_network=True,
+        )
