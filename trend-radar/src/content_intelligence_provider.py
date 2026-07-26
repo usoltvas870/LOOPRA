@@ -175,25 +175,7 @@ class DeepSeekContentIntelligenceProvider:
         body = self.build_request_body(provider_payload)
         if corrective_errors:
             body["messages"].append({"role": "user", "content": "Correct the previous output. Validation errors: " + "; ".join(corrective_errors[:5]) + ". Return complete JSON only."})
-        started = time.perf_counter()
-        try:
-            with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, transport=self._transport) as client:
-                response = client.post(ENDPOINT, headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}, json=body)
-        except httpx.TimeoutException as error:
-            raise ProviderTransportError("PROVIDER_TIMEOUT") from error
-        latency_ms = round((time.perf_counter() - started) * 1000)
-        if response.status_code in {401, 403}:
-            raise _provider_error("PROVIDER_AUTHENTICATION_FAILED", response, latency_ms)
-        if response.status_code == 402:
-            raise _provider_error("PROVIDER_BALANCE_OR_ACCOUNT_BLOCKED", response, latency_ms)
-        if response.status_code == 429:
-            raise _provider_error("PROVIDER_RATE_LIMITED", response, latency_ms)
-        if response.status_code >= 500:
-            raise _provider_error("PROVIDER_TRANSIENT_ERROR", response, latency_ms)
-        if response.status_code == 400:
-            raise _provider_error("PROVIDER_HTTP_400_INVALID_FORMAT", response, latency_ms)
-        if response.status_code != 200:
-            raise _provider_error(f"PROVIDER_HTTP_{response.status_code}", response, latency_ms)
+        response, latency_ms = post_deepseek_request(body, api_key=self._api_key, transport=self._transport)
         if len(response.content) > MAX_RESPONSE_BYTES:
             if attempt_path is not None:
                 _write(attempt_path, _attempt_artifact(
@@ -558,6 +540,34 @@ def _provider_error(code: str, response: httpx.Response, latency_ms: int) -> Pro
     except json.JSONDecodeError:
         message = "non-json provider error body"
     return ProviderTransportError(code, {"http_status": response.status_code, "provider_error_type": error_type, "provider_error_code": error_code, "message": message, "request_id": response.headers.get("x-request-id"), "response_body_hash": body_hash, "response_body_bytes": len(response.content), "latency_ms": latency_ms})
+
+
+def post_deepseek_request(
+    body: dict[str, Any], *, api_key: str | None, transport: httpx.BaseTransport | None = None,
+) -> tuple[httpx.Response, int]:
+    """Send one bounded request through the shared DeepSeek transport policy."""
+    if not api_key:
+        raise ContentIntelligenceError("BLOCKED_PROVIDER_CREDENTIALS")
+    started = time.perf_counter()
+    try:
+        with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, transport=transport) as client:
+            response = client.post(ENDPOINT, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=body)
+    except httpx.TimeoutException as error:
+        raise ProviderTransportError("PROVIDER_TIMEOUT") from error
+    latency_ms = round((time.perf_counter() - started) * 1000)
+    if response.status_code in {401, 403}:
+        raise _provider_error("PROVIDER_AUTHENTICATION_FAILED", response, latency_ms)
+    if response.status_code == 402:
+        raise _provider_error("PROVIDER_BALANCE_OR_ACCOUNT_BLOCKED", response, latency_ms)
+    if response.status_code == 429:
+        raise _provider_error("PROVIDER_RATE_LIMITED", response, latency_ms)
+    if response.status_code >= 500:
+        raise _provider_error("PROVIDER_TRANSIENT_ERROR", response, latency_ms)
+    if response.status_code == 400:
+        raise _provider_error("PROVIDER_HTTP_400_INVALID_FORMAT", response, latency_ms)
+    if response.status_code != 200:
+        raise _provider_error(f"PROVIDER_HTTP_{response.status_code}", response, latency_ms)
+    return response, latency_ms
 
 
 def _validate_request_body(body: dict[str, Any]) -> None:

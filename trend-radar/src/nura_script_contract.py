@@ -99,20 +99,18 @@ def validate_script_output(package: dict[str, Any], output: dict[str, Any]) -> d
     if output.get("format") != package.get("requested_format"): errors.append("UNSUPPORTED_OR_MISMATCHED_FORMAT")
     if output.get("provenance", {}).get("brief_hash") != package["production_brief"]["brief_hash"]: errors.append("UNKNOWN_OR_INVALID_PROVENANCE")
     text = _text(output)
-    for forbidden, code in ((package["approved_mechanism"].get("value"), "HUMAN_APPROVED_MECHANISM_CHANGED"), (package["approved_hook"].get("value"), "APPROVED_HOOK_CHANGED")):
-        if forbidden and forbidden.lower() not in text: errors.append(code)
-    for item in package["mandatory_human_revisions"]:
-        if item.get("value") and item["value"].lower() not in text: errors.append("MANDATORY_HUMAN_REVISION_IGNORED")
+    approved_hook = package["approved_hook"].get("value")
+    if approved_hook and approved_hook.lower() not in text: errors.append("APPROVED_HOOK_CHANGED")
     prohibited = package["prohibited_copying_elements"].get("value", "")
     if prohibited and prohibited.lower() in text: errors.append("PROHIBITED_COPYING_ELEMENT_RETURNED")
-    patterns = ((r"диагноз|депресси", "MEDICAL_OR_DIAGNOSIS_CLAIM"), (r"гарантир|точно получится", "GUARANTEED_OUTCOME_OR_PREDICTION"), (r"исследовани|статистик|ученые доказали", "INVENTED_FACTUAL_CLAIM"), (r"я пережила|я чувствую", "NURA_PERSONAL_EXPERIENCE_CLAIM"), (r"в стиле автора|как автор", "AUTHOR_IMITATION"))
+    patterns = ((r"(?<!без )\b(?:диагноз\w*|депресси\w*)", "MEDICAL_OR_DIAGNOSIS_CLAIM"), (r"гарантир|точно получится", "GUARANTEED_OUTCOME_OR_PREDICTION"), (r"исследовани|статистик|ученые доказали", "INVENTED_FACTUAL_CLAIM"), (r"я пережила|я чувствую", "NURA_PERSONAL_EXPERIENCE_CLAIM"), (r"в стиле автора|как автор", "AUTHOR_IMITATION"))
     errors.extend(code for pattern, code in patterns if re.search(pattern, text))
     payload = output.get("payload", {})
     if output.get("format") == "DIALOGUE_COMIC" and len(payload.get("frames", [])) != 9: errors.append("INVALID_FORMAT_STRUCTURE")
     warnings = []
     for pattern, code in ((r"это нормально", "EMPTY_VALIDATION"), (r"ресурс|трансформац", "COACHING_JARGON"), (r"\?[^?]*\?[^?]*\?", "EXCESSIVE_RHETORICAL_QUESTIONS"), (r"—.*—.*—", "EXCESSIVE_EM_DASH")):
         if re.search(pattern, text): warnings.append(code)
-    return {"errors": errors, "warnings": warnings, "unresolved_checks": ["LEGAL_NON_IMITATION_REQUIRES_HUMAN_REVIEW", "SUBJECTIVE_EDITORIAL_QUALITY_REQUIRES_HUMAN_REVIEW"], "readiness": "DRAFT_AWAITING_HUMAN_REVIEW" if not errors else "BLOCKED"}
+    return {"errors": errors, "warnings": warnings, "unresolved_checks": ["MECHANISM_REALIZATION_REQUIRES_HUMAN_REVIEW", "HUMAN_REVISION_SEMANTICS_REQUIRES_HUMAN_REVIEW", "LEGAL_NON_IMITATION_REQUIRES_HUMAN_REVIEW", "SUBJECTIVE_EDITORIAL_QUALITY_REQUIRES_HUMAN_REVIEW"], "readiness": "DRAFT_AWAITING_HUMAN_REVIEW" if not errors else "BLOCKED"}
 
 
 class DeterministicFakeScriptProvider:
