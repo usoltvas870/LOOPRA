@@ -20,6 +20,11 @@ Run discovery with:
 
 `python trend-radar/run_nura_production_asset_handoff_acceptance.py --bridge <Stage-5L-bridge> --voice <candidate>`
 
+After an owner decision, run the same offline command with `--finalize`,
+`--selected-avatar` and `--selected-voice`. It copies the exact source bytes
+to the ignored content-addressed `assets/nura/` store, validates byte equality,
+persists the decision, and atomically creates the profile and handoff.
+
 The generated `human_selection.json` requires an explicit approval reference
 and `human_confirmation=true`. Voice identity is a reusable local/external
 reference; it is not a generated track. Cropping, compatibility verification,

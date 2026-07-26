@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -67,6 +68,33 @@ def _atomic(path: Path, value: dict[str, Any]) -> str:
     finally:
         temporary.unlink(missing_ok=True)
     return "COMPLETED"
+
+
+def materialize_selected_asset(*, source: Path, output_root: Path, category: str) -> tuple[Path, str, str]:
+    """Copy exact owner-selected bytes into ignored project-scoped storage."""
+    source = Path(source)
+    if category not in {"avatar", "voice"} or not source.is_file() or source.stat().st_size == 0:
+        raise NuraProductionAssetHandoffError("SELECTED_ASSET_MISSING")
+    extension = source.suffix.lower()
+    if extension not in (IMAGE_TYPES if category == "avatar" else AUDIO_TYPES):
+        raise NuraProductionAssetHandoffError("UNSUPPORTED_SELECTED_ASSET_TYPE")
+    content_hash = _sha256(source)
+    reference = f"assets/nura/{category}/{content_hash}{extension}"
+    destination = Path(output_root) / reference
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if _sha256(destination) != content_hash:
+            raise NuraProductionAssetHandoffError("SELECTED_ASSET_HASH_CONFLICT")
+        return destination, reference, "REUSED"
+    temporary = destination.with_name(destination.name + ".tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        if _sha256(temporary) != content_hash:
+            raise NuraProductionAssetHandoffError("SELECTED_ASSET_COPY_HASH_MISMATCH")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination, reference, "COPIED"
 
 
 def load_bridge(path: Path) -> dict[str, Any]:
@@ -169,6 +197,7 @@ def persist_contract(*, output_root: Path, manifest: dict[str, Any], selection: 
     if bridge is None:
         raise NuraProductionAssetHandoffError("BRIDGE_REQUIRED_FOR_SELECTION")
     profile, handoff = build_profile_and_handoff(bridge=bridge, manifest=manifest, selection=selection)
+    result["selection"] = _atomic(Path(output_root) / manifest["content_hash"] / "human_selection.json", selection)
     result["profile"] = _atomic(Path(output_root) / profile["content_hash"] / "production_asset_profile.json", profile)
     result["handoff"] = _atomic(Path(output_root) / handoff["content_hash"] / "external_renderer_handoff.json", handoff)
     result.update({"selection_required": False, "profile_id": profile["profile_id"], "handoff_id": handoff["handoff_id"], "production_execution_ready": False})

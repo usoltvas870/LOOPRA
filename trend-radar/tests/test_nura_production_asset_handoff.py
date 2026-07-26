@@ -9,7 +9,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src")]
 
-from nura_production_asset_handoff import (NuraProductionAssetHandoffError, build_candidate_manifest, build_profile_and_handoff, inspect_candidate, load_bridge, persist_contract, selection_template)
+from nura_production_asset_handoff import (NuraProductionAssetHandoffError, build_candidate_manifest, build_profile_and_handoff, inspect_candidate, load_bridge, materialize_selected_asset, persist_contract, selection_template)
 from nura_script_episode_bridge import hash_payload
 
 
@@ -65,3 +65,13 @@ def test_rejects_missing_approval_unsafe_path_and_bad_bridge(tmp_path: Path):
     path.write_text("{}", encoding="utf-8")
     with pytest.raises(NuraProductionAssetHandoffError, match="HASH_MISMATCH"):
         load_bridge(path)
+
+
+def test_materializes_exact_selected_asset_without_external_path_dependency(tmp_path: Path):
+    image, _ = assets(tmp_path)
+    destination, reference, first = materialize_selected_asset(source=image, output_root=tmp_path / "runtime", category="avatar")
+    repeated, repeated_reference, second = materialize_selected_asset(source=image, output_root=tmp_path / "runtime", category="avatar")
+    assert first == "COPIED" and second == "REUSED"
+    assert destination == repeated and reference == repeated_reference
+    assert reference.startswith("assets/nura/avatar/") and "C:" not in reference
+    assert image.read_bytes() == destination.read_bytes()
