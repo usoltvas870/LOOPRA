@@ -1,6 +1,7 @@
 """Offline Stage 5J NURA script contract; no real provider or episode bridge."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -37,7 +38,7 @@ def _read(path: Path) -> dict[str, Any]:
     return value
 
 
-def load_editorial_profile(path: Path) -> dict[str, Any]:
+def load_editorial_profile(path: Path, *, repository_root: Path) -> dict[str, Any]:
     profile = _read(path)
     required = {"schema_version", "profile_id", "profile_version", "project_id", "source_document", "supported_content_scope", "excluded_scope", "voice_principles", "prohibited_voice_patterns", "safety_principles", "format_principles", "checklist_version"}
     if profile.get("schema_version") != SCHEMA_VERSION or profile.get("project_id") != "nura" or not required.issubset(profile):
@@ -45,7 +46,18 @@ def load_editorial_profile(path: Path) -> dict[str, Any]:
     source = profile["source_document"]
     if not isinstance(source, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(source.get("sha256", ""))):
         raise NuraScriptContractError("INVALID_EDITORIAL_PROFILE_SOURCE")
+    reference = source.get("reference")
+    if not isinstance(reference, str) or not reference or Path(reference).is_absolute() or "\\" in reference:
+        raise NuraScriptContractError("UNSAFE_EDITORIAL_SOURCE_REFERENCE")
+    root = repository_root.resolve()
+    source_path = (root / reference).resolve()
+    if root not in source_path.parents or not source_path.is_file():
+        raise NuraScriptContractError("EDITORIAL_SOURCE_NOT_FOUND")
+    actual_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    if actual_hash != source["sha256"]:
+        raise NuraScriptContractError("EDITORIAL_SOURCE_HASH_MISMATCH")
     profile["profile_hash"] = hash_payload(profile)
+    profile["source_verified"] = True
     return profile
 
 

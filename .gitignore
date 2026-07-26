@@ -36,6 +36,8 @@ projects/nura/*
 !projects/nura/project.yaml
 !projects/nura/content_intelligence_context.json
 !projects/nura/nura_editorial_profile.json
+!projects/nura/editorial/
+!projects/nura/editorial/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md
 
 # Runtime job artifacts
 jobs/*/input/

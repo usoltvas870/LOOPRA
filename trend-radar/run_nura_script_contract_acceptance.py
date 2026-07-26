@@ -21,7 +21,7 @@ def _brief() -> dict:
 
 
 def run_acceptance(workdir: Path) -> dict:
-    profile = load_editorial_profile(ROOT.parent / "projects" / "nura" / "nura_editorial_profile.json")
+    profile = load_editorial_profile(ROOT.parent / "projects" / "nura" / "nura_editorial_profile.json", repository_root=ROOT.parent)
     package = build_script_input(brief=_brief(), profile=profile, requested_format="TALKING_GUIDE")
     provider = DeterministicFakeScriptProvider(); output = provider.generate(package)
     first = persist_package(workdir / "runtime" / "script_input.json", package)
@@ -29,7 +29,7 @@ def run_acceptance(workdir: Path) -> dict:
     review = create_human_script_review(output)
     if output["validation"]["errors"]:
         raise RuntimeError("Fake output failed hard validation")
-    return {"contract_built": True, "profile_hash_verified": bool(profile["profile_hash"]), "fake_provider_used": provider.provider_mode, "network_used": False, "credentials_required": False, "validation_status": output["validation"]["readiness"], "warning_count": len(output["validation"]["warnings"]), "human_review_status": review["decision"], "episode_bridge_ready": review["episode_bridge_ready"], "first_run": first, "reuse_result": second}
+    return {"contract_built": True, "project_scoped_source_available": profile["source_verified"], "source_hash_valid": profile["source_verified"], "profile_hash_verified": bool(profile["profile_hash"]), "fake_provider_used": provider.provider_mode, "network_used": False, "credentials_required": False, "validation_status": output["validation"]["readiness"], "warning_count": len(output["validation"]["warnings"]), "human_review_status": review["decision"], "episode_bridge_ready": review["episode_bridge_ready"], "first_run": first, "reuse_result": second}
 
 
 if __name__ == "__main__":

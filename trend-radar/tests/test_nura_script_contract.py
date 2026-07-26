@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -27,9 +28,29 @@ def _brief() -> dict:
 
 
 def _profile(tmp_path: Path) -> dict:
-    profile = {"schema_version": "0.1", "profile_id": "nura", "profile_version": "1", "project_id": "nura", "source_document": {"reference": "guide", "sha256": "a" * 64}, "supported_content_scope": ["talking_guide", "background_voice", "text_led_video", "dialogue_comic"], "excluded_scope": ["core"], "voice_principles": ["concrete"], "prohibited_voice_patterns": ["imitation"], "safety_principles": ["no diagnosis"], "format_principles": {"talking_guide": {"required": []}, "background_voice": {"required": []}, "text_led_video": {"required": []}, "dialogue_comic": {"frame_count": 9}}, "checklist_version": "1"}
+    source = tmp_path / "guide.md"; source.write_text("fixture editorial source\n", encoding="utf-8")
+    profile = {"schema_version": "0.1", "profile_id": "nura", "profile_version": "1", "project_id": "nura", "source_document": {"reference": "guide.md", "sha256": hashlib.sha256(source.read_bytes()).hexdigest()}, "supported_content_scope": ["talking_guide", "background_voice", "text_led_video", "dialogue_comic"], "excluded_scope": ["core"], "voice_principles": ["concrete"], "prohibited_voice_patterns": ["imitation"], "safety_principles": ["no diagnosis"], "format_principles": {"talking_guide": {"required": []}, "background_voice": {"required": []}, "text_led_video": {"required": []}, "dialogue_comic": {"frame_count": 9}}, "checklist_version": "1"}
     path = tmp_path / "profile.json"; _write(path, profile)
-    return load_editorial_profile(path)
+    return load_editorial_profile(path, repository_root=tmp_path)
+
+
+def test_canonical_source_and_bounded_profile_are_reproducible() -> None:
+    repository_root = ROOT.parent
+    profile_path = repository_root / "projects" / "nura" / "nura_editorial_profile.json"
+    raw_profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    reference = raw_profile["source_document"]["reference"]
+    assert reference == "projects/nura/editorial/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md"
+    assert not Path(reference).is_absolute()
+    assert all(fragment not in reference for fragment in ("C:\\Users\\", "Downloads", "Bayzel"))
+    source = repository_root / reference
+    assert source.is_file()
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == raw_profile["source_document"]["sha256"]
+    profile = load_editorial_profile(profile_path, repository_root=repository_root)
+    assert profile["source_verified"] is True
+    assert set(profile["supported_content_scope"]) == {"talking_guide", "background_voice", "text_led_video", "dialogue_comic"}
+    assert {"core", "content_intelligence", "production_brief"}.issubset(profile["excluded_scope"])
+    package = build_script_input(brief=_brief(), profile=profile, requested_format="TALKING_GUIDE")
+    assert source.read_text(encoding="utf-8") not in json.dumps(package, ensure_ascii=False)
 
 
 @pytest.mark.parametrize("script_format", ["TALKING_GUIDE", "BACKGROUND_VOICE", "TEXT_LED_VIDEO", "DIALOGUE_COMIC"])

@@ -4,7 +4,7 @@
   "profile_version": "2026-07-26",
   "project_id": "nura",
   "source_document": {
-    "reference": "NURA_CONTENT_STUDIO_PROJECT_GUIDE.md",
+    "reference": "projects/nura/editorial/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md",
     "sha256": "d78ae3ad85169d6f479b059ba6d026599329693a60ea2c01e439ec44be29a1c4"
   },
   "supported_content_scope": ["talking_guide", "background_voice", "text_led_video", "dialogue_comic"],

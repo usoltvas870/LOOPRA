@@ -44,8 +44,16 @@ NURA-specific editorial rules cannot leak into project-agnostic core. The
 minimal extension point is a new, offline `trend-radar/src/nura_script_contract.py`
 module downstream from a validated Production Brief.
 
-The supplied source guide was found at
-`C:/Users/Bayzel/Downloads/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md`, SHA-256
+The supplied source guide was verified byte-for-byte and fixed at
+`projects/nura/editorial/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md`, SHA-256
 `d78ae3ad85169d6f479b059ba6d026599329693a60ea2c01e439ec44be29a1c4`.
-It is used only to derive the bounded NURA editorial profile and script-layer
+The repository copy is now the canonical reproducibility source. The external
+operator copy is no longer a runtime or acceptance dependency. The source is
+used only to derive the bounded NURA editorial profile and script-layer
 validation rules; it is not a global Codex skill or an engineering style guide.
+
+The loader validates the safe repository-relative reference and exact source
+hash before deriving `profile_hash`. Provider-facing Script Input continues to
+contain only profile identity/version/hash and bounded format constraints; it
+never contains the full source Markdown. Scope is unchanged and Stage 5K has
+not started.

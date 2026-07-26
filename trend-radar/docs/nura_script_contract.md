@@ -13,8 +13,18 @@ prohibited copying elements, safety constraints, provenance, and visible
 unresolved upstream fields.
 
 The profile at `projects/nura/nura_editorial_profile.json` is a structured,
-versioned derivative of the supplied NURA Content Studio guide. The guide is
-not installed as a global skill and affects only the NURA script/content layer.
+versioned derivative of the canonical source at
+`projects/nura/editorial/NURA_CONTENT_STUDIO_PROJECT_GUIDE.md` (SHA-256
+`d78ae3ad85169d6f479b059ba6d026599329693a60ea2c01e439ec44be29a1c4`).
+The loader verifies the repository-relative path and exact source hash. The
+external Downloads copy is no longer a runtime or reproducibility dependency.
+The guide is not installed as a global skill and affects only the NURA
+script/content layer.
+
+The full Markdown is never placed in Script Input or passed to a provider.
+Runtime uses only the bounded profile identity, version, hash, and relevant
+format constraints. Engineering, Content Intelligence, Production Brief, and
+runtime-chat scopes remain excluded. This fixation does not begin Stage 5K.
 
 Supported output payload formats are `TALKING_GUIDE`, `BACKGROUND_VOICE`,
 `TEXT_LED_VIDEO`, and `DIALOGUE_COMIC`. The comic payload is semantic only;
