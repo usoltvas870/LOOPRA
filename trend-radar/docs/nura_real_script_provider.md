@@ -56,3 +56,10 @@ It preserves the raw artifact and records original provider/prompt provenance,
 the current parser/validator/resolution versions, and the legacy request-hash
 limitation. Prompt `1.2` remains the provenance of attempt 3; prompt `1.3` is
 not applied retroactively.
+
+When the owner supplies a real decision, `--finalize-owner-approved` creates
+two separate immutable runtime artifacts: a finalized human script review and
+a human-approved Script Output. The provider draft and raw response remain
+unchanged; the final script records their hashes plus explicit human revision
+reasons. `APPROVED_FOR_EPISODE_BRIDGE` sets the review-gate readiness flag, but
+does not create an Episode Input Package or invoke production.

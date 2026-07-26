@@ -13,7 +13,7 @@ from content_intelligence_provider import ProviderTransportError
 from nura_production_brief import hash_payload
 from nura_real_script_provider import (
     DeepSeekNuraScriptProvider, NuraRealScriptProviderError, NuraScriptPromptContract,
-    build_bounded_provider_request, reprocess_existing_raw, run_real_script_provider,
+    build_bounded_provider_request, finalize_human_script_review, reprocess_existing_raw, run_real_script_provider,
 )
 from nura_script_contract import build_script_input, load_editorial_profile
 
@@ -198,3 +198,27 @@ def test_effective_request_identity_changes_for_prompt_version_and_body(tmp_path
         def system_contract(self) -> str: return super().system_contract() + "\nChanged effective instruction."
     provider.contract = ChangedBodyContract(prompt_version="test-version")
     assert provider.effective_request_identity(request) != version_identity
+
+
+def test_human_finalization_preserves_provider_draft_and_reuses_immutable_decision(tmp_path: Path) -> None:
+    brief, profile, _ = _fixture(tmp_path)
+    initial = run_real_script_provider(brief_path=brief, profile_path=profile, repository_root=tmp_path, output_root=tmp_path / "runtime", allow_network=True, api_key="test-key", transport=_transport(_raw(HOOK + " " + MECHANISM)))
+    provider_path = Path(initial["validated_output_path"]); before = provider_path.read_bytes()
+    approved = "\n\n".join((HOOK, "Ты остаёшься рядом с близким и замечаешь свою усталость.", "Поддержка не требует исчезать из собственной жизни.", "Сегодня спроси себя: «Что сейчас нужно мне?»", "Это не отказ от другого."))
+    first = finalize_human_script_review(pending_path=Path(initial["review_path"]), approved_text=approved, revision_reasons=["owner revision"], reviewer_id="nura-owner", reviewer_role="OWNER", reviewer_display_name="Owner")
+    assert first["status"] == "COMPLETED" and first["final_script"]["status"] == "HUMAN_APPROVED"
+    assert first["final_script"]["episode_bridge_ready"] is True
+    assert provider_path.read_bytes() == before
+    second = finalize_human_script_review(pending_path=Path(initial["review_path"]), approved_text=approved, revision_reasons=["owner revision"], reviewer_id="nura-owner", reviewer_role="OWNER", reviewer_display_name="Owner")
+    assert second["status"] == "REUSED" and second["final_script"]["content_hash"] == first["final_script"]["content_hash"]
+    with pytest.raises(NuraRealScriptProviderError, match="CONFLICTING"):
+        finalize_human_script_review(pending_path=Path(initial["review_path"]), approved_text=approved + "!", revision_reasons=["owner revision"], reviewer_id="nura-owner", reviewer_role="OWNER", reviewer_display_name="Owner")
+
+
+@pytest.mark.parametrize("reviewer_id,role", [("other", "OWNER"), ("nura-owner", "EDITOR")])
+def test_human_finalization_requires_owner_identity(tmp_path: Path, reviewer_id: str, role: str) -> None:
+    brief, profile, _ = _fixture(tmp_path)
+    initial = run_real_script_provider(brief_path=brief, profile_path=profile, repository_root=tmp_path, output_root=tmp_path / "runtime", allow_network=True, api_key="test-key", transport=_transport(_raw(HOOK + " " + MECHANISM)))
+    approved = "\n\n".join((HOOK, "Ты рядом.", "Поддержка не требует исчезать.", "Спроси себя.", "Это не отказ."))
+    with pytest.raises(NuraRealScriptProviderError, match="INVALID_HUMAN_REVIEWER"):
+        finalize_human_script_review(pending_path=Path(initial["review_path"]), approved_text=approved, revision_reasons=["reason"], reviewer_id=reviewer_id, reviewer_role=role, reviewer_display_name="Owner")

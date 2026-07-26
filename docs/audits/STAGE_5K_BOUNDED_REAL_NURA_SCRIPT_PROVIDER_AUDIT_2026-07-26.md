@@ -35,6 +35,13 @@ share it; future effective-request identity additionally hashes provider/model,
 prompt ID/version, effective prompt messages, format, profile hash and Script
 Input hash. No provider call is made by offline reprocessing.
 
+The Stage 5K review finalization extension creates immutable, hash-linked
+runtime artifacts only after an `OWNER` reviewer with explicit confirmation
+chooses `APPROVED_FOR_EPISODE_BRIDGE`. It preserves the provider draft, stores
+human revision reasons and a distinct human-approved Script Output, supports
+stable reuse, and rejects a conflicting second finalization. The readiness bit
+is only a review-gate result; no Episode Input Package is created here.
+
 All real runtime data are written below the already ignored
 `trend-radar/data/` boundary. Stage 5J schemas are preserved. The only
 contract extension is deterministic provider-side validation around the

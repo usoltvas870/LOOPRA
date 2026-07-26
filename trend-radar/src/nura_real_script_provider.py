@@ -5,6 +5,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ OUTPUT_SCHEMA_VERSION = "1.0"
 PARSER_VERSION = "1.1"
 VALIDATOR_VERSION = "1.1"
 TRACEABILITY_RESOLUTION_VERSION = "1.0"
+HUMAN_REVIEW_FINALIZATION_VERSION = "1.0"
 MAX_PAYLOAD_CHARS = 18_000
 MAX_RESPONSE_BYTES = 256_000
 MAX_RETRIES = 1
@@ -253,6 +255,63 @@ def _reusable(path: Path, package: dict[str, Any]) -> dict[str, Any] | None:
     if output.get("script_input_hash") != package.get("content_hash") or output.get("validation", {}).get("errors") or output.get("draft_status") != "DRAFT_AWAITING_HUMAN_REVIEW": return None
     expected = hash_payload({key: value for key, value in output.items() if key != "content_hash"})
     return output if output.get("content_hash") == expected else None
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise NuraRealScriptProviderError("INVALID_REVIEW_ARTIFACT") from error
+    if not isinstance(value, dict): raise NuraRealScriptProviderError("INVALID_REVIEW_ARTIFACT")
+    return value
+
+
+def _human_text_payload(text: str, hook: str) -> dict[str, Any]:
+    paragraphs = text.split("\n\n")
+    if len(paragraphs) != 5 or paragraphs[0] != hook: raise NuraRealScriptProviderError("INVALID_HUMAN_APPROVED_TEXT")
+    return {"text": text, "blocks": [
+        {"kind": "hook", "text": paragraphs[0]},
+        {"kind": "development", "text": paragraphs[1]},
+        {"kind": "turn", "text": paragraphs[2]},
+        {"kind": "ending", "text": paragraphs[3]},
+        {"kind": "ending", "text": paragraphs[4]},
+    ]}
+
+
+def finalize_human_script_review(*, pending_path: Path, approved_text: str, revision_reasons: list[str],
+                                 reviewer_id: str, reviewer_role: str, reviewer_display_name: str,
+                                 decision: str = "APPROVED_FOR_EPISODE_BRIDGE") -> dict[str, Any]:
+    """Persist an owner-confirmed immutable final script without any provider call."""
+    pending = _read_json(pending_path)
+    root = pending_path.parent
+    provider_output = _read_json(root / "validated_script_output.json")
+    if pending.get("decision") != "NEEDS_FURTHER_REVIEW" or pending.get("human_confirmation") is not False or pending.get("episode_bridge_ready") is not False:
+        raise NuraRealScriptProviderError("PENDING_REVIEW_NOT_FINALIZABLE")
+    if pending.get("script_hash") != provider_output.get("content_hash") or pending.get("script_id") != provider_output.get("script_id"):
+        raise NuraRealScriptProviderError("PENDING_REVIEW_IDENTITY_MISMATCH")
+    if reviewer_id != "nura-owner" or reviewer_role != "OWNER" or decision != "APPROVED_FOR_EPISODE_BRIDGE" or not reviewer_display_name:
+        raise NuraRealScriptProviderError("INVALID_HUMAN_REVIEWER_OR_DECISION")
+    payload = _human_text_payload(approved_text, pending["approved_hook"]["value"])
+    finalization_identity = hash_payload({"version": HUMAN_REVIEW_FINALIZATION_VERSION, "pending_review_hash": hash_payload(pending), "provider_output_hash": provider_output["content_hash"], "approved_text": approved_text, "revision_reasons": revision_reasons, "reviewer_id": reviewer_id, "reviewer_role": reviewer_role, "decision": decision})
+    final_review_path, final_script_path = root / "finalized_human_script_review.json", root / "human_approved_script_output.json"
+    if final_review_path.exists():
+        existing = _read_json(final_review_path)
+        if existing.get("finalization_identity") != finalization_identity: raise NuraRealScriptProviderError("CONFLICTING_HUMAN_FINALIZATION")
+        final_script = _read_json(final_script_path)
+        return {"status": "REUSED", "provider_call_performed": False, "network_calls": 0, "credentials_required": False, "finalized_review_path": str(final_review_path), "final_script_path": str(final_script_path), "finalized_review": existing, "final_script": final_script}
+    raw_response_hash = _read_json(root / "raw_provider_response.json").get("metadata", {}).get("response_hash")
+    if not isinstance(raw_response_hash, str): raise NuraRealScriptProviderError("PROVIDER_RAW_PROVENANCE_REQUIRED")
+    final_script = {"schema_version": "0.1", "script_kind": "nura_human_approved_script", "script_id": "human-approved-script-" + finalization_identity[:12], "source_provider_script": {"script_id": provider_output["script_id"], "content_hash": provider_output["content_hash"], "raw_response_hash": raw_response_hash, "prompt_version": provider_output["provider"]["prompt_version"]}, "script_input_hash": provider_output["script_input_hash"], "candidate_identity": provider_output["candidate_identity"], "original_rank": provider_output["original_rank"], "format": provider_output["format"], "language": provider_output["language"], "provenance": provider_output["provenance"], "editorial_profile": provider_output["editorial_profile"], "payload": payload, "status": "HUMAN_APPROVED", "episode_bridge_ready": True, "human_revision_provenance": {"pending_review_hash": hash_payload(pending), "revision_reasons": revision_reasons, "reviewer_id": reviewer_id, "decision": decision}}
+    package = {"content_hash": provider_output["script_input_hash"], "candidate_identity": provider_output["candidate_identity"], "original_rank": provider_output["original_rank"], "requested_format": provider_output["format"], "production_brief": provider_output["provenance"], "approved_hook": pending["approved_hook"], "prohibited_copying_elements": pending["prohibited_copying_elements"]}
+    validation = _validate_talking_guide(package, {"script_input_hash": final_script["script_input_hash"], "candidate_identity": final_script["candidate_identity"], "original_rank": final_script["original_rank"], "format": final_script["format"], "provenance": final_script["provenance"], "payload": payload}, traceability_errors=[], traceability_warnings=[])
+    if validation["errors"]: raise NuraRealScriptProviderError("HUMAN_APPROVED_SCRIPT_VALIDATION_FAILED:" + ",".join(validation["errors"]))
+    final_script["validation"] = validation
+    final_script["content_hash"] = hash_payload(final_script)
+    review = {"schema_version": "0.1", "review_kind": "nura_finalized_human_script_review", "finalization_identity": finalization_identity, "pending_review_hash": hash_payload(pending), "provider_output_hash": provider_output["content_hash"], "final_script_id": final_script["script_id"], "final_script_hash": final_script["content_hash"], "reviewer": {"reviewer_id": reviewer_id, "reviewer_role": reviewer_role, "reviewer_display_name": reviewer_display_name, "human_confirmation": True}, "decision": decision, "final_status": "HUMAN_APPROVED", "episode_bridge_ready": True, "revision_reasons": revision_reasons, "reviewed_at": datetime.now(timezone.utc).isoformat(), "audit_trail": [{"event_type": "PROVIDER_DRAFT_PRESERVED", "provider_script_hash": provider_output["content_hash"]}, {"event_type": "HUMAN_REVISIONS_APPLIED", "actor_type": "HUMAN_OWNER"}, {"event_type": "HUMAN_SCRIPT_APPROVED_FOR_EPISODE_BRIDGE", "actor_type": "HUMAN_OWNER"}]}
+    review["review_hash"] = hash_payload(review)
+    persist_package(final_script_path, final_script)
+    persist_package(final_review_path, review)
+    return {"status": "COMPLETED", "provider_call_performed": False, "network_calls": 0, "credentials_required": False, "finalized_review_path": str(final_review_path), "final_script_path": str(final_script_path), "finalized_review": review, "final_script": final_script}
 
 
 def reprocess_existing_raw(*, raw_path: Path, brief_path: Path, profile_path: Path, repository_root: Path) -> dict[str, Any]:
