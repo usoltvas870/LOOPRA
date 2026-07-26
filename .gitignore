@@ -35,6 +35,7 @@ brands/
 projects/nura/*
 !projects/nura/project.yaml
 !projects/nura/content_intelligence_context.json
+!projects/nura/nura_editorial_profile.json
 
 # Runtime job artifacts
 jobs/*/input/

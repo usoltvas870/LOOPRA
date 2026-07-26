@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "profile_id": "nura-content-studio",
+  "profile_version": "2026-07-26",
+  "project_id": "nura",
+  "source_document": {
+    "reference": "NURA_CONTENT_STUDIO_PROJECT_GUIDE.md",
+    "sha256": "d78ae3ad85169d6f479b059ba6d026599329693a60ea2c01e439ec44be29a1c4"
+  },
+  "supported_content_scope": ["talking_guide", "background_voice", "text_led_video", "dialogue_comic"],
+  "excluded_scope": ["core", "ranking", "evidence", "content_intelligence", "human_editorial_review", "production_brief", "runtime_chat"],
+  "voice_principles": ["calm adult Russian voice", "concrete situation before abstraction", "NURA returns choice to the person", "small realistic shift"],
+  "prohibited_voice_patterns": ["empty validation", "coach jargon", "bureaucratic language", "author imitation", "personal lived experience claim"],
+  "safety_principles": ["no diagnosis or medical claim", "no therapy promise", "no guaranteed result or prediction", "no invented facts or citations", "esoteric interpretation is not objective fact"],
+  "format_principles": {
+    "talking_guide": {"duration_seconds": [20, 35], "required": ["hook", "turn", "calm ending"]},
+    "background_voice": {"required": ["voiceover_or_screen_text", "readable_phrases"]},
+    "text_led_video": {"required": ["screen_text", "one_main_idea"]},
+    "dialogue_comic": {"frame_count": 9, "required": ["heroine_final_shift", "short_dialogue"]}
+  },
+  "checklist_version": "2026-07-26"
+}
