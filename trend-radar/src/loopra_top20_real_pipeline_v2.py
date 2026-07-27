@@ -265,7 +265,7 @@ def build_fresh_top20_b1_production_dependencies(
     root = Path(root)
     repository_root = (repository_root or Path(__file__).resolve().parents[2]).resolve()
     services = _canonical_services()
-    state: dict[str, Any] = {"acquisition_records": {}, "manifest": None, "manifest_path": None, "acquisition_collector": None}
+    state: dict[str, Any] = {"acquisition_records": {}, "manifest": None, "manifest_path": None, "acquisition_collector": None, "acquisition_loop": None}
     canonical_root = root / "canonical"
     collection_path = canonical_root / "collection.json"
     collection_status_path = canonical_root / "collection-status.json"
@@ -344,6 +344,12 @@ def build_fresh_top20_b1_production_dependencies(
     def acquisition_run_root() -> Path:
         return canonical_root / "acquisition" / get_manifest().radar_run_id
 
+    def run_acquisition_async(awaitable):
+        loop = state.get("acquisition_loop")
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop(); state["acquisition_loop"] = loop
+        return loop.run_until_complete(awaitable)
+
     def acquire(entry: dict[str, Any]) -> dict[str, Any]:
         manifest = get_manifest(); candidate = get_candidate(entry); run_root = acquisition_run_root(); candidate_root = run_root / candidate.video_id
         reusable = services["_read_reusable_record"](candidate_root, run_root, manifest.manifest_hash, candidate.video_id, 40 * 1024 * 1024)
@@ -353,9 +359,10 @@ def build_fresh_top20_b1_production_dependencies(
             collector = state["acquisition_collector"]
             if collector is None:
                 collector = services["TikTokCollector"](headless=services["get_config_bool"]("HEADLESS", True))
-                _run_async(collector.start()); state["acquisition_collector"] = collector
+                state["acquisition_collector"] = collector
+                run_acquisition_async(collector.start())
             request = services["BrowserMediaCaptureRequest"](selection_manifest_path=state["manifest_path"], cookie_state_path=services["get_cookie_path"](), output_root=canonical_root / "acquisition", candidate_id=candidate.video_id)
-            record = _run_async(services["capture_browser_media_in_context"](request, manifest, candidate, collector.context))
+            record = run_acquisition_async(services["capture_browser_media_in_context"](request, manifest, candidate, collector.context))
         record_dict = record.to_dict() if hasattr(record, "to_dict") else asdict(record) if not isinstance(record, dict) else record
         state["acquisition_records"][candidate.video_id] = record_dict
         media_ref = record_dict.get("local_media_path"); media_path = run_root / media_ref if media_ref else None
@@ -414,7 +421,13 @@ def build_fresh_top20_b1_production_dependencies(
 
     def close() -> None:
         collector = state.get("acquisition_collector")
-        if collector is not None:
-            _run_async(collector.close()); state["acquisition_collector"] = None
+        loop = state.get("acquisition_loop")
+        try:
+            if collector is not None and loop is not None and not loop.is_closed():
+                loop.run_until_complete(collector.close())
+        finally:
+            state["acquisition_collector"] = None
+            if loop is not None and not loop.is_closed(): loop.close()
+            state["acquisition_loop"] = None
 
     return {"collect":collect,"select":select,"acquire":acquire,"inspect":inspect,"ocr":run_ocr,"transcribe":transcribe,"analyze_content_intelligence":analyze_content_intelligence,"provider":analyze_content_intelligence,"close":close}

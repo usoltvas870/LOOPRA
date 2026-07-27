@@ -90,11 +90,11 @@ def test_production_wiring_calls_canonical_boundaries_and_reuses_without_side_ef
  calls={name:0 for name in ('start','collect_all','enrich_missing_stats','close','build_selection_manifest','write_selection_manifest','capture','inspect','ocr','prepare','build_analysis_input','post','validate')}
  candidates=[{'video_id':f'video-{rank:02d}','url':f'https://www.tiktok.com/@owner/video/{1000000000000000000+rank}','views':1000+rank,'likes':rank,'comments':rank,'shares':rank} for rank in range(1,21)]
  class Collector:
-  def __init__(self,headless=True): self.run_id='fresh-run'; self.collected_at='2026-07-27T00:00:00Z'; self.source_attempts=[]; self.context=object()
-  async def start(self): calls['start']+=1
-  async def collect_all(self,sources): calls['collect_all']+=1; return list(candidates)
-  async def enrich_missing_stats(self,values): calls['enrich_missing_stats']+=1; return values
-  async def close(self): calls['close']+=1
+  def __init__(self,headless=True): self.run_id='fresh-run'; self.collected_at='2026-07-27T00:00:00Z'; self.source_attempts=[]; self.context=self; self.loop=None
+  async def start(self): calls['start']+=1; self.loop=asyncio.get_running_loop()
+  async def collect_all(self,sources): calls['collect_all']+=1; assert asyncio.get_running_loop() is self.loop; return list(candidates)
+  async def enrich_missing_stats(self,values): calls['enrich_missing_stats']+=1; assert asyncio.get_running_loop() is self.loop; return values
+  async def close(self): calls['close']+=1; assert asyncio.get_running_loop() is self.loop
  services=v2._canonical_services(); actual_build=services['build_selection_manifest']; actual_write=services['write_selection_manifest']
  def build(*args,**kwargs): calls['build_selection_manifest']+=1; return actual_build(*args,**kwargs)
  def write(*args,**kwargs): calls['write_selection_manifest']+=1; return actual_write(*args,**kwargs)
@@ -102,6 +102,7 @@ def test_production_wiring_calls_canonical_boundaries_and_reuses_without_side_ef
   value=v2._read_json(candidate_root/'acquisition_record.json')
   return {**value,'status':'REUSED'} if value else None
  async def capture(request,manifest,candidate,context,started_at=None):
+  assert asyncio.get_running_loop() is context.loop
   calls['capture']+=1; run_root=request.output_root/manifest.radar_run_id; candidate_root=run_root/candidate.video_id; candidate_root.mkdir(parents=True,exist_ok=True)
   media=candidate_root/'source.mp4'; media.write_bytes(b'bounded-test-media'); digest=hashlib.sha256(media.read_bytes()).hexdigest()
   record={'status':'COMPLETED','local_media_path':f'{candidate.video_id}/source.mp4','media_sha256':digest,'acquisition_method':'authenticated_browser_response','warnings':[],'errors':[]}
