@@ -23,6 +23,8 @@ from nura_script_episode_bridge import NuraScriptEpisodeBridgeError, hash_payloa
 
 ASSET_PROFILE_SCHEMA_VERSION = "0.1"
 HANDOFF_SCHEMA_VERSION = "0.1"
+REFERENCE_PROFILE_SCHEMA_VERSION = "0.2"
+MANUAL_HANDOFF_SCHEMA_VERSION = "0.2"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "0.1"
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 AUDIO_TYPES = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".flac": "audio/flac"}
@@ -174,6 +176,12 @@ def _selected(manifest: dict[str, Any], selection: dict[str, Any], category: str
     return matches[0]
 
 
+def _optional_voice(manifest: dict[str, Any], selection: dict[str, Any]) -> dict[str, Any] | None:
+    if selection.get("voice_decision") == "NOT_PROVIDED":
+        return None
+    return _selected(manifest, selection, "voice")
+
+
 def build_profile_and_handoff(*, bridge: dict[str, Any], manifest: dict[str, Any], selection: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if selection.get("manifest_hash") != manifest.get("content_hash"):
         raise NuraProductionAssetHandoffError("SELECTION_MANIFEST_HASH_MISMATCH")
@@ -185,6 +193,36 @@ def build_profile_and_handoff(*, bridge: dict[str, Any], manifest: dict[str, Any
     profile["profile_id"] = "nura-production-assets-" + hash_payload(profile)[:12]
     profile["content_hash"] = hash_payload(profile)
     handoff = {"schema_version": HANDOFF_SCHEMA_VERSION, "artifact_kind": "nura_external_renderer_handoff", "handoff_id": "nura-renderer-handoff-" + hash_payload({"bridge": bridge["content_hash"], "profile": profile["content_hash"]})[:12], "project_id": "nura", "character_id": "nura", "production_class": manifest["production_class"], "bridge": {"bridge_id": bridge["bridge_id"], "content_hash": bridge["content_hash"]}, "asset_profile": {"profile_id": profile["profile_id"], "content_hash": profile["content_hash"]}, "script": {"text": bridge["spoken_script"]["text"], "sha256": hashlib.sha256(bridge["spoken_script"]["text"].encode("utf-8")).hexdigest(), "language": "ru"}, "subtitle_source": bridge["subtitle_source"], "timing": bridge["timing"], "music": bridge["music"], "renderer": {"assignment": "UNASSIGNED", "verification": "UNVERIFIED"}, "required_capabilities": ["talking_avatar_image_input", "voice_reference_input", "russian_script_input", "vertical_9_16_output", "subtitle_timing_compatibility"], "production_execution_ready": False}
+    handoff["content_hash"] = hash_payload(handoff)
+    return profile, handoff
+
+
+def load_finalized_artifact(path: Path, artifact_kind: str) -> dict[str, Any]:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise NuraProductionAssetHandoffError("LEGACY_ARTIFACT_MISSING_OR_INVALID") from error
+    if not isinstance(value, dict) or value.get("artifact_kind") != artifact_kind:
+        raise NuraProductionAssetHandoffError("LEGACY_ARTIFACT_KIND_MISMATCH")
+    if value.get("content_hash") != hash_payload({key: item for key, item in value.items() if key != "content_hash"}):
+        raise NuraProductionAssetHandoffError("LEGACY_ARTIFACT_HASH_MISMATCH")
+    return value
+
+
+def build_manual_reference_profile_and_handoff(*, bridge: dict[str, Any], manifest: dict[str, Any], selection: dict[str, Any], legacy_profile: dict[str, Any], legacy_handoff: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Correct legacy asset semantics without changing legacy immutable records."""
+    if legacy_profile.get("artifact_kind") != "nura_production_asset_profile" or legacy_handoff.get("artifact_kind") != "nura_external_renderer_handoff":
+        raise NuraProductionAssetHandoffError("LEGACY_ARTIFACT_KIND_MISMATCH")
+    avatar, voice = _selected(manifest, selection, "avatar"), _optional_voice(manifest, selection)
+    for candidate in (candidate for candidate in (avatar, voice) if candidate is not None):
+        if not _safe_reference(candidate["reference"]):
+            raise NuraProductionAssetHandoffError("UNSAFE_CANONICAL_ASSET_REFERENCE")
+    legacy = {"profile_id": legacy_profile["profile_id"], "profile_hash": legacy_profile["content_hash"], "handoff_id": legacy_handoff["handoff_id"], "handoff_hash": legacy_handoff["content_hash"]}
+    voice_reference = {"status": "READY", "role": "OPTIONAL_VOICE_REFERENCE", "optional": True, "generated_voice_track": False, "renderer_input_required": False, "automatically_transferred_to_renderer": False, "operator_selects_heygen_voice_manually": True, "asset_id": voice["candidate_id"], "reference": voice["reference"], "sha256": voice["sha256"], "media_type": voice["media_type"], "audio": voice["audio"], "language": "ru", "approval_reference": selection["approval_reference"]} if voice else {"status": "NOT_PROVIDED", "role": "OPTIONAL_VOICE_REFERENCE", "optional": True, "generated_voice_track": False, "renderer_input_required": False, "automatically_transferred_to_renderer": False, "operator_selects_heygen_voice_manually": True}
+    profile = {"schema_version": REFERENCE_PROFILE_SCHEMA_VERSION, "artifact_kind": "nura_production_reference_profile", "project_id": "nura", "character_id": "nura", "production_class": manifest["production_class"], "visual_identity_reference": {"status": "READY", "role": "VISUAL_IDENTITY_REFERENCE", "usage": "IMAGE_GENERATION_PROMPT_REFERENCE", "per_episode_scene_asset": False, "renderer_input_required": False, "automatically_transferred_to_renderer": False, "asset_id": avatar["candidate_id"], "reference": avatar["reference"], "sha256": avatar["sha256"], "media_type": avatar["media_type"], "image": avatar["image"], "approval_reference": selection["approval_reference"], "source_bytes_immutable": True}, "voice_reference": voice_reference, "readiness": {"reference_profile_ready": True, "script_ready": True, "scene_prompt_package_ready": False, "per_episode_scene_images_ready": False, "voice_selection_instruction_ready": True, "generated_voice_track_ready": False, "manual_heygen_handoff_ready": False, "automated_renderer_handoff_ready": False, "production_execution_ready": False}, "legacy_provenance": legacy, "unresolved_requirements": ["SCENE_PROMPT_PACKAGE", "EXTERNAL_SCENE_IMAGE_GENERATION", "MANUAL_SCENE_IMAGE_SELECTION", "MANUAL_HEYGEN_UPLOAD", "MANUAL_HEYGEN_VOICE_SELECTION", "FINAL_AUDIO_DURATION", "SUBTITLE_TIMING_ALIGNMENT"], "safety": {"canonical_references": "PROJECT_RELATIVE", "contains_credentials": False}}
+    profile["profile_id"] = "nura-production-references-" + hash_payload(profile)[:12]
+    profile["content_hash"] = hash_payload(profile)
+    handoff = {"schema_version": MANUAL_HANDOFF_SCHEMA_VERSION, "artifact_kind": "nura_manual_production_reference_handoff", "handoff_id": "nura-manual-production-handoff-" + hash_payload({"bridge": bridge["content_hash"], "profile": profile["content_hash"]})[:12], "project_id": "nura", "character_id": "nura", "production_class": manifest["production_class"], "bridge": {"bridge_id": bridge["bridge_id"], "content_hash": bridge["content_hash"]}, "reference_profile": {"profile_id": profile["profile_id"], "content_hash": profile["content_hash"]}, "legacy_provenance": legacy, "script": {"text": bridge["spoken_script"]["text"], "sha256": hashlib.sha256(bridge["spoken_script"]["text"].encode("utf-8")).hexdigest(), "language": "ru"}, "subtitle_source": bridge["subtitle_source"], "timing": bridge["timing"], "music": bridge["music"], "visual_identity_reference": profile["visual_identity_reference"], "voice_reference": profile["voice_reference"], "manual_workflow": {"scene_prompt_package_created": False, "per_scene_images_created": False, "generate_images_externally": True, "operator_selects_scene_images": True, "operator_uploads_images_to_heygen": True, "operator_selects_heygen_voice": True, "direct_heygen_transfer": False, "automated_heygen_integration": False}, "renderer": {"assignment": "UNASSIGNED", "verification": "UNVERIFIED", "automated_adapter_required_for_loopra_0_5": False}, "production_execution_ready": False}
     handoff["content_hash"] = hash_payload(handoff)
     return profile, handoff
 
@@ -202,3 +240,8 @@ def persist_contract(*, output_root: Path, manifest: dict[str, Any], selection: 
     result["handoff"] = _atomic(Path(output_root) / handoff["content_hash"] / "external_renderer_handoff.json", handoff)
     result.update({"selection_required": False, "profile_id": profile["profile_id"], "handoff_id": handoff["handoff_id"], "production_execution_ready": False})
     return result
+
+
+def persist_manual_reference_contract(*, output_root: Path, bridge: dict[str, Any], manifest: dict[str, Any], selection: dict[str, Any], legacy_profile: dict[str, Any], legacy_handoff: dict[str, Any]) -> dict[str, Any]:
+    profile, handoff = build_manual_reference_profile_and_handoff(bridge=bridge, manifest=manifest, selection=selection, legacy_profile=legacy_profile, legacy_handoff=legacy_handoff)
+    return {"profile": _atomic(Path(output_root) / profile["content_hash"] / "production_reference_profile.json", profile), "handoff": _atomic(Path(output_root) / handoff["content_hash"] / "manual_production_reference_handoff.json", handoff), "profile_id": profile["profile_id"], "profile_hash": profile["content_hash"], "handoff_id": handoff["handoff_id"], "handoff_hash": handoff["content_hash"], "provider_called": False, "renderer_called": False, "image_generator_called": False, "network_calls": 0, "credentials_required": False, "production_execution_ready": False}
