@@ -15,7 +15,6 @@ from typing import Any
 
 SCHEMA_VERSION = "2.1-b1a"
 TARGET_COUNT = 20
-REAL_B1_BLOCK = "REAL_B1_NOT_ENABLED_UNTIL_ADAPTER_FOUNDATION_COMMITTED"
 
 
 class LoopraTop20B1Error(ValueError):
@@ -196,9 +195,10 @@ class LoopraTop20B1Adapter:
         from loopra_top20_real_pipeline_v2 import run_offline_acceptance
         return run_offline_acceptance(root=self.root / "v2", batch_id=self.batch_id, fail_rank=fail_rank)
 
-    @staticmethod
-    def real_b1_not_enabled() -> dict[str, Any]:
-        return {"status": "BLOCKED", "reason": REAL_B1_BLOCK, "network_calls": 0, "browser_calls": 0, "provider_calls": 0}
+    def real_b1_readiness(self) -> dict[str, Any]:
+        """Delegate the former unconditional gate to concrete B1C preflight."""
+        from loopra_top20_real_pipeline_v2 import validate_fresh_top20_b1_production_readiness
+        return validate_fresh_top20_b1_production_readiness(runtime_root=self.root / "v2")
 
 
 def run_synthetic_acceptance(*, runtime_root: Path, project_id: str = "nura", fail_rank: int | None = None) -> dict[str, Any]:

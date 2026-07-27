@@ -46,10 +46,8 @@ python scripts/run_loopra_05_fresh_acceptance.py --b1-offline-synthetic --json
 ```
 
 Rerunning reuses content-identical snapshots. An injected retryable item can be
-resumed without deleting the nineteen completed items. `--b1-real` is typed
-blocked as `REAL_B1_NOT_ENABLED_UNTIL_ADAPTER_FOUNDATION_COMMITTED`; it must not
-start a browser, search, provider call or credential lookup. B1A does not alter
-the v1 five-item limits or its report/review contracts.
+resumed without deleting the nineteen completed items. B1A does not alter the
+v1 five-item limits or its report/review contracts.
 
 ## B1B v2 real-pipeline contracts
 
@@ -62,11 +60,35 @@ review package. Its offline proof is available via:
 python scripts/run_loopra_05_fresh_acceptance.py --b1-v2-offline --json
 ```
 
-This proof creates no browser, network, provider call or credential read. Real
-execution remains gated until the v2 runner has been wired to the canonical
-fresh search and existing low-level capture/evidence/transport primitives.
+This proof creates no browser, network, provider call or credential read.
 
 `run_fresh_top20_b1` is the single B1 orchestration shape. Its tests inject
-collection, selection, acquisition, evidence and provider boundaries; production
-cannot silently use those fakes and returns a typed readiness blocker until the
-canonical defaults are wired.
+collection, selection, acquisition, evidence and provider boundaries.
+
+## B1C production dependency wiring
+
+`build_fresh_top20_b1_production_dependencies` is the production composition
+boundary for `run_fresh_top20_b1`. It adapts the canonical Trend Radar collector,
+selection manifest, bounded browser-context capture, Format Inspection, OCR,
+transcription and shared DeepSeek transport without changing their public v1
+contracts or five-item limits.
+
+Before `--b1-real` starts the batch it runs
+`validate_fresh_top20_b1_production_readiness`. The preflight verifies callable
+imports, compatible B1/v2 schemas, the project-scoped NURA source configuration,
+the ignored runtime root and the owned/CDP-safe browser lifecycle boundary. A
+real missing dependency is reported as
+`B1_REAL_DEPENDENCY_MISSING:<dependency_name>`; a successful composition returns
+`ready=true`.
+
+```powershell
+python scripts/run_loopra_05_fresh_acceptance.py --b1-real --json
+```
+
+The command delegates to the existing `run_fresh_top20_b1`; it does not contain
+a second orchestration path. Collection and the acquisition browser context are
+bounded and closed in `finally`. An owned browser is closed, while a CDP-attached
+user Chrome is only detached through `TikTokCollector.close`. Runtime artifacts
+remain under the Git-ignored B1 root. Provider credentials, cookies,
+Authorization headers, absolute local paths, media bytes and base64 are excluded
+from persisted request identity and metadata.

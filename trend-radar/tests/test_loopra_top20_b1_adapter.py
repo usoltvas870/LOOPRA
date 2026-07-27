@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "trend-radar/src"))
 
 from loopra_top20_b1_adapter import (
-    REAL_B1_BLOCK,
     LoopraTop20B1Adapter,
     LoopraTop20B1Error,
     run_synthetic_acceptance,
@@ -84,7 +83,8 @@ def test_call_identity_changes_with_rank_or_prompt_input(tmp_path: Path):
     assert items[0]["selection_entry_hash"] != items[1]["selection_entry_hash"]
 
 
-def test_real_b1_is_typed_blocked_without_side_effects():
-    result = LoopraTop20B1Adapter.real_b1_not_enabled()
-    assert result["reason"] == REAL_B1_BLOCK
-    assert result["network_calls"] == result["browser_calls"] == result["provider_calls"] == 0
+def test_real_b1_readiness_replaces_unconditional_blocker(tmp_path: Path):
+    result = LoopraTop20B1Adapter(runtime_root=tmp_path).real_b1_readiness()
+    assert result["ready"] is True
+    assert result["status"] == "READY"
+    assert result["runtime_root_git_ignored"] is True

@@ -6,6 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/"trend-radar/src")]
 from loopra_top20_acceptance_batch import (Top20AcceptanceError, initialize, collect_synthetic, create_editorial_package, finalize_editorial, generate_scripts, create_script_package, finalize_scripts, build_exports, owner_accept, verify, TARGET_COUNT)
 from loopra_top20_b1_adapter import LoopraTop20B1Adapter, LoopraTop20B1Error, run_synthetic_acceptance
+from loopra_top20_real_pipeline_v2 import build_fresh_top20_b1_production_dependencies, run_fresh_top20_b1, validate_fresh_top20_b1_production_readiness
 def _decisions(name): return [{"rank":rank,"decision":name} for rank in range(1,TARGET_COUNT+1)]
 def main(argv=None):
  p=argparse.ArgumentParser(description="Stage 5O-B0 offline synthetic TOP-20 acceptance.")
@@ -15,7 +16,9 @@ def main(argv=None):
  a=p.parse_args(argv)
  try:
   b1=LoopraTop20B1Adapter(runtime_root=a.runtime_root)
-  if a.b1_real: result=LoopraTop20B1Adapter.real_b1_not_enabled()
+  if a.b1_real:
+   real_root=b1.root/"v2"; readiness=validate_fresh_top20_b1_production_readiness(runtime_root=real_root)
+   result=readiness if not readiness["ready"] else run_fresh_top20_b1(root=real_root,dependencies=build_fresh_top20_b1_production_dependencies(root=real_root))
   elif a.b1_v2_offline: result=b1.run_v2_offline_acceptance(fail_rank=a.b1_fail_rank)
   elif a.b1_offline_synthetic: result=run_synthetic_acceptance(runtime_root=a.runtime_root)
   elif a.b1_initialize: result=b1.initialize()
