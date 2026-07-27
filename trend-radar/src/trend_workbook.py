@@ -50,6 +50,95 @@ class TrendWorkbookError(ValueError):
     pass
 
 
+def run_public_first_workbook(
+    *, project_id: str, runtime_root: Path, output_root: Path,
+    production_dependencies: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the proven v2 public collector and per-item capture without CI.
+
+    The v1 five-item wrapper is deliberately not imported.  The v2 factory
+    owns one guest-capable browser context and exposes rank-independent
+    ``acquire``/``transcribe`` callables for each canonical selection entry.
+    """
+    if production_dependencies is None:
+        from loopra_top20_real_pipeline_v2 import build_fresh_top20_b1_production_dependencies
+        production_dependencies = build_fresh_top20_b1_production_dependencies(root=runtime_root)
+    required = ("collect", "select", "acquire", "ocr", "transcribe", "close")
+    if any(not callable(production_dependencies.get(name)) for name in required):
+        raise TrendWorkbookError("public-first v2 dependencies are incomplete")
+    counters = {"collection_calls": 0, "acquisition_calls": 0, "ocr_calls": 0, "transcription_calls": 0}
+    try:
+        counters["collection_calls"] += 1
+        pool = production_dependencies["collect"]()
+        access = pool.get("public_access_status") or pool.get("status")
+        if access in {"PUBLIC_ACCESS_BLOCKED", "CAPTCHA_OR_ANTI_BOT_CHALLENGE", "RATE_LIMITED"}:
+            return {"status": access, "counters": counters, "pool": pool}
+        entries = production_dependencies["select"](pool)
+        if not entries:
+            return {"status": "PARTIAL_INSUFFICIENT_RELEVANT_CANDIDATES", "counters": counters, "pool": pool}
+        pool_by_id = {str(item.get("video_id")): item for item in pool.get("candidates", [])}
+        candidates: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+        for entry in entries:
+            counters["acquisition_calls"] += 1
+            acquisition = production_dependencies["acquire"](entry)
+            if acquisition.get("status") not in {"COMPLETED", "REUSED"} or acquisition.get("ffprobe_status") != "VALID":
+                failures.append({"video_id": entry["video_id"], "rejection_reason": "MEDIA_NOT_ACQUIRED"})
+                continue
+            source = runtime_root / str(acquisition["source_media_reference"])
+            original = dict(pool_by_id.get(str(entry["video_id"]), {}))
+            original.update(video_id=entry["video_id"], candidate_id=entry["candidate_id"], local_media_path=str(source))
+            counters["ocr_calls"] += 1
+            ocr = production_dependencies["ocr"](entry)
+            counters["transcription_calls"] += 1
+            transcription = production_dependencies["transcribe"](entry)
+            original.update(_evidence_from_result(runtime_root, ocr, transcription))
+            _apply_nura_relevance(original)
+            candidates.append(original)
+        if not candidates:
+            return {"status": "PARTIAL_INSUFFICIENT_VALID_MEDIA", "counters": counters, "pool": pool, "rejected": failures}
+        package = build_package(project_id=project_id, search_run_id=pool["search_run_id"], candidates=candidates, output_root=output_root)
+        manifest = json.loads((Path(package["package_path"]) / "manifest.json").read_text(encoding="utf-8"))
+        status = "READY_FOR_OWNER_WORKBOOK_REVIEW" if package["exported"] >= 20 else "PARTIAL_INSUFFICIENT_VALID_MEDIA"
+        return {"status": status, "package": package, "manifest": manifest, "pool": pool, "entries": len(entries), "counters": counters, "acquisition_failures": failures, "provider_calls": 0, "script_calls": 0}
+    finally:
+        production_dependencies["close"]()
+
+
+def _evidence_from_result(root: Path, ocr: dict[str, Any], transcription: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {"ocr_status": "MANUAL_TEXT_CHECK", "audio_role": "MANUAL_REVIEW_REQUIRED", "transcript_segments": []}
+    for evidence, kind in ((ocr, "ocr"), (transcription, "transcription")):
+        reference = evidence.get("artifact_reference")
+        path = root / reference if reference else None
+        if not path or not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if kind == "ocr":
+            hook = payload.get("first_text_hook") or {}
+            text = hook.get("hook_text") or hook.get("text") or ""
+            result.update(ocr_status="READABLE" if text else "MANUAL_TEXT_CHECK", ocr_text=text)
+        else:
+            segments = payload.get("segments") or []
+            status = str(payload.get("status") or "MANUAL_REVIEW_REQUIRED")
+            usable = status.startswith("COMPLETED") and bool(segments)
+            result.update(transcript_segments=segments, audio_role="AUTHOR_SPEECH_USABLE" if usable else "MANUAL_REVIEW_REQUIRED")
+    return result
+
+
+def _apply_nura_relevance(candidate: dict[str, Any]) -> None:
+    text = _text(candidate)
+    topic_terms = ("выгоран", "устал", "границ", "тревог", "самооцен", "отста", "отдых", "пустот", "отношен", "выбрать себя")
+    matched = sum(term in text for term in topic_terms)
+    candidate["topical_relevance"] = 0.85 if matched else 0.45
+    candidate["audience_relevance"] = 0.75 if matched else 0.4
+    candidate["transferable_potential"] = 0.7 if matched else 0.4
+    candidate["evidence_quality"] = 0.8 if candidate.get("transcript_segments") else 0.45
+    candidate["virality_score"] = min(1.0, float(candidate.get("engagement_score", candidate.get("final_score", 0)) or 0) / 100)
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:

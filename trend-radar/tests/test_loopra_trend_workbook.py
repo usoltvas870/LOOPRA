@@ -74,3 +74,38 @@ def test_package_reuse_is_deterministic(tmp_path: Path):
     assert second["reuse"] is True and second["workbook_path"] == first["workbook_path"]
     manifest = json.loads((Path(first["package_path"]) / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == trend_workbook.SCHEMA_VERSION
+
+
+def test_public_workflow_uses_twenty_v2_per_item_calls_and_never_provider(tmp_path: Path, monkeypatch):
+    media = []
+    for rank in range(1, 21):
+        path = tmp_path / f"{rank}.mp4"; path.write_bytes(f"media-{rank}".encode()); media.append(path)
+    calls = {"acquire": 0, "ocr": 0, "transcribe": 0, "close": 0}
+    pool = {"search_run_id": "public-run", "public_access_status": "PUBLIC_ACCESS_SUFFICIENT", "candidates": [candidate(str(rank), media[rank - 1], query="личные границы") for rank in range(1, 21)]}
+    entries = [{"candidate_id": f"c{rank}", "video_id": str(rank), "original_rank": rank} for rank in range(1, 21)]
+    def acquire(entry):
+        calls["acquire"] += 1
+        source = media[entry["original_rank"] - 1]
+        return {"status": "COMPLETED", "ffprobe_status": "VALID", "source_media_reference": source.relative_to(tmp_path).as_posix()}
+    deps = {"collect": lambda: pool, "select": lambda _: entries, "acquire": acquire, "ocr": lambda _: calls.__setitem__("ocr", calls["ocr"] + 1) or {}, "transcribe": lambda _: calls.__setitem__("transcribe", calls["transcribe"] + 1) or {}, "close": lambda: calls.__setitem__("close", calls["close"] + 1)}
+    result = trend_workbook.run_public_first_workbook(project_id="nura", runtime_root=tmp_path, output_root=tmp_path / "output", production_dependencies=deps)
+    assert result["status"] == "READY_FOR_OWNER_WORKBOOK_REVIEW"
+    assert calls == {"acquire": 20, "ocr": 20, "transcribe": 20, "close": 1}
+    assert result["provider_calls"] == result["script_calls"] == 0
+
+
+def test_public_workflow_continues_after_one_media_failure(tmp_path: Path):
+    media = []
+    for rank in range(1, 21):
+        path = tmp_path / f"{rank}.mp4"; path.write_bytes(f"media-{rank}".encode()); media.append(path)
+    pool = {"search_run_id": "partial-run", "public_access_status": "PUBLIC_ACCESS_SUFFICIENT", "candidates": [candidate(str(rank), media[rank - 1]) for rank in range(1, 21)]}
+    entries = [{"candidate_id": f"c{rank}", "video_id": str(rank), "original_rank": rank} for rank in range(1, 21)]
+    acquired = []
+    def acquire(entry):
+        acquired.append(entry["original_rank"])
+        if entry["original_rank"] == 6: return {"status": "FAILED", "ffprobe_status": "INVALID"}
+        return {"status": "COMPLETED", "ffprobe_status": "VALID", "source_media_reference": media[entry["original_rank"] - 1].relative_to(tmp_path).as_posix()}
+    deps = {"collect": lambda: pool, "select": lambda _: entries, "acquire": acquire, "ocr": lambda _: {}, "transcribe": lambda _: {}, "close": lambda: None}
+    result = trend_workbook.run_public_first_workbook(project_id="nura", runtime_root=tmp_path, output_root=tmp_path / "output", production_dependencies=deps)
+    assert acquired == list(range(1, 21))
+    assert result["status"] == "PARTIAL_INSUFFICIENT_VALID_MEDIA"
