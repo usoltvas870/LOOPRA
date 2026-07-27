@@ -18,9 +18,9 @@ from selection_manifest import read_selection_manifest
 SCHEMA_VERSION = "1.1"
 LEGACY_SCHEMA_VERSION = "1.0"
 # Faster-whisper word boundaries can trail their containing segment by up to
-# 0.26 seconds in the accepted local evidence; 0.30 keeps that engine rounding
-# margin while rejecting materially detached words.
-TIMESTAMP_TOLERANCE_SECONDS = 0.30
+# 0.48 seconds in accepted local evidence while remaining inside the media;
+# 0.50 keeps that engine boundary margin while rejecting detached words.
+TIMESTAMP_TOLERANCE_SECONDS = 0.50
 ENGINE_ID = "faster-whisper"
 MODEL_ID = "Systran/faster-whisper-base"
 DEFAULT_OPTIONS = {"device": "cpu", "compute_type": "int8", "cpu_threads": 8, "beam_size": 5, "vad_filter": False, "word_timestamps": True}

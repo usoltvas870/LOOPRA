@@ -108,9 +108,16 @@ def test_invalid_word_timestamp_fails(tmp_path: Path) -> None:
 
 def test_word_materially_outside_segment_fails(tmp_path: Path) -> None:
     manifest, acquisitions, inspections = _fixture(tmp_path)
-    engine = FakeEngine([{"start_seconds": 0, "end_seconds": 1, "raw_text": "word", "avg_logprob": -.1, "no_speech_prob": .01, "words": [{"start_seconds": 0, "end_seconds": 1.4, "word": "word", "probability": .5}]}])
+    engine = FakeEngine([{"start_seconds": 0, "end_seconds": 1, "raw_text": "word", "avg_logprob": -.1, "no_speech_prob": .01, "words": [{"start_seconds": 0, "end_seconds": 1.6, "word": "word", "probability": .5}]}])
     result = run_transcription_evidence(TranscriptionRunRequest(manifest, acquisitions, inspections, tmp_path / "out"), engine)
     assert result["candidates"][0]["status"] == "FAILED"
+
+
+def test_word_boundary_overhang_within_engine_tolerance_is_accepted(tmp_path: Path) -> None:
+    manifest, acquisitions, inspections = _fixture(tmp_path)
+    engine = FakeEngine([{"start_seconds": 0, "end_seconds": 1, "raw_text": "word", "avg_logprob": -.1, "no_speech_prob": .01, "words": [{"start_seconds": 0, "end_seconds": 1.48, "word": "word", "probability": .5}]}])
+    result = run_transcription_evidence(TranscriptionRunRequest(manifest, acquisitions, inspections, tmp_path / "out"), engine)
+    assert result["candidates"][0]["status"] == "COMPLETED"
 
 
 def test_legacy_result_migrates_without_model_load(tmp_path: Path) -> None:
