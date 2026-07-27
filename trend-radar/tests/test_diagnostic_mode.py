@@ -56,7 +56,7 @@ class CollectorDiagnosticModeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(cookie_path.exists())
                 await instance.close()
 
-    async def test_diagnostic_and_headless_modes_do_not_wait_for_login(self):
+    async def test_diagnostic_and_headless_modes_allow_public_collection_without_login(self):
         for diagnostic_mode, headless in ((True, False), (False, True)):
             with self.subTest(diagnostic_mode=diagnostic_mode, headless=headless), tempfile.TemporaryDirectory() as directory:
                 cookie_path = Path(directory) / 'cookies.json'
@@ -70,10 +70,10 @@ class CollectorDiagnosticModeTests(unittest.IsolatedAsyncioTestCase):
                     instance = collector.TikTokCollector(headless=headless)
                     instance.diagnostic_mode = diagnostic_mode
                     instance._validate_cookies = AsyncMock(return_value=(False, 'login wall'))
-                    with self.assertRaises(collector.RadarOperationalError) as error:
-                        await instance.start()
-                    self.assertEqual(error.exception.reason, 'authentication_required')
+                    await instance.start()
+                    self.assertEqual(instance.access_mode, 'NO_SESSION_STATE')
                     context.new_page.assert_not_awaited()
+                    instance._validate_cookies.assert_not_awaited()
                     await instance.close()
 
     async def test_cdp_fallback_is_owned_and_successful_cdp_is_not_closed(self):
@@ -116,7 +116,7 @@ class CollectorDiagnosticModeTests(unittest.IsolatedAsyncioTestCase):
         blocked, reason = await instance._is_blocked(page, 'example')
 
         self.assertTrue(blocked)
-        self.assertEqual(reason, 'login overlay detected, no video content')
+        self.assertEqual(reason, 'login_wall_blocks_public_results')
 
 
 class RunRadarResultTests(unittest.IsolatedAsyncioTestCase):

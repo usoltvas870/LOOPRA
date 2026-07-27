@@ -92,3 +92,24 @@ user Chrome is only detached through `TikTokCollector.close`. Runtime artifacts
 remain under the Git-ignored B1 root. Provider credentials, cookies,
 Authorization headers, absolute local paths, media bytes and base64 are excluded
 from persisted request identity and metadata.
+
+## B1D public-first TikTok access policy
+
+LOOPRA 0.5 treats TikTok authentication as an optional access mode, not a
+collection precondition. The canonical collector attempts bounded public
+search and source-page collection with an authenticated session, guest state,
+or no stored session. Guest cookies remain explicitly non-authenticated.
+
+A login overlay is handled once on a best-effort basis. Visible cards or
+supported public API responses keep the collection active. Fewer than twenty
+valid unique candidates produces a resumable
+`PARTIAL_INSUFFICIENT_CANDIDATES`; zero candidates produces the concrete
+`PUBLIC_ACCESS_BLOCKED` status. CAPTCHA/anti-bot challenges and rate limits are
+reported separately. None of these outcomes invokes Content Intelligence when
+the candidate count is below twenty.
+
+The canonical collection status records only access mode, observed UI/access
+signals, candidate counts, blocking reason, run/config identity and resumable
+state. It never persists cookie values, credentials or authorization headers.
+The optional `refresh_tiktok_cookies.py` command remains an operator diagnostic
+and is not part of the B1 real acceptance preflight.

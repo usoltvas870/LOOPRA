@@ -39,8 +39,8 @@ def main(argv=None):
   elif a.owner_accept: result=owner_accept(runtime_root=a.runtime_root,decision="ACCEPTED",human_confirmation=True)
   else: result=verify(runtime_root=a.runtime_root)
  except LoopraTop20V2Error as error:
-  reason=str(error); result={"status":"AUTHENTICATION_REQUIRED" if reason=="AUTHENTICATION_REQUIRED" else "BLOCKED","reason":reason}
+  reason=str(error); typed={"AUTHENTICATION_REQUIRED","PUBLIC_ACCESS_BLOCKED","CAPTCHA_OR_ANTI_BOT_CHALLENGE","RATE_LIMITED","PROVIDER_UNAVAILABLE"}; result={"status":reason if reason in typed else "BLOCKED","reason":reason}
  except (Top20AcceptanceError, LoopraTop20B1Error) as error: result={"status":"BLOCKED","reason":str(error)}
  print(json.dumps(result,ensure_ascii=False,sort_keys=True,default=str) if a.json else result["status"])
- return 0 if result["status"] not in {"BLOCKED","AUTHENTICATION_REQUIRED"} else 1
+ return 1 if result["status"] in {"BLOCKED","AUTHENTICATION_REQUIRED","PUBLIC_ACCESS_BLOCKED","CAPTCHA_OR_ANTI_BOT_CHALLENGE","RATE_LIMITED","PROVIDER_UNAVAILABLE"} or result["status"].startswith("PARTIAL_") else 0
 if __name__=="__main__": raise SystemExit(main())

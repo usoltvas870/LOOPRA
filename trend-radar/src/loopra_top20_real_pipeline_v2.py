@@ -135,7 +135,13 @@ def run_fresh_top20_b1(*, root: Path, dependencies: dict[str, Callable[..., Any]
     if not dependencies or any(not callable(dependencies.get(name)) for name in required) or not callable(analyze):
         return {"status":"BLOCKED","reason":"B1_V2_CANONICAL_BOUNDARIES_NOT_CONFIGURED"}
     try:
-        pool=dependencies["collect"](); entries=dependencies["select"](pool); _validate(entries)
+        pool=dependencies["collect"]()
+        candidate_count = len(pool.get("candidates", [])) if isinstance(pool, dict) else len(pool)
+        if candidate_count < TARGET_COUNT:
+            access_status = pool.get("public_access_status", "PUBLIC_ACCESS_LIMITED" if candidate_count else "PUBLIC_ACCESS_BLOCKED") if isinstance(pool, dict) else "PUBLIC_ACCESS_LIMITED"
+            status = access_status if candidate_count == 0 and access_status in {"PUBLIC_ACCESS_BLOCKED", "CAPTCHA_OR_ANTI_BOT_CHALLENGE", "RATE_LIMITED"} else "PARTIAL_INSUFFICIENT_CANDIDATES"
+            return {"status":status,"actual_candidate_count":candidate_count,"required_candidate_count":TARGET_COUNT,"search_run_id":pool.get("search_run_id") if isinstance(pool,dict) else None,"public_access_status":access_status,"blocking_reason":pool.get("blocking_reason") if isinstance(pool,dict) else None,"pool":pool}
+        entries=dependencies["select"](pool); _validate(entries)
         pool_identity = {key:value for key,value in pool.items() if key != "reuse_status"} if isinstance(pool, dict) else pool
         batch=_sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"loopra_top20_v2_batch","batch_id":"fresh-v2-"+_hash(entries)[:12],"fresh_cycle_id":"fresh-cycle-"+_hash(pool_identity)[:12],"project_context_hash":_hash("nura-context"),"semantic_hash":""})
         acquisition=LoopraTop20MediaAcquisitionV2().run(root=root,batch=batch,entries=entries,capture_one=dependencies["acquire"])
@@ -274,11 +280,17 @@ def build_fresh_top20_b1_production_dependencies(
         rotational = values["rotational.txt"]
         sources = {"competitors": values["competitors.txt"], "hashtags": values["hashtags.txt"], "keywords": values["keywords.txt"], "rotational": {"hashtags": [item for item in rotational if len(item.split()) == 1], "keywords": [item for item in rotational if len(item.split()) > 1]}}
         refs = [{"reference": f"trend-radar/config/{name}", "sha256": _file_sha256(config_dir / name)} for name in config_names]
+        config_sha256 = _hash(refs)
         collector = services["TikTokCollector"](headless=services["get_config_bool"]("HEADLESS", True))
         resumable = _read_json(collection_status_path)
-        if resumable and resumable.get("status") == "AUTHENTICATION_REQUIRED":
+        resumed_after_public_first_policy_fix = bool(resumable and resumable.get("resumable") and resumable.get("config_sha256") == config_sha256)
+        if resumed_after_public_first_policy_fix:
             collector.run_id = resumable["search_run_id"]
             collector.collected_at = resumable["search_timestamp"]
+
+        def access_fields(*, raw_count: int, deduplicated_count: int, status: str, blocking_reason: str | None = None) -> dict[str, Any]:
+            access_mode = getattr(collector, "access_mode", "NO_SESSION_STATE")
+            return {"status":status,"access_mode":access_mode,"authenticated_session_present":access_mode=="AUTHENTICATED_SESSION","guest_state_present":access_mode=="GUEST_SESSION","login_overlay_observed":bool(getattr(collector,"login_overlay_observed",False)),"overlay_dismissed":bool(getattr(collector,"overlay_dismissed",False)),"public_cards_observed":int(getattr(collector,"public_cards_observed",0)),"raw_candidate_count":raw_count,"deduplicated_candidate_count":deduplicated_count,"public_access_status":getattr(collector,"public_access_status",status),"blocking_reason":blocking_reason or getattr(collector,"blocking_reason",None),"captcha_observed":bool(getattr(collector,"captcha_observed",False)),"rate_limit_observed":bool(getattr(collector,"rate_limit_observed",False)),"resumed_after_public_first_policy_fix":resumed_after_public_first_policy_fix}
 
         async def execute():
             try:
@@ -291,19 +303,26 @@ def build_fresh_top20_b1_production_dependencies(
         try:
             candidates = _run_async(execute())
         except services["RadarOperationalError"] as error:
-            if error.reason not in {"authentication_required", "authentication_timeout"}:
-                raise
-            status = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection_status","status":"AUTHENTICATION_REQUIRED","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":_hash(refs),"raw_candidate_count":0,"deduplicated_candidate_count":0,"warnings":[error.reason],"authentication_state":getattr(collector,"last_authentication_state",None),"resumable":True,"semantic_hash":""})
-            _atomic(collection_status_path, status)
-            raise LoopraTop20V2Error("AUTHENTICATION_REQUIRED") from error
-        raw_count = len(candidates); unique: dict[str, dict[str, Any]] = {}
+            typed = {"captcha_or_anti_bot_challenge":"CAPTCHA_OR_ANTI_BOT_CHALLENGE","rate_limited":"RATE_LIMITED","public_access_blocked":"PUBLIC_ACCESS_BLOCKED"}.get(error.reason,"PUBLIC_ACCESS_BLOCKED")
+            collector.public_access_status = typed
+            collector.blocking_reason = error.reason
+            status = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection_status","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":config_sha256,"warnings":[error.reason],"authentication_state":getattr(collector,"last_authentication_state",None),"resumable":True,**access_fields(raw_count=0,deduplicated_count=0,status=typed,blocking_reason=error.reason),"semantic_hash":""})
+            _replace_retryable(collection_status_path, status)
+            raise LoopraTop20V2Error(typed) from error
+        raw_count = sum(int(item.get("raw_items_received",0)) for item in getattr(collector,"source_attempts",[])) or len(candidates); unique: dict[str, dict[str, Any]] = {}
         for candidate in candidates:
             identity = str(candidate.get("video_id") or candidate.get("url") or "")
             if identity and identity not in unique: unique[identity] = candidate
         ranked = services["compute_scores"](list(unique.values()))
         warnings = [str(item.get("error_reason")) for item in getattr(collector, "source_attempts", []) if item.get("error_reason")]
-        payload = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":_hash(refs),"raw_candidate_count":raw_count,"deduplicated_candidate_count":len(ranked),"warnings":warnings,"candidates":ranked,"semantic_hash":""})
+        default_access = "PUBLIC_ACCESS_SUFFICIENT" if len(ranked)>=TARGET_COUNT else "PUBLIC_ACCESS_LIMITED" if ranked else "PUBLIC_ACCESS_BLOCKED"
+        public_access_status = getattr(collector,"public_access_status",default_access)
+        if public_access_status in {"AUTH_OPTIONAL",None}: public_access_status=default_access
+        collector.public_access_status = public_access_status
+        payload = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":config_sha256,"filtered_invalid_count":max(0,raw_count-len(ranked)),"warnings":warnings,"candidates":ranked,**access_fields(raw_count=raw_count,deduplicated_count=len(ranked),status=public_access_status),"semantic_hash":""})
         _atomic(collection_path, payload)
+        status = _sealed({key:value for key,value in payload.items() if key not in {"artifact_kind","candidates","semantic_hash"}} | {"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection_status","resumable":len(ranked)<TARGET_COUNT,"semantic_hash":""})
+        _replace_retryable(collection_status_path, status)
         return payload
 
     def select(pool: dict[str, Any]) -> list[dict[str, Any]]:

@@ -15,9 +15,18 @@ from playwright.async_api import async_playwright, Browser
 from parser import extract_video_data, extract_from_api_responses, parse_detail_page_stats
 from utils import get_config_int, get_config, async_random_sleep, extract_video_id, get_cookie_path
 from run_data import apply_freshness, utc_iso
-from auth import AUTH_CHALLENGE, AUTH_REFRESH_REQUIRED, AUTH_SESSION_VALID, inspect_page_authentication, write_state_atomic
+from auth import (
+    AUTH_CHALLENGE, AUTH_REFRESH_REQUIRED, AUTH_SESSION_VALID,
+    has_authenticated_tiktok_cookie, inspect_page_authentication, write_state_atomic,
+)
 
 logger = logging.getLogger(__name__)
+
+PUBLIC_ACCESS_SUFFICIENT = 'PUBLIC_ACCESS_SUFFICIENT'
+PUBLIC_ACCESS_LIMITED = 'PUBLIC_ACCESS_LIMITED'
+PUBLIC_ACCESS_BLOCKED = 'PUBLIC_ACCESS_BLOCKED'
+CAPTCHA_OR_ANTI_BOT_CHALLENGE = 'CAPTCHA_OR_ANTI_BOT_CHALLENGE'
+RATE_LIMITED = 'RATE_LIMITED'
 
 
 class RadarOperationalError(RuntimeError):
@@ -81,6 +90,14 @@ class TikTokCollector:
         self.last_authentication_state = 'unknown'
         self.last_unsupported_schema_count = 0
         self.authentication_state = 'unknown'
+        self.access_mode = 'NO_SESSION_STATE'
+        self.public_access_status = 'AUTH_OPTIONAL'
+        self.login_overlay_observed = False
+        self.overlay_dismissed = False
+        self.public_cards_observed = 0
+        self.captcha_observed = False
+        self.rate_limit_observed = False
+        self.blocking_reason: Optional[str] = None
         self.source_attempts: list[dict] = []
         self.provenance: list[dict] = []
         self.max_results = get_config_int('MAX_RESULTS_PER_SOURCE', 20)
@@ -101,6 +118,8 @@ class TikTokCollector:
                 )
                 self.context = self.browser.contexts[0]
                 self.connected_over_cdp = True
+                self.authentication_state = 'cdp_session_unknown'
+                self.access_mode = 'AUTH_OPTIONAL'
                 logger.info(f'Connected to existing Chrome on port {debug_port}')
                 return
             except Exception as e:
@@ -151,26 +170,25 @@ class TikTokCollector:
                 locale='ru-RU',
                 storage_state=storage_state,
             )
-        self.authentication_state = 'public'
+        cookies = storage_state.get('cookies', []) if isinstance(storage_state, dict) else []
+        if has_authenticated_tiktok_cookie(cookies):
+            self.access_mode = 'AUTHENTICATED_SESSION'
+            self.authentication_state = 'authenticated'
+        elif cookies:
+            self.access_mode = 'GUEST_SESSION'
+            self.authentication_state = 'guest'
+        else:
+            self.access_mode = 'NO_SESSION_STATE'
+            self.authentication_state = 'public'
 
         self._cleanup_old_screenshots()
 
-        if storage_state:
+        if self.access_mode == 'AUTHENTICATED_SESSION':
             valid, validation_reason = await self._validate_cookies()
-            if valid:
-                self.authentication_state = 'authenticated'
-            if not valid and self.cookie_path.exists():
-                failure_reason = 'challenge_detected' if validation_reason == 'challenge_detected' else 'authentication_required'
-                if self.diagnostic_mode or self.headless:
-                    raise RadarOperationalError(
-                        failure_reason,
-                        f'TikTok authentication is required ({validation_reason}).',
-                    )
+            if not valid:
+                self.authentication_state = 'public_fallback'
                 self.last_authentication_state = validation_reason
-                raise RadarOperationalError(
-                    failure_reason,
-                    f'TikTok authentication preflight failed ({validation_reason}); run refresh_tiktok_cookies.py.',
-                )
+                logger.warning('Authenticated session validation failed; continuing public-first (%s)', validation_reason)
 
         logger.info('Browser started')
 
@@ -219,7 +237,11 @@ class TikTokCollector:
             try:
                 videos = await (self.collect_from_hashtag(value) if source_type == 'hashtag' else self.collect_from_keyword(value) if source_type == 'keyword' else self.collect_from_competitor(value))
                 attempt.update(raw_items_received=self.last_raw_items_received, parsed_items=len(videos), collection_method=self.last_collection_method,
-                               final_page_url=self.last_final_page_url, authentication_state=self.last_authentication_state)
+                               final_page_url=self.last_final_page_url, authentication_state=self.last_authentication_state,
+                               access_mode=self.access_mode, public_access_status=self.public_access_status,
+                               login_overlay_observed=self.login_overlay_observed, overlay_dismissed=self.overlay_dismissed,
+                               public_cards_observed=self.public_cards_observed, captcha_observed=self.captcha_observed,
+                               rate_limit_observed=self.rate_limit_observed)
                 limit_excluded = max(0, self.last_raw_items_received - len(videos))
                 if limit_excluded:
                     attempt['items_rejected'] += limit_excluded
@@ -246,7 +268,7 @@ class TikTokCollector:
                                       'matched_sources': [{'source_type': source_type, 'source_value': value, 'ordinal': ordinal}],
                                       'discovery_methods': [self.last_collection_method], 'repeat_discoveries': 0, 'new_to_database': False}
                         video['provenance'] = provenance; seen[key] = provenance; all_videos.append(video); attempt['unique_added_to_run'] += 1
-                attempt['status'] = 'success' if videos else ('blocked' if self.last_collection_reason in ('authentication_required', 'tiktok_blocked') else 'empty')
+                attempt['status'] = 'success' if videos else ('blocked' if self.last_collection_reason in ('public_access_blocked', 'captcha_or_anti_bot_challenge', 'rate_limited') else 'empty')
                 attempt['error_reason'] = self.last_collection_reason if not videos else None
             except RadarOperationalError as error:
                 attempt.update(
@@ -257,6 +279,13 @@ class TikTokCollector:
                     error_reason=error.reason,
                     final_page_url=self.last_final_page_url,
                     authentication_state=self.last_authentication_state,
+                    access_mode=self.access_mode,
+                    public_access_status=self.public_access_status,
+                    login_overlay_observed=self.login_overlay_observed,
+                    overlay_dismissed=self.overlay_dismissed,
+                    public_cards_observed=self.public_cards_observed,
+                    captcha_observed=self.captcha_observed,
+                    rate_limit_observed=self.rate_limit_observed,
                 )
                 raise
             except Exception as error:
@@ -268,19 +297,34 @@ class TikTokCollector:
             if ordinal < len(planned):
                 await async_random_sleep(3, 6)
         self.provenance = list(seen.values())
+        if len(all_videos) >= 20:
+            self.public_access_status = PUBLIC_ACCESS_SUFFICIENT
+            self.blocking_reason = None
+        elif all_videos:
+            self.public_access_status = PUBLIC_ACCESS_LIMITED
+            self.blocking_reason = 'fewer_than_20_public_candidates'
+        else:
+            self.public_access_status = PUBLIC_ACCESS_BLOCKED
+            self.blocking_reason = self.blocking_reason or 'public_candidates_not_observed'
         return all_videos
 
-    async def _dismiss_overlays(self, page) -> None:
+    async def _dismiss_overlays(self, page) -> bool:
         try:
-            await page.evaluate('''
+            dismissed = await page.evaluate('''
                 () => {
-                    document.querySelectorAll('[class*="Modal-overlay"], [data-floating-ui-portal]')
-                        .forEach(el => el.remove());
+                    const close = document.querySelector(
+                        '[data-e2e="modal-close-inner-button"], [data-e2e="login-modal-close-button"], button[aria-label="Close"], button[aria-label="Закрыть"]'
+                    );
+                    if (close) { close.click(); return true; }
+                    const overlay = document.querySelector('[class*="Modal-overlay"], [data-floating-ui-portal]');
+                    if (overlay) { overlay.remove(); return true; }
+                    return false;
                 }
             ''')
             await asyncio.sleep(0.5)
+            return bool(dismissed)
         except Exception:
-            pass
+            return False
 
     async def _save_debug_screenshot(self, page, name: str) -> None:
         if not self._debug_mode:
@@ -400,27 +444,19 @@ class TikTokCollector:
             except Exception:
                 pass
 
-            await self._dismiss_overlays(page)
-
-            blocked, reason = await self._is_blocked(page, source_value)
-            self.last_final_page_url = page.url
-            if 'login' in reason.lower():
-                self.last_authentication_state = 'login_overlay'
-            if blocked:
-                logger.warning(f'Blocked at {url} — {reason}')
-                self.last_collection_reason = (
-                    'authentication_timeout' if 'login' in reason.lower()
-                    else 'tiktok_blocked'
-                )
-                await self._save_debug_screenshot(page, f'blocked_{source_value}')
-                if self.last_collection_reason == 'authentication_timeout':
-                    raise RadarOperationalError(
-                        'authentication_timeout',
-                        'TikTok login overlay detected; interactive login is not automated.',
-                    )
-                return []
-
             videos = extract_from_api_responses(api_data, source_type, source_value)
+            blocked, reason = await self._is_blocked(page, source_value, len(videos))
+            if 'login_' in reason:
+                self.login_overlay_observed = True
+                self.last_authentication_state = 'login_overlay'
+                self.overlay_dismissed = await self._dismiss_overlays(page) or self.overlay_dismissed
+            if reason == 'captcha_or_anti_bot_challenge':
+                self.captcha_observed = True; self.blocking_reason = reason; self.last_collection_reason = reason
+                raise RadarOperationalError(reason, 'TikTok CAPTCHA or anti-bot challenge blocks public collection.')
+            if reason == 'rate_limited':
+                self.rate_limit_observed = True; self.blocking_reason = reason; self.last_collection_reason = reason
+                raise RadarOperationalError(reason, 'TikTok rate limit blocks public collection.')
+
             self.last_unsupported_schema_count = max(0, sum(len(body.get('itemList') or body.get('items') or body.get('data') or []) for _, body in api_data if isinstance(body, dict)) - len(videos))
             if len(videos) < self.max_results:
                 await self._activate_videos_tab(page)
@@ -434,9 +470,27 @@ class TikTokCollector:
                 except Exception:
                     pass
                 videos = extract_from_api_responses(api_data, source_type, source_value)
+            blocked, reason = await self._is_blocked(page, source_value, len(videos))
+            self.last_final_page_url = page.url
+            if 'login_' in reason:
+                self.login_overlay_observed = True
+                self.last_authentication_state = 'login_overlay'
+            if reason == 'captcha_or_anti_bot_challenge':
+                self.captcha_observed = True; self.blocking_reason = reason; self.last_collection_reason = reason
+                raise RadarOperationalError(reason, 'TikTok CAPTCHA or anti-bot challenge blocks public collection.')
+            if reason == 'rate_limited':
+                self.rate_limit_observed = True; self.blocking_reason = reason; self.last_collection_reason = reason
+                raise RadarOperationalError(reason, 'TikTok rate limit blocks public collection.')
+            if blocked and not videos:
+                logger.warning(f'Public access blocked at {url} — {reason}')
+                self.blocking_reason = reason
+                self.last_collection_reason = 'public_access_blocked'
+                await self._save_debug_screenshot(page, f'blocked_{source_value}')
+                return []
             if videos:
                 self.last_collection_method = 'api'
                 self.last_raw_items_received = len(videos)
+                self.public_cards_observed = max(self.public_cards_observed, len(videos))
                 logger.info(f'  Got {len(videos)} videos (API)')
             else:
                 self.last_collection_method = 'none'
@@ -565,7 +619,7 @@ class TikTokCollector:
                 await page.close()
         return videos
 
-    async def _is_blocked(self, page, label: str) -> tuple[bool, str]:
+    async def _is_blocked(self, page, label: str, public_data_count: int = 0) -> tuple[bool, str]:
         try:
             url = page.url
 
@@ -585,17 +639,33 @@ class TikTokCollector:
                     return keywords.some(k => text.includes(k));
                 }
             ''')
+            try:
+                access_signals = await page.evaluate('''
+                    () => {
+                        const text = (document.body?.innerText || '').slice(0, 4000).toLowerCase();
+                        return {
+                            challenge: ['captcha', 'verify to continue', 'security check', 'подтвердите, что вы не робот'].some(k => text.includes(k)),
+                            rateLimited: ['too many requests', 'rate limit', 'слишком много запросов', 'попробуйте позже'].some(k => text.includes(k)),
+                        };
+                    }
+                ''')
+            except Exception:
+                access_signals = {'challenge': False, 'rateLimited': False}
 
             redirect_to_login = 'login' in url.lower() or 'auth' in url.lower()
+            public_results = int(has_videos or 0) + max(0, public_data_count)
+            self.public_cards_observed = max(self.public_cards_observed, int(has_videos or 0), public_data_count)
 
-            if redirect_to_login:
-                return True, f'redirect to login (url: {url})'
-            if has_login_form and not has_videos:
-                return True, 'login form detected, no video content'
-            if has_login_overlay and not has_videos:
-                return True, 'login overlay detected, no video content'
+            if access_signals.get('challenge') or 'challenge' in url.lower() or 'captcha' in url.lower():
+                return True, 'captcha_or_anti_bot_challenge'
+            if access_signals.get('rateLimited'):
+                return True, 'rate_limited'
+            if redirect_to_login or has_login_form or has_login_overlay:
+                if public_results:
+                    return False, 'login_overlay_with_public_results'
+                return True, 'login_wall_blocks_public_results'
 
-            return False, ''
+            return False, 'public_results_available' if public_results else ''
         except Exception as e:
             return False, str(e)
 

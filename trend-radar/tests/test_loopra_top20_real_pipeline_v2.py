@@ -12,7 +12,7 @@ import loopra_top20_real_pipeline_v2 as v2
 from loopra_top20_real_pipeline_v2 import *
 from collector import RadarOperationalError, TikTokCollector
 
-def test_navigation_propagates_authentication_timeout():
+def test_navigation_login_wall_without_public_results_is_not_an_auth_hard_gate():
  class Page:
   url='https://www.tiktok.com/login'
   def on(self,*args): pass
@@ -21,13 +21,12 @@ def test_navigation_propagates_authentication_timeout():
   async def wait_for_selector(self,*args,**kwargs): pass
   async def close(self): pass
  collector=TikTokCollector(); collector.context=type('Context',(),{'new_page':AsyncMock(return_value=Page())})()
- collector._dismiss_overlays=AsyncMock(); collector._is_blocked=AsyncMock(return_value=(True,'login overlay detected')); collector._save_debug_screenshot=AsyncMock()
+ collector._dismiss_overlays=AsyncMock(return_value=False); collector._is_blocked=AsyncMock(return_value=(True,'login_wall_blocks_public_results')); collector._save_debug_screenshot=AsyncMock()
  async def run():
   with patch('collector.asyncio.sleep',AsyncMock()):
-   await collector._navigate_and_extract('https://www.tiktok.com/tag/test','hashtag','test')
- with pytest.raises(RadarOperationalError) as error:
-  asyncio.run(run())
- assert error.value.reason=='authentication_timeout' and collector.last_collection_reason=='authentication_timeout'
+   return await collector._navigate_and_extract('https://www.tiktok.com/tag/test','hashtag','test')
+ assert asyncio.run(run())==[]
+ assert collector.last_collection_reason=='public_access_blocked'
 
 def test_offline_v2_exactly_twenty_and_owner_gate(tmp_path):
  r=run_offline_acceptance(root=tmp_path)
@@ -157,7 +156,7 @@ def test_b1_real_cli_runs_preflight_factory_and_existing_orchestrator(monkeypatc
  assert calls==['preflight','factory','orchestrator']
  assert json.loads(capsys.readouterr().out)['status']=='READY_FOR_OWNER_EDITORIAL_REVIEW'
 
-def test_production_collection_auth_failure_is_resumable_and_keeps_identity(monkeypatch,tmp_path):
+def test_production_collection_public_block_is_resumable_and_keeps_identity(monkeypatch,tmp_path):
  services=v2._canonical_services(); instances=[]
  class Collector:
   def __init__(self,headless=True):
@@ -166,28 +165,28 @@ def test_production_collection_auth_failure_is_resumable_and_keeps_identity(monk
   async def collect_all(self,sources):
    if len(instances)==2:
     assert self.run_id=='fresh-run-1' and self.collected_at=='2026-07-27T00:00:00Z'
-   raise services['RadarOperationalError']('authentication_timeout','login overlay')
+   raise services['RadarOperationalError']('public_access_blocked','no public candidates')
   async def enrich_missing_stats(self,values): pytest.fail('enrichment must not run')
   async def close(self): self.closed=True
  services.update({'TikTokCollector':Collector,'read_source_file':lambda name:['source'],'get_config_bool':lambda *args:True})
  monkeypatch.setattr(v2,'_canonical_services',lambda:services)
  deps=build_fresh_top20_b1_production_dependencies(root=tmp_path)
  for _ in range(2):
-  with pytest.raises(LoopraTop20V2Error,match='AUTHENTICATION_REQUIRED'):
+  with pytest.raises(LoopraTop20V2Error,match='PUBLIC_ACCESS_BLOCKED'):
    deps['collect']()
  status=json.loads((tmp_path/'canonical'/'collection-status.json').read_text(encoding='utf-8'))
- assert status['status']=='AUTHENTICATION_REQUIRED' and status['resumable'] is True
+ assert status['status']=='PUBLIC_ACCESS_BLOCKED' and status['resumable'] is True
  assert status['search_run_id']=='fresh-run-1' and status['raw_candidate_count']==status['deduplicated_candidate_count']==0
  assert all(instance.closed for instance in instances)
  assert 'secret' not in json.dumps(status).lower()
 
-def test_b1_real_cli_reports_authentication_required(monkeypatch,tmp_path,capsys):
+def test_b1_real_cli_reports_public_access_blocked(monkeypatch,tmp_path,capsys):
  script=ROOT/'scripts'/'run_loopra_05_fresh_acceptance.py'; spec=importlib.util.spec_from_file_location('fresh_acceptance_auth_cli',script); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
  monkeypatch.setattr(module,'validate_fresh_top20_b1_production_readiness',lambda **kwargs:{'ready':True,'status':'READY'})
  monkeypatch.setattr(module,'build_fresh_top20_b1_production_dependencies',lambda **kwargs:{})
- monkeypatch.setattr(module,'run_fresh_top20_b1',lambda **kwargs:(_ for _ in ()).throw(module.LoopraTop20V2Error('AUTHENTICATION_REQUIRED')))
+ monkeypatch.setattr(module,'run_fresh_top20_b1',lambda **kwargs:(_ for _ in ()).throw(module.LoopraTop20V2Error('PUBLIC_ACCESS_BLOCKED')))
  assert module.main(['--runtime-root',str(tmp_path),'--b1-real','--json'])==1
- assert json.loads(capsys.readouterr().out)=={'status':'AUTHENTICATION_REQUIRED','reason':'AUTHENTICATION_REQUIRED'}
+ assert json.loads(capsys.readouterr().out)=={'status':'PUBLIC_ACCESS_BLOCKED','reason':'PUBLIC_ACCESS_BLOCKED'}
 
 def test_retry_reuses_completed_item_side_effects_and_only_retries_failed_rank(tmp_path):
  entries=[{'candidate_id':f'c{i:02d}','video_id':f'v{i:02d}','original_rank':i} for i in range(1,21)]
