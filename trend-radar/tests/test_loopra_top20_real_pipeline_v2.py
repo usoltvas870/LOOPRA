@@ -130,6 +130,7 @@ def test_production_wiring_calls_canonical_boundaries_and_reuses_without_side_ef
  def validate(result,analysis_input,provider):
   calls['validate']+=1
   raw=tmp_path/'canonical'/'content-intelligence'/analysis_input['candidate_identity']['video_id']/'raw-response.json'; assert raw.is_file()
+  assert result['candidate_identity']=={'video_id':analysis_input['candidate_identity']['video_id'],'rank':analysis_input['candidate_identity']['rank']}
   return result
  services.update({'TikTokCollector':Collector,'read_source_file':lambda name:['source'],'get_config_bool':lambda *args:True,'compute_scores':lambda values:values,'build_selection_manifest':build,'write_selection_manifest':write,'_read_reusable_record':reusable,'capture_browser_media_in_context':capture,'_ffprobe':lambda path:{'valid':True,'duration_seconds':1},'inspect_media':inspect_media,'WindowsMediaOcrEngine':Engine,'_run_candidate':ocr,'FasterWhisperEngine':Engine,'_prepare':prepare,'_no_audio_result':no_audio,'write_transcription':write_transcription,'build_analysis_input':build_input,'load_project_context':lambda path:(SimpleNamespace(),{},'context'),'DeepSeekContentIntelligenceProvider':Provider,'build_provider_payload':lambda *args:{},'post_deepseek_request':post,'_without_reasoning_content':lambda raw:(raw,{}),'validate_provider_result':validate,'build_card':lambda analysis,result:{'claims':result['claims'],'project_adaptation':result['project_adaptation'],'warnings':result['warnings']}})
  monkeypatch.setattr(v2,'_canonical_services',lambda:services)
