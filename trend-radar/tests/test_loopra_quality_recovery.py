@@ -10,6 +10,11 @@ from loopra_quality_recovery import (
     production_brief_allowed, relevance_assessment, reject_batch, source_specificity,
     write_owner_triage,
 )
+from grounded_triage import (
+    ACTIONABLE_PACKAGE_VERSION, build_evidence_packet, build_grounded_payload,
+    contamination_findings as grounded_contamination_findings, validate_grounded_result,
+    write_actionable_owner_package,
+)
 
 
 def _item(rank: int, **fingerprint):
@@ -86,3 +91,50 @@ def test_owner_template_has_twenty_blank_labels_and_confirmation_false(tmp_path:
     template = json.loads((tmp_path / "00_OWNER_LABELS_TEMPLATE.json").read_text(encoding="utf-8"))
     assert len(template["items"]) == 20
     assert template["human_confirmation"] is False
+
+
+def _packet(rank: int = 6):
+    return build_evidence_packet(
+        batch_id="batch", candidate={"rank": rank, "video_id": str(rank), "canonical_url": "https://source", "author": "author", "provenance_references": {"primary_source_value": "границы", "primary_source_type": "keyword"}, "score_snapshot": {"final_score": 1, "engagement_score": 1, "freshness_score": 1}},
+        acquisition={"media_sha256": "a" * 64}, inspection={"media_facts": {"duration_seconds": 12}, "sampling": {"frame_results": [{"status": "success", "frame_path": "sample.png"}]}},
+        transcript={"status": "COMPLETED", "language": "ru", "segments": [{"segment_id": "s1", "start_seconds": 0, "end_seconds": 2, "normalized_text": "Личные границы помогают сохранять уважение."}]},
+        ocr={"status": "COMPLETED", "requested_language": "ru", "ordered_observations": [{"observation_id": "o1", "sampled_at_sec": 0, "frame_ref": "frame.png", "normalized_text": "Уважение начинается с границ"}]}, paths={"media": "media.mp4"},
+    )
+
+
+def _result(packet):
+    return {"literal_content_summary": "Автор говорит: личные границы помогают сохранять уважение.", "primary_topic": "личные границы", "secondary_topics": [], "content_format": "talking_head", "source_language": "ru", "source_hook": "Личные границы помогают сохранять уважение", "hook_evidence_refs": ["s1"], "key_content_points": ["границы"], "key_evidence_refs": ["s1"], "attention_mechanism": "прямое утверждение", "attention_evidence_refs": ["s1"], "NURA_relevance_decision": "RELEVANT", "relevance_rationale": "Тема личных границ явно произносится в источнике.", "relevance_evidence_refs": ["s1"], "transferable_mechanism_available": True, "transferable_mechanism": "Коротко назвать границы и их эффект.", "junk_category": None, "safety_fit": "SAFE", "confidence": "HIGH", "unresolved_questions": [], "prohibited_copying_elements": []}
+
+
+def test_grounded_packet_uses_full_meaningful_transcript_and_ocr():
+    packet = _packet()
+    assert packet["schema_version"] == "2.0"
+    assert packet["transcript_segments"][0]["text"].startswith("Личные границы")
+    assert packet["OCR_normalized_lines"][0]["quality_status"] == "READABLE"
+    assert build_grounded_payload(packet)["prompt_version"] == "NURA_TOP20_GROUNDED_TRIAGE_V2"
+
+
+def test_music_and_one_symbol_do_not_count_as_speech_or_text():
+    packet = build_evidence_packet(batch_id="b", candidate={"rank": 1, "video_id": "1"}, acquisition={}, inspection=None, transcript={"segments": [{"text": "Music"}, {"text": "I"}]}, ocr={"ordered_observations": [{"text": "?"}]}, paths={})
+    assert packet["evidence_sufficiency_status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_grounded_result_requires_source_specific_summary_and_refs():
+    packet, result = _packet(), _result(_packet())
+    assert validate_grounded_result(result, packet)["status"] == "VALID"
+    result["literal_content_summary"] = "Высокие просмотры и лайки."
+    assert "SUMMARY_NOT_SOURCE_SPECIFIC" in validate_grounded_result(result, packet)["errors"]
+
+
+def test_actionable_package_has_confirmation_only_and_twenty_files(tmp_path: Path):
+    packets = [_packet(rank) for rank in range(1, 21)]
+    results = [{"rank": rank, "result": _result(packets[rank - 1]), "duplicate_status": "DUPLICATE" if rank == 18 else "CANONICAL", "duplicate_of_rank": 13 if rank == 18 else None} for rank in range(1, 21)]
+    write_actionable_owner_package(packets=packets, results=results, output=tmp_path)
+    assert len(list((tmp_path / "items").glob("*_actionable.md"))) == 20
+    assert ACTIONABLE_PACKAGE_VERSION == "1.2"
+    assert "agree_with_machine_decision: null" in (tmp_path / "items" / "01_actionable.md").read_text(encoding="utf-8")
+
+
+def test_grounded_contamination_blocks_repeated_summary():
+    result = _result(_packet())
+    assert grounded_contamination_findings([{"rank": 1, "result": result}, {"rank": 2, "result": result}])

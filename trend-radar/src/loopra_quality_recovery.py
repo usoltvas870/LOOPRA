@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from grounded_triage import build_evidence_packet, digest
+
 try:
     from PIL import Image
 except ImportError:  # pragma: no cover - Pillow is available in supported runtime
@@ -225,6 +227,7 @@ def audit_batch(root: Path) -> dict[str, Any]:
         inspection_path = _find(canonical, "inspection/{video_id}/inspection.json", video_id)
         ocr_path = _find(canonical, "intelligence-evidence/*/candidates/{video_id}/ocr/ocr_result.json", video_id)
         transcript_path = _find(canonical, "intelligence-evidence/*/candidates/{video_id}/transcription/transcription_result.json", video_id)
+        analysis_input_path = _find(canonical, "content-intelligence/{video_id}/analysis-input.json", video_id)
         request_path = _find(canonical, "content-intelligence/{video_id}/request-metadata.json", video_id)
         raw_path = _find(canonical, "content-intelligence/{video_id}/raw-response.json", video_id)
         card_path = _find(canonical, "content-intelligence/{video_id}/card-v2.json", video_id)
@@ -242,7 +245,8 @@ def audit_batch(root: Path) -> dict[str, Any]:
         items.append({"rank": rank, "video_id": video_id, "candidate_id": video_id, "author": candidate.get("author"), "canonical_url": candidate.get("canonical_url"),
                       "duration": (inspection or {}).get("media_facts", {}).get("duration_seconds"), "fingerprint": fingerprint, "evidence": evidence,
                       "relevance": assessment, "paths": {name: str(path.relative_to(root)).replace("\\", "/") if path else None for name, path in {"media": media, "inspection": inspection_path, "ocr": ocr_path, "transcription": transcript_path, "request": request_path, "raw_response": raw_path, "card": card_path}.items()},
-                      "excerpts": {"ocr": _excerpt(ocr, "ocr"), "transcription": _excerpt(transcript, "transcription")}, "card": card or {}})
+                      "grounded_paths": {name: str(path.relative_to(root)).replace("\\", "/") if path else None for name, path in {"analysis_input": analysis_input_path, "old_review": root / "owner-editorial-review-v2.json", "old_triage": root / "quality-recovery-v1.1" / "quality-recovery-owner-triage" / "items" / f"{rank:02d}_triage.md"}.items()},
+                      "excerpts": {"ocr": _excerpt(ocr, "ocr"), "transcription": _excerpt(transcript, "transcription")}, "candidate": candidate, "acquisition": acq, "inspection": inspection, "ocr": ocr, "transcript": transcript, "card": card or {}})
         items[-1]["source_specificity"] = source_specificity(items[-1]["card"], evidence)
     pairs = duplicate_pairs(items)
     return {"schema_version": SCHEMA_VERSION, "batch_id": review["batch_id"], "cycle_id": ( _read(root / "aggregate-report-v2.json") or {}).get("fresh_cycle_id"), "items": items, "duplicates": pairs, "contamination": contamination_findings(items),
@@ -299,8 +303,30 @@ def run_quality_recovery(*, root: Path) -> dict[str, Any]:
     _write(recovery / "batch-rejection.json", rejection)
     _write(recovery / "duplicate-report.json", {"schema_version": SCHEMA_VERSION, "pairs": audit["duplicates"]})
     forensic = {key: value for key, value in audit.items() if key != "items"}
-    forensic["items"] = [{key: value for key, value in item.items() if key != "card"} for item in audit["items"]]
+    forensic["items"] = [{key: value for key, value in item.items() if key not in {"card", "candidate", "acquisition", "inspection", "ocr", "transcript", "grounded_paths"}} for item in audit["items"]]
     _write(recovery / "forensic-audit.json", forensic)
     _write_forensic_reports(audit, recovery)
     write_owner_triage(audit, recovery / "quality-recovery-owner-triage")
     return {"status": "READY_FOR_OWNER_QUALITY_LABELING", "rejection": rejection, "duplicate_count": len(audit["duplicates"]), "owner_package": str((recovery / "quality-recovery-owner-triage").relative_to(root)).replace("\\", "/"), "item_count": len(audit["items"]), "network_calls": 0, "browser_calls": 0, "provider_calls": 0}
+
+
+def build_grounded_evidence_packets(*, root: Path) -> dict[str, Any]:
+    """Create v1.2 immutable evidence packets; this function has no transport."""
+    audit = audit_batch(root)
+    recovery = root / "quality-recovery-v1.2"
+    packets = []
+    duplicate_map = {18: 13}  # Owner-confirmed mapping for this fixed batch.
+    for item in audit["items"]:
+        packet = build_evidence_packet(batch_id=audit["batch_id"], candidate=item["candidate"], acquisition=item["acquisition"], inspection=item["inspection"], transcript=item["transcript"], ocr=item["ocr"], paths=item["paths"] | item["grounded_paths"])
+        if item["rank"] in duplicate_map:
+            packet["reuse_metadata"] = {"duplicate_status": f"DUPLICATE_OF_RANK_{duplicate_map[item['rank']]:02d}", "reused_from_rank": duplicate_map[item["rank"]]}
+            payload = dict(packet); payload.pop("content_hash")
+            packet["content_hash"] = digest(payload)
+        payload = dict(packet); content_hash = payload.pop("content_hash")
+        if content_hash != digest(payload):
+            raise QualityRecoveryError("EVIDENCE_PACKET_HASH_MISMATCH")
+        _write(recovery / "evidence-packets" / f"{item['rank']:02d}.json", packet)
+        packets.append(packet)
+    return {"schema_version": "2.0", "status": "OFFLINE_EVIDENCE_PACKETS_READY", "batch_id": audit["batch_id"], "packet_count": len(packets),
+            "packet_root": str((recovery / "evidence-packets").relative_to(root)).replace("\\", "/"),
+            "provider_calls": 0, "browser_calls": 0, "network_calls": 0, "duplicate_reuse_rank": 18}
