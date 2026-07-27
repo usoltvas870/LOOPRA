@@ -13,7 +13,7 @@ SCHEMA_VERSION = "0.2"
 PROVIDER_ID, PROMPT_ID, PROMPT_VERSION = "deepseek-nura-scene-production", "nura-scene-production", "1.1"
 COMPOSER_ID, COMPOSER_VERSION = "nura-canonical-scene-prompt-composer", "1.0"
 FINALIZER_ID, FINALIZER_VERSION = "nura-scene-human-finalizer", "1.0"
-OPERATOR_EXPORT_ID, OPERATOR_EXPORT_VERSION = "nura-simplified-operator-export", "1.0"
+OPERATOR_EXPORT_ID, OPERATOR_EXPORT_VERSION = "nura-simplified-operator-export", "1.1"
 VISUAL_GENERATION_STRATEGIES = ("ONE_IMAGE", "MULTI_IMAGE")
 MAX_PAYLOAD_CHARS = 18_000
 SCENE_GROUPS = (("scene-01", ("block-1",)), ("scene-02", ("block-2", "block-3")), ("scene-03", ("block-4", "block-5")))
@@ -50,6 +50,18 @@ def _atomic_text(path: Path, value: str) -> str:
     try: os.link(temporary, path)
     except FileExistsError:
         if path.read_text(encoding="utf-8") != text: raise NuraSceneProductionError("CONFLICTING_OPERATOR_EXPORT_REUSE")
+    finally: temporary.unlink(missing_ok=True)
+    return "COMPLETED"
+
+def _atomic_bytes(path: Path, value: bytes) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if path.read_bytes() != value: raise NuraSceneProductionError("CONFLICTING_OPERATOR_EXPORT_REUSE")
+        return "REUSED"
+    with tempfile.NamedTemporaryFile("wb", delete=False, dir=path.parent) as handle: handle.write(value); temporary = Path(handle.name)
+    try: os.link(temporary, path)
+    except FileExistsError:
+        if path.read_bytes() != value: raise NuraSceneProductionError("CONFLICTING_OPERATOR_EXPORT_REUSE")
     finally: temporary.unlink(missing_ok=True)
     return "COMPLETED"
 
@@ -257,11 +269,28 @@ def _integrated_chatgpt_prompt(positive: str, negative: str) -> str:
     return f"Use the attached canonical NURA reference image as the primary identity anchor and preserve her recognizable face and identity.\n\nCreate this image:\n{positive}\n\nIntegrated constraints: Avoid {negative}. Do not add written text, captions, subtitles, speech bubbles, logos, or watermarks. Keep the face, eyes, and mouth clearly visible and suitable for a future talking-avatar lip-sync."
 
 def _one_image_prompt() -> str:
-    positive = "Create one strong source portrait for the complete Russian TALKING_GUIDE video. NURA is a calm, wise, emotionally safe guide speaking directly to the viewer about supporting others without abandoning oneself. Show the emotional arc in one balanced expression: calm seriousness and gentle recognition, moving toward quiet clarity and grounded reassurance. NURA is a woman around 30 with dark curly hair, soft expressive eyes, refined natural facial features, an elegant ivory tailored blazer, and restrained minimal accessories. Use a clean semi-realistic 2D / 2.5D editorial illustration style. Place her in a calm contemporary NURA environment with a warm beige textured wall and soft warm side light from the left. Vertical 9:16, medium close-up, chest-up, centered, head mostly frontal, direct or near-direct eye contact. Her lips are naturally relaxed and closed; face, eyes, mouth, shoulders, and neck are fully visible; hands remain below the chest and away from the face. Keep the upper 15% free of critical face and hair details, keep the face and eyes inside the central safe area, and leave the lower 25% visually calm for future subtitles while accounting for platform UI margins."
-    negative = "a different character, changed facial identity, light or straight hair, photorealistic photography, anime, childish cartoon styling, glamour, broad advertising smile, extreme profile, rear view, full-body distant framing, face obstruction, hand over face, phone or object near the mouth, open mouth, exaggerated emotion, personal-burnout roleplay, clinical imagery, lamp metaphor, busy background, cold lighting, anatomy artifacts, extra fingers, distorted hands, source-video imitation, or claims that an image has already been generated"
-    return _integrated_chatgpt_prompt(positive, negative)
+    return """Use the attached NURA_REFERENCE.png as the primary identity anchor. Preserve NURA's recognizable face, apparent age, core facial features, and identity.
 
-def build_simplified_operator_export(*, finalized_package_path: Path, finalized_handoff_path: Path, output_root: Path, visual_generation_strategy: str = "ONE_IMAGE") -> dict[str, Any]:
+Create one strong source portrait for a complete Russian TALKING_GUIDE video. NURA is a calm, wise, emotionally safe guide speaking directly to the viewer about supporting others without abandoning oneself. Express one coherent emotional arc: calm seriousness and gentle recognition moving toward quiet clarity and grounded reassurance. She is a woman around 30 with canonical dark curly hair, soft expressive eyes, refined natural facial features, an elegant ivory tailored blazer, and restrained minimal accessories.
+
+Use a clean semi-realistic 2D / 2.5D editorial illustration style. Place NURA in a calm contemporary interior with a naturally detailed warm beige textured wall and soft warm side light from the left.
+
+Vertical 9:16 composition, medium close-up, chest-up, centered, head mostly frontal, direct or near-direct eye contact. Her lips are naturally relaxed and closed. Keep her face, eyes, mouth, shoulders, neck, clothing, and torso clearly visible and normally detailed. Keep her hands below the chest and away from the face. The portrait must be suitable for future talking-avatar lip-sync.
+
+Keep the entire image naturally rendered, sharp, and visually coherent. Leave some clean, uncluttered, fully rendered and in-focus background space around and below NURA for future subtitles. Maintain natural breathing room above her hair without creating a large empty band. Position NURA high enough for platform UI, but do not make her unnaturally low or small. Keep the blazer, lower torso, background, and bottom edge normally detailed and in focus.
+
+Integrated constraints: do not create an artificial subtitle panel or separate lower-third plate. Do not create blur, fog, haze, glow, bloom, gradient fade, frosted glass, translucent overlay, vignette, or a soft-focus wash at the bottom. Do not add a blurred foreground. Do not fade the lower torso or blazer into the background. Avoid a different character, changed facial identity, light or straight hair, photorealistic photography, anime, childish cartoon styling, glamour, broad advertising smile, extreme profile, rear view, full-body distant framing, face obstruction, hand over face, a phone or object near the mouth, open mouth, exaggerated emotion, personal-burnout roleplay, clinical imagery, lamp metaphor, busy background, cold lighting, anatomy artifacts, extra fingers, distorted hands, source-video imitation, or claims that an image has already been generated. Do not add written text, captions, subtitles, speech bubbles, logos, or watermarks."""
+
+def _content_ru(text: str) -> str:
+    blocks = text.split("\n\n")
+    if len(blocks) != 5: raise NuraSceneProductionError("FIVE_APPROVED_BLOCKS_REQUIRED")
+    sections = [("Хук", "Сразу обозначить узнаваемое противоречие и привлечь внимание."), ("Развитие проблемы", "Показать конкретный повторяющийся паттерн — внимание постоянно уходит к другим, а собственное состояние переносится на потом."), ("Поворот / переосмысление", "Отделить поддержку другого от полного отказа от собственных потребностей."), ("Небольшой следующий шаг", "Предложить один конкретный и реалистичный вопрос к себе без требования резко менять поведение."), ("Финальная мысль", "Уточнить, что внимание к себе не означает отказ от близкого человека.")]
+    parts = ["# Заголовок ролика", blocks[0], "- `title_source`: `APPROVED_HOOK_FALLBACK`", "- Заголовок не входит в spoken text и не вставляется в речь HeyGen.", "", "# Основные параметры", "- Формат: `TALKING_GUIDE`", "- Количество роликов: `1`", "- Визуальная стратегия: `ONE_IMAGE`", "- Количество изображений: `1`", "- Ориентировочная длительность: `25–30 секунд`", "- Статус длительности: `ESTIMATED_NOT_MEASURED`", "", "# Структура сценария"]
+    for index, (block, (name, purpose)) in enumerate(zip(blocks, sections), 1): parts.extend((f"## {index}. {name}", block, "**Назначение:**", purpose, ""))
+    parts.extend(("# Чистый текст для HeyGen", "В HeyGen копировать только блок ниже. Заголовок, названия смысловых частей и пояснения не вставлять в речь.", "", "```text", text, "```"))
+    return "\n".join(parts)
+
+def build_simplified_operator_export(*, finalized_package_path: Path, finalized_handoff_path: Path, output_root: Path, reference_image_path: Path, visual_generation_strategy: str = "ONE_IMAGE") -> dict[str, Any]:
     package, handoff = _verified(_read(finalized_package_path)), _verified(_read(finalized_handoff_path))
     if visual_generation_strategy not in VISUAL_GENERATION_STRATEGIES: raise NuraSceneProductionError("UNSUPPORTED_VISUAL_GENERATION_STRATEGY")
     if package.get("status") != "READY_FOR_EXTERNAL_IMAGE_GENERATION" or package.get("human_confirmation") is not True: raise NuraSceneProductionError("FINALIZED_PACKAGE_NOT_READY_FOR_EXPORT")
@@ -272,20 +301,21 @@ def build_simplified_operator_export(*, finalized_package_path: Path, finalized_
     else:
         prompts = [_integrated_chatgpt_prompt(scene["final_human_approved_positive_prompt"], scene["final_human_approved_negative_prompt"]) for scene in package["scenes"]]
         justification = "MULTI_IMAGE explicitly selected; each reviewed scene remains a separate self-contained image task."
-    reference_instruction = "Приложите canonical reference image NURA к сообщению в чате GPT. Используйте её прежде всего для сохранения узнаваемого лица и идентичности NURA; одежда, поза, фон, свет, композиция и ограничения задаются готовым prompt."
-    readme = "1. Приложите reference image NURA к сообщению в чате GPT.\n2. Скопируйте и вставьте image prompt целиком.\n3. Сгенерируйте изображение и вручную выберите лучший результат.\n4. Используйте файл 01_TEXT_RU.txt отдельно как утверждённую речь NURA для дальнейшего ручного workflow.\n\nТехнические JSON-артефакты Stage 5N для этой операции читать не требуется. Генерация изображения и работа в HeyGen выполняются вручную вне LOOPRA."
-    descriptor = {"exporter_id": OPERATOR_EXPORT_ID, "exporter_version": OPERATOR_EXPORT_VERSION, "source_package": package["content_hash"], "source_handoff": handoff["content_hash"], "visual_generation_strategy": visual_generation_strategy, "text": text, "prompts": prompts, "reference_instruction": reference_instruction, "readme": readme}
+    reference_bytes = Path(reference_image_path).read_bytes(); reference_hash = hashlib.sha256(reference_bytes).hexdigest()
+    if reference_hash != "5d6350b968c6bd9ea3ced646eb835c1c040d9d9203113d193f8261f2c769f383": raise NuraSceneProductionError("CANONICAL_REFERENCE_HASH_MISMATCH")
+    content = _content_ru(text)
+    readme = "Это один ролик формата TALKING_GUIDE с одним изображением.\n\n1. Откройте 01_CONTENT_RU.md: там находятся заголовок, структура сценария и отдельный блок «Чистый текст для HeyGen».\n2. В HeyGen копируйте только блок «Чистый текст для HeyGen». Заголовок и пояснения в речь не вставляйте.\n3. Приложите NURA_REFERENCE.png к сообщению в ChatGPT и вставьте целиком 02_IMAGE_PROMPT.txt.\n4. Вручную сгенерируйте изображение и выберите лучший результат.\n\nLOOPRA не генерирует изображение и не вызывает HeyGen автоматически."
+    descriptor = {"exporter_id": OPERATOR_EXPORT_ID, "exporter_version": OPERATOR_EXPORT_VERSION, "source_package": package["content_hash"], "source_handoff": handoff["content_hash"], "source_previous_export": {"export_id": "nura-operator-export-1d134f9abcd5", "content_hash": "bb5643aea2291af85b394aece3ffcbace83e77d2c9ce046fbfa237558bbc156c"}, "visual_generation_strategy": visual_generation_strategy, "video_title": text.split("\n\n")[0], "title_language": "ru", "title_source": "APPROVED_HOOK_FALLBACK", "title_review_status": "ACCEPTED_FOR_OPERATOR_EXPORT", "video_title_spoken": False, "subtitle_space_rendering": "NATURAL_UNCLUTTERED_IN_FOCUS", "forbidden_subtitle_space_rendering": ["ARTIFICIAL_BLUR_PANEL", "FOGGY_LOWER_ZONE", "GRADIENT_FADE", "FROSTED_OVERLAY", "TRANSLUCENT_SUBTITLE_PLATE"], "content": content, "prompts": prompts, "reference_sha256": reference_hash, "readme": readme}
     identity = hash_payload(descriptor); root = Path(output_root) / ("nura-operator-export-" + identity[:12]); user_root = root / "user-facing"
-    files = {"01_TEXT_RU.txt": text}
+    files = {"01_CONTENT_RU.md": content}
     if visual_generation_strategy == "ONE_IMAGE": files["02_IMAGE_PROMPT.txt"] = prompts[0]
     else:
         for index, prompt in enumerate(prompts, 2): files[f"{index:02d}_IMAGE_PROMPT_{index - 1:02d}.txt"] = prompt
-    files[("03_REFERENCE_INSTRUCTION.txt" if visual_generation_strategy == "ONE_IMAGE" else f"{len(prompts) + 2:02d}_REFERENCE_INSTRUCTION.txt")] = reference_instruction
     files["README_RU.txt"] = readme
-    manifest = {"schema_version": "0.1", "artifact_kind": "nura_simplified_operator_export", "export_id": "nura-operator-export-" + identity[:12], "content_hash": "", "source_finalized_package": {"package_id": package["package_id"], "content_hash": package["content_hash"]}, "source_finalized_handoff": {"handoff_id": handoff["handoff_id"], "content_hash": handoff["content_hash"]}, "visual_generation_strategy": visual_generation_strategy, "strategy_justification": justification, "prompt_count": len(prompts), "user_facing_files": list(files), "json_required_for_manual_use": False, "provider_call_performed": False, "network_calls": 0, "credentials_required": False, "image_generator_called": False, "heygen_called": False, "renderer_called": False, "production_execution_ready": False}
+    manifest = {"schema_version": "0.2", "artifact_kind": "nura_simplified_operator_export", "export_id": "nura-operator-export-" + identity[:12], "content_hash": "", "source_finalized_package": {"package_id": package["package_id"], "content_hash": package["content_hash"]}, "source_finalized_handoff": {"handoff_id": handoff["handoff_id"], "content_hash": handoff["content_hash"]}, "source_previous_export": descriptor["source_previous_export"], "video_title": descriptor["video_title"], "title_language": "ru", "title_source": "APPROVED_HOOK_FALLBACK", "title_review_status": "ACCEPTED_FOR_OPERATOR_EXPORT", "video_title_spoken": False, "format": "TALKING_GUIDE", "video_count": 1, "estimated_duration": "25–30 seconds", "duration_status": "ESTIMATED_NOT_MEASURED", "visual_generation_strategy": visual_generation_strategy, "image_count": len(prompts), "subtitle_space_rendering": "NATURAL_UNCLUTTERED_IN_FOCUS", "forbidden_subtitle_space_rendering": descriptor["forbidden_subtitle_space_rendering"], "strategy_justification": justification, "structured_sections_count": 5, "clean_text_round_trip": True, "prompt_count": len(prompts), "reference_copy": {"file": "NURA_REFERENCE.png", "sha256": reference_hash, "exact_bytes": True}, "user_facing_files": list(files) + ["NURA_REFERENCE.png"], "json_required_for_manual_use": False, "provider_call_performed": False, "network_calls": 0, "credentials_required": False, "image_generator_called": False, "heygen_called": False, "renderer_called": False, "production_execution_ready": False}
     manifest["content_hash"] = hash_payload({key: value for key, value in manifest.items() if key != "content_hash"})
-    statuses = [_atomic_text(user_root / name, value) for name, value in files.items()]; statuses.append(_atomic(root / "operator_export_manifest.json", manifest))
-    return {"status": "COMPLETED" if "COMPLETED" in statuses else "REUSED", "export_id": manifest["export_id"], "export_hash": manifest["content_hash"], "export_path": str(user_root), "manifest_path": str(root / "operator_export_manifest.json"), "visual_generation_strategy": visual_generation_strategy, "prompt_count": len(prompts), "files": list(files), "text": text, "prompts": prompts, "readme": readme, "reference_instruction": reference_instruction, "network_calls": 0, "credentials_required": False, "provider_called": False}
+    statuses = [_atomic_text(user_root / name, value) for name, value in files.items()]; statuses.extend((_atomic_bytes(user_root / "NURA_REFERENCE.png", reference_bytes), _atomic(root / "operator_export_manifest.json", manifest)))
+    return {"status": "COMPLETED" if "COMPLETED" in statuses else "REUSED", "export_id": manifest["export_id"], "export_hash": manifest["content_hash"], "export_path": str(user_root), "manifest_path": str(root / "operator_export_manifest.json"), "visual_generation_strategy": visual_generation_strategy, "prompt_count": len(prompts), "files": manifest["user_facing_files"], "text": text, "content": content, "video_title": manifest["video_title"], "title_source": manifest["title_source"], "prompts": prompts, "readme": readme, "reference_sha256": reference_hash, "network_calls": 0, "credentials_required": False, "provider_called": False}
 
 def reprocess_existing_raw(*, bridge_path: Path, profile_path: Path, original_run_root: Path, output_root: Path, operator_rejection_path: Path) -> dict[str, Any]:
     """Materialize an audited package from an existing provider response; never calls a provider."""

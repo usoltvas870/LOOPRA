@@ -8,6 +8,7 @@ PROFILE = ROOT / "data/nura-production-asset-handoff/8fc6df087d0aee2b5056e3c79bc
 OLD = ROOT / "data/nura-scene-production-real/nura-scene-production-84aa0ff087b1"
 REVIEW = ROOT / "data/nura-scene-production-real/nura-scene-production-offline-e6c0cee822dc"
 FINALIZED = ROOT / "data/nura-scene-production-finalized/nura-scene-production-finalized-2aad84cd2c40"
+REFERENCE = ROOT / "data/nura-production-asset-handoff/assets/nura/avatar/5d6350b968c6bd9ea3ced646eb835c1c040d9d9203113d193f8261f2c769f383.png"
 def _decision(tmp_path: Path) -> Path:
     path = tmp_path / "decision.json"; record_operator_rejection(rejected_package_path=OLD / "scene_production_package.json", raw_response_path=OLD / "raw_provider_response.json", output_path=path); return path
 def test_corrected_fake_package_has_three_talking_avatar_scenes_and_reuses(tmp_path: Path) -> None:
@@ -110,24 +111,30 @@ def test_conflicting_owner_decision_is_rejected(tmp_path: Path) -> None:
 
 def test_one_image_operator_export_is_minimal_integrated_and_reused(tmp_path: Path) -> None:
     source_before = (FINALIZED / "finalized_scene_production_package.json").read_bytes()
-    kwargs = {"finalized_package_path": FINALIZED / "finalized_scene_production_package.json", "finalized_handoff_path": FINALIZED / "finalized_manual_heygen_handoff.json", "output_root": tmp_path, "visual_generation_strategy": "ONE_IMAGE"}
+    kwargs = {"finalized_package_path": FINALIZED / "finalized_scene_production_package.json", "finalized_handoff_path": FINALIZED / "finalized_manual_heygen_handoff.json", "output_root": tmp_path, "reference_image_path": REFERENCE, "visual_generation_strategy": "ONE_IMAGE"}
     first, second = build_simplified_operator_export(**kwargs), build_simplified_operator_export(**kwargs)
     assert first["status"] == "COMPLETED" and second["status"] == "REUSED"
     assert first["visual_generation_strategy"] == "ONE_IMAGE" and first["prompt_count"] == 1
-    assert first["files"] == ["01_TEXT_RU.txt", "02_IMAGE_PROMPT.txt", "03_REFERENCE_INSTRUCTION.txt", "README_RU.txt"]
+    assert first["files"] == ["01_CONTENT_RU.md", "02_IMAGE_PROMPT.txt", "README_RU.txt", "NURA_REFERENCE.png"]
     assert not any("NEGATIVE" in name or "SAFE_AREA" in name or "OPERATOR_NOTE" in name for name in first["files"])
     prompt = first["prompts"][0].lower()
-    assert all(marker in prompt for marker in ("attached canonical nura reference", "2d / 2.5d", "vertical 9:16", "future subtitles", "integrated constraints", "watermarks"))
+    assert all(marker in prompt for marker in ("nura_reference.png", "2d / 2.5d", "vertical 9:16", "future subtitles", "integrated constraints", "watermarks"))
+    assert "upper 15%" not in prompt and "lower 25%" not in prompt
+    assert all(marker in prompt for marker in ("do not create blur", "fog", "haze", "gradient fade", "frosted glass", "translucent overlay", "soft-focus wash", "normally detailed and in focus"))
+    content = first["content"]
+    assert all(marker in content for marker in ("# Заголовок ролика", "APPROVED_HOOK_FALLBACK", "Формат: `TALKING_GUIDE`", "Количество роликов: `1`", "Визуальная стратегия: `ONE_IMAGE`", "Количество изображений: `1`", "# Чистый текст для HeyGen"))
+    assert all(section in content for section in ("Хук", "Развитие проблемы", "Поворот / переосмысление", "Небольшой следующий шаг", "Финальная мысль"))
+    assert (Path(first["export_path"]) / "NURA_REFERENCE.png").read_bytes() == REFERENCE.read_bytes()
     assert first["network_calls"] == 0 and first["credentials_required"] is False and first["provider_called"] is False
     assert (FINALIZED / "finalized_scene_production_package.json").read_bytes() == source_before
 
 
 def test_multi_image_operator_export_is_supported_and_self_contained(tmp_path: Path) -> None:
-    result = build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, visual_generation_strategy="MULTI_IMAGE")
+    result = build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, reference_image_path=REFERENCE, visual_generation_strategy="MULTI_IMAGE")
     assert result["prompt_count"] == 3 and len([name for name in result["files"] if "IMAGE_PROMPT" in name]) == 3
     assert all("attached canonical nura reference" in prompt.lower() and "integrated constraints" in prompt.lower() for prompt in result["prompts"])
 
 
 def test_operator_export_rejects_unknown_strategy(tmp_path: Path) -> None:
     with pytest.raises(NuraSceneProductionError, match="UNSUPPORTED_VISUAL_GENERATION_STRATEGY"):
-        build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, visual_generation_strategy="AUTO")
+        build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, reference_image_path=REFERENCE, visual_generation_strategy="AUTO")

@@ -110,6 +110,30 @@ Run the offline correction acceptance:
 python trend-radar/run_nura_operator_export_acceptance.py --json
 ```
 
+### Operator-export usability correction
+
+The first simplified prompt used percentage-based subtitle safe areas. In
+manual ChatGPT generation this produced an unwanted blurred lower panel. The
+current derived export leaves the older export immutable and replaces those
+percentages with `NATURAL_UNCLUTTERED_IN_FOCUS`: natural breathing room around
+and below NURA must remain fully rendered, sharp and coherent. Blur, fog, haze,
+gradient fade, frosted/translucent overlays and lower soft-focus washes are
+explicitly forbidden in the integrated prompt.
+
+Every user export now has a separate video title contract. Current Rank 1 uses
+the unchanged approved hook as `APPROVED_HOOK_FALLBACK`, with
+`ACCEPTED_FOR_OPERATOR_EXPORT`; this is not represented as a separate reviewed
+upstream title and is not spoken automatically. Future reviewed titles can
+replace the fallback without changing Stage 5K here.
+
+The user-facing `01_CONTENT_RU.md` distinguishes one video, its title, five
+semantic script sections and their purposes, and a separately fenced exact
+HeyGen speech block. Structural labels and explanations are never part of the
+spoken text. The export also copies the exact canonical NURA reference bytes
+into ignored runtime storage, so the owner can use the package without locating
+another artifact. This correction remains fully offline and does not invoke a
+provider, image generator, HeyGen or renderer.
+
 Run the deterministic acceptance:
 
 ```powershell
