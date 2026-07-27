@@ -372,6 +372,8 @@ async def _try_range_fallback(page, observed, body_results, candidate_root, run_
     """Use page-context replay only for a proven large primary-body failure."""
     for _, response, facts in sorted(observed, key=lambda item: item[0]):
         body_status = body_results.get(facts["url_sha256"], {}).get("body_status")
+        if body_status is None:
+            body_status = "capture_limit_reached"
         if not is_range_replay_eligible(facts, body_status, maximum_file_bytes):
             continue
         target = candidate_root / "range_source.mp4"

@@ -39,7 +39,7 @@ class PageRangeCaptureResult:
 def is_range_replay_eligible(facts: dict, body_status: str | None, maximum_file_bytes: int) -> bool:
     """Return true only for the proven large player-bound primary-path gap."""
     return bool(
-        body_status in {"unavailable", "response_finished_timeout"}
+        body_status in {"unavailable", "response_finished_timeout", "capture_limit_reached"}
         and facts.get("scheme") == "https"
         and facts.get("content_type") == "video/mp4"
         and facts.get("status") == 200

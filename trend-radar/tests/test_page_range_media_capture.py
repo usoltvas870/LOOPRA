@@ -19,6 +19,7 @@ def test_eligibility_is_limited_to_large_primary_body_failures() -> None:
     facts = {"scheme": "https", "status": 200, "content_type": "video/mp4", "accept_ranges": "bytes", "content_length": 9 * 1024 * 1024}
     assert replay.is_range_replay_eligible(facts, "unavailable", 40 * 1024 * 1024)
     assert replay.is_range_replay_eligible(facts, "response_finished_timeout", 40 * 1024 * 1024)
+    assert replay.is_range_replay_eligible(facts, "capture_limit_reached", 40 * 1024 * 1024)
     assert not replay.is_range_replay_eligible({**facts, "content_length": 1024}, "unavailable", 40 * 1024 * 1024)
     assert not replay.is_range_replay_eligible({**facts, "accept_ranges": None}, "unavailable", 40 * 1024 * 1024)
     assert not replay.is_range_replay_eligible({**facts, "scheme": "http"}, "unavailable", 40 * 1024 * 1024)
@@ -84,3 +85,43 @@ def test_browser_fallback_records_range_method_without_signed_url(tmp_path: Path
     assert record is not None and record.acquisition_method == browser.RANGE_ACQUISITION_METHOD
     assert record.tool_metadata["chunk_count"] == 36
     assert signed_url not in json.dumps(record.to_dict())
+
+
+def test_browser_fallback_uses_valid_response_skipped_by_body_capture_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[int] = []
+
+    async def fake_capture(page, url, *, target_path, total_bytes):
+        calls.append(total_bytes)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"fixture")
+        return replay.PageRangeCaptureResult(
+            "COMPLETED", total_bytes, 36, "b" * 64,
+            {"valid": True, "video_codec": "h264"},
+        )
+
+    monkeypatch.setattr(browser, "capture_page_ranges", fake_capture)
+    facts = {
+        "url_sha256": "a" * 64, "scheme": "https", "status": 200,
+        "content_type": "video/mp4", "accept_ranges": "bytes",
+        "content_length": 9 * 1024 * 1024,
+        "redacted_reference": "https://v16.tiktok.com/video/fixture.mp4",
+    }
+    manifest = SimpleNamespace(
+        radar_run_reference="data/runs/fixture.json", manifest_hash="m" * 64,
+        radar_run_id="fixture",
+    )
+    candidate = SimpleNamespace(
+        video_id="2", rank=2,
+        canonical_url="https://www.tiktok.com/@fixture/video/2",
+    )
+
+    record = asyncio.run(browser._try_range_fallback(
+        object(), [(0, SimpleNamespace(url="https://v16.tiktok.com/video/fixture"), facts)],
+        {}, tmp_path / "2", tmp_path, manifest, candidate, 200, "session_refresh_required",
+        "2026-07-24T00:00:00Z", 40 * 1024 * 1024, [], {},
+    ))
+
+    assert record is not None and record.status == "COMPLETED"
+    assert calls == [9 * 1024 * 1024]
