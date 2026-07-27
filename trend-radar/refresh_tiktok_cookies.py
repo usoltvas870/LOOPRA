@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 from playwright.async_api import async_playwright
 from auth import (
     AUTH_CHECK_FAILED, AUTH_CHALLENGE, AUTH_REFRESH_REQUIRED, AUTH_SESSION_VALID,
-    inspect_page_authentication, storage_state_diagnostics,
+    has_authenticated_tiktok_cookie, inspect_page_authentication, storage_state_diagnostics,
 )
 from utils import get_config_int, get_cookie_path, load_env, setup_logging
 
@@ -52,6 +52,8 @@ def validate_storage_state(data: object) -> tuple[bool, str]:
         return False, 'origins is missing'
     if not any('tiktok.com' in str(cookie.get('domain', '')).lower() for cookie in cookies if isinstance(cookie, dict)):
         return False, 'TikTok domain cookies are missing'
+    if not has_authenticated_tiktok_cookie(cookies):
+        return False, 'authenticated TikTok session cookies are missing'
     return True, ''
 
 

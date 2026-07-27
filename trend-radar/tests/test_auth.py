@@ -21,14 +21,16 @@ import refresh_tiktok_cookies as refresh
 class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
     async def test_page_states_are_distinct(self):
         cases = [
-            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': False, 'consent': False, 'ssr': True, 'videoLinks': 1}, AUTH_SESSION_VALID),
-            ('https://www.tiktok.com/login', {'loginForm': True, 'loginText': True, 'challenge': False, 'consent': False, 'ssr': False, 'videoLinks': 0}, AUTH_REFRESH_REQUIRED),
-            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': True, 'consent': False, 'ssr': False, 'videoLinks': 0}, AUTH_CHALLENGE),
-            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': False, 'consent': False, 'ssr': False, 'videoLinks': 0}, AUTH_CHECK_FAILED),
+            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': False, 'consent': False, 'ssr': True, 'videoLinks': 1}, [{'name': 'sessionid', 'domain': '.tiktok.com'}], AUTH_SESSION_VALID),
+            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': False, 'consent': False, 'ssr': True, 'videoLinks': 1}, [{'name': 'msToken', 'domain': '.tiktok.com'}], AUTH_REFRESH_REQUIRED),
+            ('https://www.tiktok.com/login', {'loginForm': True, 'loginText': True, 'challenge': False, 'consent': False, 'ssr': False, 'videoLinks': 0}, [], AUTH_REFRESH_REQUIRED),
+            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': True, 'consent': False, 'ssr': False, 'videoLinks': 0}, [], AUTH_CHALLENGE),
+            ('https://www.tiktok.com/foryou', {'loginForm': False, 'loginText': False, 'challenge': False, 'consent': False, 'ssr': False, 'videoLinks': 0}, [{'name': 'sessionid', 'domain': '.tiktok.com'}], AUTH_CHECK_FAILED),
         ]
-        for url, signals, expected in cases:
+        for url, signals, cookies, expected in cases:
             with self.subTest(expected=expected):
-                page = SimpleNamespace(url=url, evaluate=AsyncMock(return_value=signals))
+                context = SimpleNamespace(cookies=AsyncMock(return_value=cookies))
+                page = SimpleNamespace(url=url, context=context, evaluate=AsyncMock(return_value=signals))
                 self.assertEqual((await inspect_page_authentication(page)).result, expected)
 
     async def test_network_failure_is_not_misclassified_as_logout(self):
@@ -42,11 +44,20 @@ class StorageStateTests(unittest.TestCase):
             path = Path(directory) / 'cookies.json'
             _, missing = storage_state_diagnostics(path)
             self.assertEqual(missing.result, AUTH_REFRESH_REQUIRED)
-            write_state_atomic(path, {'cookies': [{'domain': '.tiktok.com'}], 'origins': []})
+            write_state_atomic(path, {'cookies': [{'name': 'sessionid', 'domain': '.tiktok.com'}], 'origins': []})
             state, diagnostic = storage_state_diagnostics(path)
             self.assertIsNotNone(state)
             self.assertEqual(diagnostic.cookie_count, 1)
             self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['cookies'][0]['domain'], '.tiktok.com')
+
+    def test_guest_cookie_state_requires_real_login(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cookies.json'
+            write_state_atomic(path, {'cookies': [{'name': 'msToken', 'domain': '.tiktok.com'}], 'origins': []})
+            state, diagnostic = storage_state_diagnostics(path)
+            self.assertIsNone(state)
+            self.assertEqual(diagnostic.result, AUTH_REFRESH_REQUIRED)
+            self.assertEqual(diagnostic.reason, 'authenticated_tiktok_cookie_missing')
 
     def test_auth_result_is_emitted_once_without_secret_values(self):
         output = StringIO()

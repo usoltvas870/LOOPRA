@@ -13,6 +13,9 @@ AUTH_SESSION_VALID = 'session_valid'
 AUTH_REFRESH_REQUIRED = 'session_refresh_required'
 AUTH_CHALLENGE = 'challenge_detected'
 AUTH_CHECK_FAILED = 'session_check_failed'
+AUTHENTICATED_COOKIE_NAMES = frozenset({
+    'sessionid', 'sessionid_ss', 'sid_tt', 'sid_guard', 'uid_tt', 'uid_tt_ss',
+})
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,17 @@ class AuthDiagnostic:
     final_hostname: str | None = None
     cookie_count: int = 0
     tiktok_cookie_count: int = 0
+
+
+def has_authenticated_tiktok_cookie(cookies: object) -> bool:
+    if not isinstance(cookies, list):
+        return False
+    return any(
+        isinstance(cookie, dict)
+        and str(cookie.get('name', '')).lower() in AUTHENTICATED_COOKIE_NAMES
+        and 'tiktok.com' in str(cookie.get('domain', '')).lower()
+        for cookie in cookies
+    )
 
 
 def storage_state_diagnostics(path: Path) -> tuple[dict | None, AuthDiagnostic]:
@@ -37,6 +51,8 @@ def storage_state_diagnostics(path: Path) -> tuple[dict | None, AuthDiagnostic]:
     tiktok = sum(1 for cookie in cookies if isinstance(cookie, dict) and 'tiktok.com' in str(cookie.get('domain', '')).lower())
     if not cookies or not tiktok:
         return None, AuthDiagnostic(AUTH_REFRESH_REQUIRED, 'tiktok_cookies_missing', cookie_count=len(cookies), tiktok_cookie_count=tiktok)
+    if not has_authenticated_tiktok_cookie(cookies):
+        return None, AuthDiagnostic(AUTH_REFRESH_REQUIRED, 'authenticated_tiktok_cookie_missing', cookie_count=len(cookies), tiktok_cookie_count=tiktok)
     return state, AuthDiagnostic(AUTH_CHECK_FAILED, 'browser_check_pending', cookie_count=len(cookies), tiktok_cookie_count=tiktok)
 
 
@@ -69,6 +85,7 @@ async def inspect_page_authentication(page) -> AuthDiagnostic:
                 };
             }
         ''')
+        cookies = await page.context.cookies()
     except Exception:
         return AuthDiagnostic(AUTH_CHECK_FAILED, 'browser_or_network_check_failed', hostname)
 
@@ -79,6 +96,8 @@ async def inspect_page_authentication(page) -> AuthDiagnostic:
         return AuthDiagnostic(AUTH_REFRESH_REQUIRED, 'login_detected', hostname)
     if signals['consent'] and not (signals['ssr'] or signals['videoLinks']):
         return AuthDiagnostic(AUTH_CHECK_FAILED, 'consent_required', hostname)
+    if not has_authenticated_tiktok_cookie(cookies):
+        return AuthDiagnostic(AUTH_REFRESH_REQUIRED, 'authenticated_tiktok_cookie_missing', hostname)
     if signals['ssr'] or signals['videoLinks']:
         return AuthDiagnostic(AUTH_SESSION_VALID, 'authenticated_page_available', hostname)
     return AuthDiagnostic(AUTH_CHECK_FAILED, 'ui_state_unknown', hostname)
