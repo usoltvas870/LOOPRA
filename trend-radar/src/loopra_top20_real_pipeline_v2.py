@@ -411,7 +411,7 @@ def build_fresh_top20_b1_production_dependencies(
         metadata = {"provider":provider.provider_id,"model":provider.model_id,"prompt_version":services["PROMPT_VERSION"],"effective_request_hash":_hash(body),"analysis_input_hash":analysis_input["input_hash"],"project_context_hash":context_hash}
         _atomic(ci_root / "request-metadata.json", _sealed({**metadata,"semantic_hash":""}))
         response, latency_ms = services["post_deepseek_request"](body, api_key=provider._api_key, transport=provider._transport)
-        raw = response.json(); persisted_raw, reasoning = services["_without_reasoning_content"](raw); _atomic(ci_root / "raw-response.json", persisted_raw)
+        raw = response.json(); persisted_raw, reasoning = services["_without_reasoning_content"](raw); _replace_retryable(ci_root / "raw-response.json", persisted_raw)
         parsed = json.loads(raw["choices"][0]["message"]["content"])
         provider_result = {"schema_version":"0.1","provider":provider.metadata(),"candidate_identity":{"video_id":analysis_input["candidate_identity"]["video_id"],"rank":analysis_input["candidate_identity"]["rank"]},"claims":parsed.get("claims"),"project_adaptation":parsed.get("project_adaptation"),"warnings":parsed.get("warnings",[])}
         validated = services["validate_provider_result"](provider_result, analysis_input, provider); canonical_card = services["build_card"](analysis_input, validated)

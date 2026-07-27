@@ -12,6 +12,17 @@ import loopra_top20_real_pipeline_v2 as v2
 from loopra_top20_real_pipeline_v2 import *
 from collector import RadarOperationalError, TikTokCollector
 
+
+def test_retryable_raw_provider_response_is_archived_before_replacement(tmp_path):
+ path=tmp_path/'raw-response.json'
+ first={'choices':[{'message':{'content':'first'}}]}
+ second={'choices':[{'message':{'content':'second'}}]}
+ assert v2._replace_retryable(path,first)=='COMPLETED'
+ assert v2._replace_retryable(path,second)=='COMPLETED'
+ assert json.loads(path.read_text(encoding='utf-8'))==second
+ archived=list((tmp_path/'attempts'/'raw-response').glob('*.json'))
+ assert len(archived)==1 and json.loads(archived[0].read_text(encoding='utf-8'))==first
+
 def test_navigation_login_wall_without_public_results_is_not_an_auth_hard_gate():
  class Page:
   url='https://www.tiktok.com/login'
