@@ -148,6 +148,13 @@ def test_production_wiring_calls_canonical_boundaries_and_reuses_without_side_ef
  deps=build_fresh_top20_b1_production_dependencies(root=tmp_path)
  first=run_fresh_top20_b1(root=tmp_path,dependencies=deps)
  assert first['status']=='READY_FOR_OWNER_EDITORIAL_REVIEW'
+ package=tmp_path/'owner-editorial-review'
+ assert (package/'00_REVIEW_GUIDE_RU.md').is_file()
+ assert (package/'00_BATCH_SUMMARY.md').is_file()
+ assert (package/'00_DECISIONS_TEMPLATE.json').is_file()
+ assert len(list((package/'sources').glob('*_source.mp4')))==20
+ assert len(list((package/'reviews').glob('*_review.md')))==20
+ assert all(hashlib.sha256((package/'sources'/f'{rank:02d}_source.mp4').read_bytes()).hexdigest()==first['acquisition'][rank-1]['source_media_sha256'] for rank in range(1,21))
  assert [item['original_rank'] for item in first['cards']][5::14]==[6,20]
  assert calls['collect_all']==calls['enrich_missing_stats']==1 and calls['build_selection_manifest']==calls['write_selection_manifest']==1
  assert all(calls[name]==20 for name in ('capture','inspect','ocr','prepare','build_analysis_input','post','validate'))

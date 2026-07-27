@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import asdict
@@ -105,6 +106,108 @@ class LoopraTop20ContentIntelligenceV2:
         return cards
 
 
+def _write_text_atomic(path: Path, text: str) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if path.read_text(encoding="utf-8") != text:
+            raise LoopraTop20V2Error("CONFLICTING_V2_ARTIFACT")
+        return "REUSED"
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as out:
+        out.write(text); temporary = Path(out.name)
+    try:
+        os.link(temporary, path)
+    except FileExistsError:
+        if path.read_text(encoding="utf-8") != text:
+            raise LoopraTop20V2Error("CONFLICTING_V2_ARTIFACT")
+    finally:
+        temporary.unlink(missing_ok=True)
+    return "COMPLETED"
+
+
+def _expose_media(source: Path, target: Path, expected_sha256: str) -> str:
+    if not source.is_file() or _file_sha256(source) != expected_sha256:
+        raise LoopraTop20V2Error("V2_OWNER_SOURCE_HASH_MISMATCH")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if _file_sha256(target) != expected_sha256:
+            raise LoopraTop20V2Error("CONFLICTING_V2_ARTIFACT")
+        return "REUSED"
+    try:
+        os.link(source, target)
+    except OSError:
+        with tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent) as out:
+            temporary = Path(out.name)
+        try:
+            shutil.copyfile(source, temporary)
+            if _file_sha256(temporary) != expected_sha256:
+                raise LoopraTop20V2Error("V2_OWNER_SOURCE_HASH_MISMATCH")
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return "COMPLETED"
+
+
+def _owner_review_markdown(entry: dict[str, Any], media: dict[str, Any], card: dict[str, Any], candidate: dict[str, Any], root: Path) -> str:
+    video_id = entry["video_id"]
+    evidence_candidates = list((root / "canonical" / "intelligence-evidence").glob(f"*/candidates/{video_id}"))
+    evidence_root = evidence_candidates[0] if len(evidence_candidates) == 1 else None
+    ocr = _read_json(evidence_root / "ocr" / "ocr_result.json") if evidence_root else None
+    transcription = _read_json(evidence_root / "transcription" / "transcription_result.json") if evidence_root else None
+    first_ocr = (ocr or {}).get("first_text_hook") or "Не выявлен надёжный текстовый hook"
+    first_words = (transcription or {}).get("first_spoken_words") or "Не выявлены надёжные первые слова"
+    if isinstance(first_ocr, dict): first_ocr = first_ocr.get("hook_text") or first_ocr
+    if isinstance(first_words, dict): first_words = first_words.get("text") or first_words
+    claims = card.get("claims") or []
+    claim_summary = "\n".join(f"- {claim.get('text', '')}" for claim in claims) or "- Нет валидных выводов"
+    adaptation = card.get("project_adaptation") or {}
+    warnings = [*(card.get("warnings") or []), *((ocr or {}).get("warnings") or []), *((transcription or {}).get("warnings") or [])]
+    limitations = "\n".join(f"- {item}" for item in warnings) or "- Дополнительные ограничения не зафиксированы"
+    metrics = candidate.get("metrics_snapshot") or {}
+    return (
+        f"# Rank {entry['original_rank']:02d} — editorial review\n\n"
+        f"- Local source: `{entry['original_rank']:02d}_source.mp4`\n"
+        f"- Candidate ID: `{entry['candidate_id']}`\n- Video ID: `{video_id}`\n"
+        f"- Source: {entry.get('canonical_url') or candidate.get('canonical_url')}\n"
+        f"- Duration: {media.get('duration_seconds')} sec\n"
+        f"- Classification: {candidate.get('classification')}\n"
+        f"- Metrics: views={metrics.get('views')}, likes={metrics.get('likes')}, comments={metrics.get('comments')}, shares={metrics.get('shares')}\n"
+        f"- First OCR hook: {first_ocr}\n- First spoken words: {first_words}\n\n"
+        f"## Content Intelligence summary\n\n{claim_summary}\n\n"
+        f"## Attention mechanism\n\n{adaptation.get('source_mechanism', '')}\n\n"
+        f"## Adaptation opportunity\n\n{adaptation.get('adaptation_idea', '')}\n\n"
+        f"## Evidence limitations\n\n{limitations}\n\n"
+        f"## Proposed NURA mechanism\n\n{adaptation.get('adaptation_idea', '')}\n\n"
+        f"## Proposed hook\n\n{adaptation.get('suggested_hook', '')}\n\n"
+        f"## Prohibited copying elements\n\n{adaptation.get('production_elements_not_copied', '')}\n\n"
+        "## Safety / copyright notes\n\nUse only the transferable mechanism; do not copy wording, performance, identity, footage, or protected creative expression.\n\n"
+        "## Owner decision (leave blank until human review)\n\n- Decision:\n- Approved mechanism:\n- Approved hook:\n- Mandatory revisions:\n- Safety notes:\n- Owner comment:\n"
+    )
+
+
+def _build_owner_directory(root: Path, batch: dict[str, Any], entries: list[dict[str, Any]], acquisition: list[dict[str, Any]], cards: list[dict[str, Any]]) -> dict[str, Any]:
+    package = root / "owner-editorial-review"
+    manifest = _read_json(root / entries[0]["selection_manifest_reference"]) or {}
+    candidates = {item.get("video_id"): item for item in manifest.get("candidates", [])}
+    decisions = {
+        "batch_id": batch["batch_id"], "reviewer_id": "nura-owner", "reviewer_role": "OWNER",
+        "reviewer_display_name": "Василий", "human_confirmation": False,
+        "items": [{"rank": rank, "decision": None, "approved_mechanism": None, "approved_hook": None,
+                   "mandatory_revisions": [], "prohibited_copying_elements": [], "safety_notes": None,
+                   "format_direction": None, "optional_title_direction": None, "owner_comment": None}
+                  for rank in range(1, TARGET_COUNT + 1)],
+    }
+    _write_text_atomic(package / "00_REVIEW_GUIDE_RU.md", "# Инструкция владельцу\n\nПросмотрите 20 source MP4 и соответствующие review-файлы. Заполните `00_DECISIONS_TEMPLATE.json`; не меняйте `human_confirmation` на true до завершения всех 20 решений. Production Briefs и scripts до этого запрещены.\n")
+    _write_text_atomic(package / "00_BATCH_SUMMARY.md", f"# LOOPRA 0.5 TOP-20\n\n- Batch: `{batch['batch_id']}`\n- Sources: 20\n- Reviews: 20\n- Status: `PENDING_OWNER_EDITORIAL_REVIEW`\n- Production Brief allowed: false\n")
+    _atomic(package / "00_DECISIONS_TEMPLATE.json", decisions)
+    for entry, media, card in zip(entries, acquisition, cards, strict=True):
+        rank = entry["original_rank"]
+        source = root / media["source_media_reference"]
+        _expose_media(source, package / "sources" / f"{rank:02d}_source.mp4", media["source_media_sha256"])
+        review = _owner_review_markdown(entry, media, card, candidates.get(entry["video_id"], {}), root)
+        _write_text_atomic(package / "reviews" / f"{rank:02d}_review.md", review)
+    return {"owner_package_reference": "owner-editorial-review", "source_count": 20, "review_count": 20}
+
+
 class LoopraTop20EditorialReviewPackageV2:
     def build(self, *, root: Path, batch: dict[str, Any], entries: list[dict[str, Any]], acquisition: list[dict[str, Any]], cards: list[dict[str, Any]]) -> dict[str, Any]:
         _validate(entries)
@@ -112,7 +215,14 @@ class LoopraTop20EditorialReviewPackageV2:
         report=_sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"LoopraTop20ContentIntelligenceReportV2","batch_id":batch["batch_id"],"batch_hash":batch["semantic_hash"],"fresh_cycle_id":batch["fresh_cycle_id"],"ordered_ranks":list(range(1,21)),"cards":[{"original_rank":c["original_rank"],"card_reference":f"content-intelligence/{c['original_rank']:02d}/card.json","card_hash":c["semantic_hash"]} for c in cards],"winner":None,"human_verified":False,"progress_counts":{"selected":20,"acquired":20,"inspected":20,"ocr":20,"transcription":20,"valid_cards":20},"incomplete_items":[],"semantic_hash":""})
         review=_sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"LoopraTop20EditorialReviewPackageV2","batch_id":batch["batch_id"],"report_hash":report["semantic_hash"],"reviewer":{"reviewer_id":"nura-owner","reviewer_role":"OWNER","reviewer_display_name":"Василий","human_confirmation":False},"status":"PENDING_OWNER_EDITORIAL_REVIEW","production_brief_allowed":False,"items":[{"original_rank":entry["original_rank"],"candidate_id":entry["candidate_id"],"video_id":entry["video_id"],"source_media_reference":media["source_media_reference"],"card_reference":f"content-intelligence/{entry['original_rank']:02d}/card.json","decision":"PENDING","edits":{"approved_mechanism":None,"approved_hook":None,"mandatory_revisions":[],"prohibited_copying_elements":[],"safety_notes":None,"format_direction":None,"optional_title_direction":None,"owner_comment":None}} for entry,media in zip(entries,acquisition,strict=True)],"semantic_hash":""})
         _atomic(root/"aggregate-report-v2.json",report); _atomic(root/"owner-editorial-review-v2.json",review)
-        return {"report":report,"review":review}
+        real_owner_inputs = all(
+            entry.get("selection_manifest_reference")
+            and media.get("source_media_reference")
+            and (root / media["source_media_reference"]).is_file()
+            for entry, media in zip(entries, acquisition, strict=True)
+        )
+        owner_package = _build_owner_directory(root, batch, entries, acquisition, cards) if real_owner_inputs else {}
+        return {"report":report,"review":review,**owner_package}
 
 
 def run_offline_acceptance(*, root: Path, batch_id: str="v2-offline-batch", fail_rank: int | None=None) -> dict[str, Any]:
