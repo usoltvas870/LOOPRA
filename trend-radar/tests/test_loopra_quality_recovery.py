@@ -138,3 +138,53 @@ def test_actionable_package_has_confirmation_only_and_twenty_files(tmp_path: Pat
 def test_grounded_contamination_blocks_repeated_summary():
     result = _result(_packet())
     assert grounded_contamination_findings([{"rank": 1, "result": result}, {"rank": 2, "result": result}])
+
+
+def test_semantic_paraphrase_does_not_require_literal_substring():
+    packet, result = _packet(), _result(_packet())
+    result["literal_content_summary"] = "Речь объясняет, что уважительное общение невозможно без обозначения личных пределов."
+    validation = validate_grounded_result(result, packet)
+    assert validation["status"] == "VALID"
+    assert validation["supporting_evidence"][0]["exact_excerpt"].startswith("Личные границы")
+
+
+def test_unknown_evidence_ref_is_rejected():
+    packet, result = _packet(), _result(_packet())
+    result["key_evidence_refs"] = ["other-rank-segment"]
+    assert any(error.startswith("UNKNOWN_EVIDENCE_REF") for error in validate_grounded_result(result, packet)["errors"])
+
+
+def test_metrics_only_summary_is_rejected():
+    packet, result = _packet(), _result(_packet())
+    result["literal_content_summary"] = "Высокие views, likes и comments показывают популярность публикации."
+    assert "METRICS_ONLY_SUMMARY" in validate_grounded_result(result, packet)["errors"]
+
+
+def test_unsupported_psychology_rationale_is_rejected():
+    packet, result = _packet(), _result(_packet())
+    result["content_format"] = "animal"
+    result["relevance_rationale"] = "The animal joke is about relationships and self-esteem."
+    assert "UNSUPPORTED_PSYCHOLOGY_RATIONALE" in validate_grounded_result(result, packet)["errors"]
+
+
+def test_paraphrased_hook_gets_application_grounding_type():
+    packet, result = _packet(), _result(_packet())
+    result["source_hook"] = "Без личных пределов невозможно устойчивое уважение."
+    validation = validate_grounded_result(result, packet)
+    assert validation["source_hook_type"] == "paraphrased_source_hook"
+    assert validation["status"] == "VALID"
+
+
+def test_provider_rejected_alias_is_canonicalized_without_changing_raw_audit_value():
+    packet, result = _packet(), _result(_packet())
+    result["NURA_relevance_decision"] = "REJECTED"
+    result["relevance_rationale"] = "The source discusses personal limits, not the requested unrelated topic."
+    assert validate_grounded_result(result, packet)["status"] == "VALID"
+    assert result["NURA_relevance_decision"] == "IRRELEVANT"
+    assert result["provider_relevance_decision_raw"] == "REJECTED"
+
+
+def test_duplicate_reuse_does_not_trigger_contamination():
+    result = _result(_packet())
+    rows = [{"rank": 13, "result": result, "duplicate_of_rank": None}, {"rank": 18, "result": result, "duplicate_of_rank": 13}]
+    assert grounded_contamination_findings(rows) == []

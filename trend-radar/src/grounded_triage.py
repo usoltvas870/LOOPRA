@@ -11,6 +11,7 @@ import csv
 import hashlib
 import json
 import re
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,8 @@ FORBIDDEN_TEMPLATE_PHRASES = (
     "повторяющиеся паттерны в отношениях", "мягкие вопросы для саморефлексии",
     "круги на воде", "спокойная карусель",
 )
+UNSUPPORTED_PSYCHOLOGY_TERMS = ("self-esteem", "boundaries", "relationships", "самооцен", "границ", "отношен", "саморефлекс")
+METRICS_TERMS = ("views", "likes", "comments", "engagement", "просмотр", "лайк", "комментар")
 
 
 class GroundedTriageError(ValueError):
@@ -166,28 +169,109 @@ def build_evidence_packet(*, batch_id: str, candidate: dict[str, Any], acquisiti
 def build_grounded_payload(packet: dict[str, Any], *, duplicate_of_rank: int | None = None) -> dict[str, Any]:
     return {"prompt_version": PROMPT_VERSION, "schema_version": "2.0", "evidence_packet": packet,
             "duplicate_status": "DUPLICATE_OF_RANK_%02d" % duplicate_of_rank if duplicate_of_rank else "CANONICAL",
-            "instructions": "Analyze only normalized transcript/OCR and cited metadata. Do not invent visual descriptions or NURA scripts. Every substantive field must cite evidence refs."}
+            "instructions": "Analyze only normalized transcript/OCR and cited metadata. Do not invent visual descriptions or NURA scripts. Every substantive field must cite evidence refs. A hook paraphrase must be identified as paraphrased_source_hook. Relevance rationale must name source content and must not introduce psychological topics absent from evidence."}
+
+
+def _resolved_evidence(packet: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    resolved = {}
+    for modality, rows in (("transcript", packet["transcript_segments"]), ("ocr", packet["OCR_normalized_lines"])):
+        for row in rows: resolved[row["evidence_ref"]] = {"source_modality": modality, "exact_excerpt": row["text"], **row}
+    return resolved
+
+
+def _bridge(result: dict[str, Any], packet: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    resolved, bridge, errors = _resolved_evidence(packet), [], []
+    for field, refs_field in (("source_hook", "hook_evidence_refs"), ("key_content_points", "key_evidence_refs"), ("attention_mechanism", "attention_evidence_refs"), ("relevance_rationale", "relevance_evidence_refs")):
+        for ref in result.get(refs_field) or []:
+            if ref not in resolved: errors.append("UNKNOWN_EVIDENCE_REF:" + refs_field); continue
+            row = resolved[ref]; bridge.append({"evidence_ref": ref, "source_modality": row["source_modality"], "exact_excerpt": row["exact_excerpt"], "normalized_excerpt": _text(row["exact_excerpt"]).casefold(), "supports_field": field})
+    return bridge, errors
 
 
 def validate_grounded_result(result: dict[str, Any], packet: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
     missing = sorted(field for field in REQUIRED_RESULT_FIELDS if field not in result)
     if missing: errors.append("MISSING_FIELDS:" + ",".join(missing))
-    refs = {item["evidence_ref"] for item in packet["transcript_segments"]} | {item["evidence_ref"] for item in packet["OCR_normalized_lines"]}
+    refs = set(_resolved_evidence(packet))
     for field in ("hook_evidence_refs", "key_evidence_refs", "attention_evidence_refs", "relevance_evidence_refs"):
         values = result.get(field)
         if not isinstance(values, list) or not values: errors.append("MISSING_EVIDENCE_REFS:" + field)
         elif any(value not in refs for value in values): errors.append("UNKNOWN_EVIDENCE_REF:" + field)
-    summary = _text(result.get("literal_content_summary"))
-    if len(summary) < 30 or not any(_text(row["text"]).casefold()[:12] in summary.casefold() for row in packet["transcript_segments"] + packet["OCR_normalized_lines"]):
+    summary = _text(result.get("literal_content_summary")); points = result.get("key_content_points")
+    bridge, bridge_errors = _bridge(result, packet); errors.extend(bridge_errors)
+    if len(summary) < 30 or not isinstance(points, list) or not any(_text(value) for value in points) or not bridge:
         errors.append("SUMMARY_NOT_SOURCE_SPECIFIC")
+    all_content = " ".join(row["exact_excerpt"] for row in bridge).casefold()
+    if summary and any(term in summary.casefold() for term in METRICS_TERMS) and not any(term in all_content for term in METRICS_TERMS): errors.append("METRICS_ONLY_SUMMARY")
+    rationale = _text(result.get("relevance_rationale")).casefold()
+    junk_format = _text(result.get("content_format")).casefold() in {"humor", "meme", "animal", "sport", "song", "music"}
+    if result.get("NURA_relevance_decision") == "RELEVANT" and junk_format and any(term in rationale for term in UNSUPPORTED_PSYCHOLOGY_TERMS if term not in all_content): errors.append("UNSUPPORTED_PSYCHOLOGY_RATIONALE")
+    if not _text(result.get("attention_mechanism")) or not result.get("attention_evidence_refs"): errors.append("ATTENTION_NOT_GROUNDED")
+    if not rationale or not result.get("relevance_evidence_refs"): errors.append("RATIONALE_NOT_GROUNDED")
+    hook = _text(result.get("source_hook")); hook_source = " ".join(_resolved_evidence(packet)[ref]["exact_excerpt"] for ref in result.get("hook_evidence_refs") or [] if ref in refs)
+    hook_literal = hook.casefold() in hook_source.casefold() or hook_source.casefold() in hook.casefold()
+    hook_type = result.get("source_hook_type") or ("literal_source_hook" if hook_literal else "paraphrased_source_hook")
+    if "nura_relevance_decision" in result and "NURA_relevance_decision" not in result:
+        result["NURA_relevance_decision"] = result["nura_relevance_decision"]
+    if result.get("NURA_relevance_decision") in {"REJECT", "REJECTED", "NOT_RELEVANT"}:
+        result["provider_relevance_decision_raw"] = result["NURA_relevance_decision"]
+        result["NURA_relevance_decision"] = "IRRELEVANT"
     if result.get("NURA_relevance_decision") not in DECISIONS: errors.append("INVALID_RELEVANCE_DECISION")
     if any(phrase in canonical_json(result).casefold() for phrase in FORBIDDEN_TEMPLATE_PHRASES): errors.append("TEMPLATE_CONTAMINATION_PHRASE")
     if packet["evidence_sufficiency_status"] not in FINAL_EVIDENCE_STATUSES: errors.append("INVALID_EVIDENCE_STATUS")
-    return {"status": "VALID" if not errors else "INVALID", "errors": errors}
+    return {"status": "VALID" if not errors else "INVALID", "errors": list(dict.fromkeys(errors)), "supporting_evidence": bridge, "source_hook_type": hook_type}
+
+
+def _write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def run_grounded_reprocess(*, packets_root: Path, output_root: Path, reuse_only: bool = False) -> dict[str, Any]:
+    """Bounded 19-call run using the existing DeepSeek transport helper."""
+    from content_intelligence_provider import ENDPOINT, MODEL_ID, TIMEOUT_SECONDS, post_deepseek_request
+    packet_paths = sorted(packets_root.glob("*.json"))
+    if len(packet_paths) != 20: raise GroundedTriageError("REQUIRES_TWENTY_EVIDENCE_PACKETS")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    results, primary, retries, invalid = [], 0, 0, 0
+    for path in packet_paths:
+        packet = json.loads(path.read_text(encoding="utf-8")); rank = packet["original_rank"]
+        root = output_root / f"{rank:02d}"; result_path = root / "grounded-result.json"
+        if rank == 18:
+            canonical = next(item for item in results if item["rank"] == 13)
+            reused = dict(canonical["result"]); results.append({"rank": 18, "duplicate_status": "DUPLICATE_OF_RANK_13", "duplicate_of_rank": 13, "result": reused, "status": "REUSED"}); _write_json(result_path, results[-1]); continue
+        if result_path.exists():
+            stored = json.loads(result_path.read_text(encoding="utf-8")); results.append(stored); continue
+        raw_candidates = sorted(root.glob("raw-response*.json"), key=lambda candidate: candidate.stat().st_mtime)
+        preserved_raw = raw_candidates[-1] if raw_candidates else root / "raw-response.json"
+        if raw_candidates:
+            raw = json.loads(preserved_raw.read_text(encoding="utf-8"))
+            try: result = json.loads(raw["choices"][0]["message"]["content"])
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError): result = {}
+            validation = validate_grounded_result(result, packet); _write_json(root / "revalidation.json", validation)
+            if validation["status"] == "VALID":
+                stored={"rank":rank,"duplicate_status":"CANONICAL","duplicate_of_rank":None,"result":result,"status":"REVALIDATED"}; _write_json(result_path,stored);results.append(stored);continue
+        if reuse_only: raise GroundedTriageError("REUSE_ONLY_MISS")
+        if not api_key: raise GroundedTriageError("PROVIDER_UNAVAILABLE")
+        if packet["evidence_sufficiency_status"] in {"LOW_QUALITY_REQUIRES_REPROCESSING", "INSUFFICIENT_EVIDENCE"}:
+            result = {field: ([] if field.endswith("refs") or field in {"secondary_topics", "key_content_points", "unresolved_questions", "prohibited_copying_elements"} else None) for field in REQUIRED_RESULT_FIELDS}; result.update({"literal_content_summary": "Недостаточно пригодных source evidence для буквального описания.", "primary_topic": "UNDETERMINED", "content_format": "visual_only", "source_language": packet["transcript_language"], "source_hook": "UNAVAILABLE", "attention_mechanism": "UNAVAILABLE", "NURA_relevance_decision": "UNCLEAR", "relevance_rationale": packet["unresolved_blocker"] or "INSUFFICIENT_EVIDENCE", "transferable_mechanism_available": "unclear", "transferable_mechanism": "UNAVAILABLE", "junk_category": None, "safety_fit": "UNKNOWN", "confidence": "LOW"})
+            stored={"rank":rank,"duplicate_status":"CANONICAL","duplicate_of_rank":None,"result":result,"status":"TYPED_INSUFFICIENT"}; _write_json(result_path,stored);results.append(stored);continue
+        payload=build_grounded_payload(packet); request={"model":MODEL_ID,"messages":[{"role":"system","content":"Return JSON only. Analyze literal source content before relevance. Evidence refs must be exact evidence_ref values from transcript_segments or OCR_normalized_lines; never cite search_provenance or metrics. Use only RELEVANT, IRRELEVANT, or UNCLEAR. Do not introduce psychology topics absent from evidence. No NURA script. Required keys: "+", ".join(sorted(REQUIRED_RESULT_FIELDS))+". Also return source_hook_type as literal_source_hook or paraphrased_source_hook."},{"role":"user","content":canonical_json(payload)}],"response_format":{"type":"json_object"},"thinking":{"type":"disabled"},"temperature":0.2,"max_tokens":3200}
+        _write_json(root / "request-metadata.json", {"prompt_version":PROMPT_VERSION,"model":MODEL_ID,"request_hash":digest(request),"packet_hash":packet["content_hash"]})
+        response, _ = post_deepseek_request(request, api_key=api_key); raw=response.json(); raw_path = root / (f"raw-response-retry-{len(raw_candidates)}.json" if raw_candidates else "raw-response.json"); _write_json(raw_path, raw); primary += 1
+        try: result=json.loads(raw["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError): result={}
+        validation=validate_grounded_result(result,packet); _write_json(root / "validation.json",validation)
+        if validation["status"] != "VALID": invalid += 1; _write_json(root / "invalid-raw-retry-1.json",raw); results.append({"rank":rank,"duplicate_status":"CANONICAL","duplicate_of_rank":None,"result":result,"status":"INVALID","errors":validation["errors"]}); continue
+        stored={"rank":rank,"duplicate_status":"CANONICAL","duplicate_of_rank":None,"result":result,"status":"VALID"};_write_json(result_path,stored);results.append(stored)
+    findings=contamination_findings(results); _write_json(output_root / "batch-validation.json", {"status":"PASS" if not findings else "FAIL","findings":findings,"primary_calls":primary,"retries":retries,"invalid":invalid})
+    if invalid: raise GroundedTriageError("INVALID_PROVIDER_RESULTS:"+str(invalid))
+    if findings: raise GroundedTriageError("TEMPLATE_CONTAMINATION")
+    return {"status":"READY_FOR_OWNER_ACTIONABLE_TRIAGE","batch_id":json.loads(packet_paths[0].read_text(encoding="utf-8"))["batch_id"],"results":results,"primary_calls":primary,"retries":retries,"invalid":invalid,"provider_calls":primary}
 
 
 def contamination_findings(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    results = [item for item in results if not item.get("duplicate_of_rank")]
     findings = []
     for field in ("literal_content_summary", "source_hook", "relevance_rationale"):
         groups: dict[str, list[int]] = {}

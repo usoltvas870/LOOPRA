@@ -31,3 +31,21 @@ grounded provider run must reuse rank 13 rather than call the provider twice.
 
 No provider, browser, TikTok, media-download, Production Brief, renderer, or
 publication operation occurs in preflight.
+
+After the offline tests pass, the bounded grounded run is:
+
+```powershell
+python scripts/run_loopra_05_quality_recovery.py --batch fresh-v2-72a2133ce76a --grounded-reprocess --build-actionable-package --json
+```
+
+Grounded validation resolves every provider evidence reference back to the
+canonical transcript/OCR excerpt. Summaries may be semantic paraphrases; the
+application-owned evidence bridge, unknown-ref checks, metrics/genericity
+gates, and junk-format psychology gate remain deterministic. Rank 18 reuses
+rank 13 and is excluded from contamination comparisons as a known duplicate.
+
+An identical completed run must be verified without credentials:
+
+```powershell
+python scripts/run_loopra_05_quality_recovery.py --batch fresh-v2-72a2133ce76a --grounded-reprocess --build-actionable-package --reuse-only --json
+```
