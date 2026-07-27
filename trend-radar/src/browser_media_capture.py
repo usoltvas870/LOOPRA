@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
-from auth import AUTH_SESSION_VALID, inspect_page_authentication, storage_state_diagnostics
+from auth import AUTH_CHALLENGE, inspect_page_authentication, storage_state_diagnostics
 from media_acquisition import MediaAcquisitionError, _ffprobe, _safe_component, _sha256
 from page_range_media_capture import capture_page_ranges, is_range_replay_eligible
 from selection_manifest import read_selection_manifest
@@ -200,8 +200,8 @@ async def capture_browser_media_in_context(
         await page.wait_for_timeout(8_000)
         page_auth = await inspect_page_authentication(page)
         page_diagnostics = await page_player_diagnostics(page)
-        if page_auth.result != AUTH_SESSION_VALID:
-            raise MediaAcquisitionError(f"authenticated candidate page unavailable: {page_auth.reason}")
+        if page_auth.result == AUTH_CHALLENGE:
+            raise MediaAcquisitionError(f"public candidate page blocked by challenge: {page_auth.reason}")
         if not observed:
             if page_diagnostics["video_element_count"]:
                 page_diagnostics["activation_attempted"] = await activate_first_video_once(page)

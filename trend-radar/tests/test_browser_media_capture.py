@@ -186,6 +186,67 @@ async def _valid_page_auth(_page):
     return SimpleNamespace(result="session_valid", reason="fixture")
 
 
+async def _guest_page_auth(_page):
+    return SimpleNamespace(
+        result="session_refresh_required", reason="authenticated_tiktok_cookie_missing"
+    )
+
+
+async def _challenge_page_auth(_page):
+    return SimpleNamespace(result="challenge_detected", reason="challenge_detected")
+
+
+def test_guest_page_can_capture_public_media_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    class _PublicResponse(_Response):
+        async def body(self) -> bytes:
+            return b"\x00" * 8 + b"ftypisom" + b"\x00" * 2048
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage(_PublicResponse())
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _guest_page_auth)
+    monkeypatch.setattr(capture_module, "_persist_capture", lambda **kwargs: kwargs)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    result = asyncio.run(
+        capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+    )
+
+    assert result["authenticated_session_status"] == "session_refresh_required"
+    assert result["body"].startswith(b"\x00" * 8 + b"ftyp")
+    assert page.closed
+
+
+def test_challenge_blocks_public_media_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from selection_manifest import read_selection_manifest
+
+    manifest_path = _manifest(tmp_path)
+    manifest = read_selection_manifest(manifest_path)
+    page = _FakePage()
+    context = _FakeContext(page)
+    monkeypatch.setattr(capture_module, "inspect_page_authentication", _challenge_page_auth)
+    request = BrowserMediaCaptureRequest(
+        manifest_path, tmp_path / "cookies.json", tmp_path / "acquisitions",
+        candidate_id="1", maximum_file_bytes=4096,
+    )
+
+    with pytest.raises(MediaAcquisitionError, match="public candidate page blocked by challenge"):
+        asyncio.run(
+            capture_browser_media_in_context(request, manifest, manifest.candidates[0], context)
+        )
+    assert page.closed
+
+
 def test_body_unavailable_is_typed_after_one_bounded_body_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
