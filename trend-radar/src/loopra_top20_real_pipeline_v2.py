@@ -103,3 +103,31 @@ def run_offline_acceptance(*, root: Path, batch_id: str="v2-offline-batch", fail
     cards=LoopraTop20ContentIntelligenceV2().run(root=root,batch=batch,entries=entries,acquisition=acquisition)
     package=LoopraTop20EditorialReviewPackageV2().build(root=root,batch=batch,entries=entries,acquisition=acquisition,cards=cards)
     return {"status":"READY_FOR_OWNER_EDITORIAL_REVIEW","batch":batch,"acquisition":acquisition,"cards":cards,**package,"network_calls":0,"browser_calls":0,"provider_calls":0,"credentials_required":False}
+
+
+def run_fresh_top20_b1(*, root: Path, dependencies: dict[str, Callable[..., Any]] | None = None, offline: bool = False) -> dict[str, Any]:
+    """Canonical B1 execution shape; tests inject every side-effect boundary.
+
+    Production wiring is intentionally explicit: no fake boundary can be used
+    unless ``offline=True``.  This prevents a test fixture from becoming a
+    hidden production search, browser or provider implementation.
+    """
+    required=("collect","select","acquire","inspect","ocr","transcribe","provider")
+    if not dependencies or any(name not in dependencies for name in required):
+        return {"status":"BLOCKED","reason":"B1_V2_CANONICAL_BOUNDARIES_NOT_CONFIGURED"}
+    if not offline:
+        return {"status":"BLOCKED","reason":"B1_V2_PRODUCTION_DEFAULTS_NOT_WIRED"}
+    pool=dependencies["collect"](); entries=dependencies["select"](pool); _validate(entries)
+    batch=_sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"loopra_top20_v2_batch","batch_id":"fresh-v2-"+_hash(entries)[:12],"fresh_cycle_id":"fresh-cycle-"+_hash(pool)[:12],"project_context_hash":_hash("nura-context"),"semantic_hash":""})
+    acquisition=LoopraTop20MediaAcquisitionV2().run(root=root,batch=batch,entries=entries,capture_one=dependencies["acquire"])
+    failed=[item["original_rank"] for item in acquisition if item["status"] not in {"COMPLETED","REUSED","SYNTHETIC_OFFLINE"}]
+    if failed:return {"status":"PARTIAL","batch":batch,"failed_ranks":failed,"acquisition":acquisition}
+    evidence=[]
+    for entry in entries:
+        values={"inspection":dependencies["inspect"](entry),"ocr":dependencies["ocr"](entry),"transcription":dependencies["transcribe"](entry)}
+        if any(value.get("status") not in {"COMPLETED","REUSED","SYNTHETIC_OFFLINE"} for value in values.values()):
+            return {"status":"PARTIAL","batch":batch,"failed_ranks":[entry["original_rank"]],"acquisition":acquisition}
+        evidence.append(values)
+    cards=LoopraTop20ContentIntelligenceV2().run(root=root,batch=batch,entries=entries,acquisition=acquisition,provider=dependencies["provider"])
+    package=LoopraTop20EditorialReviewPackageV2().build(root=root,batch=batch,entries=entries,acquisition=acquisition,cards=cards)
+    return {"status":"READY_FOR_OWNER_EDITORIAL_REVIEW","batch":batch,"acquisition":acquisition,"evidence":evidence,"cards":cards,**package,"browser_calls":0,"network_calls":0,"provider_calls":0}

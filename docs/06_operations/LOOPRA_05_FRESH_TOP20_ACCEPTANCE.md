@@ -65,3 +65,8 @@ python scripts/run_loopra_05_fresh_acceptance.py --b1-v2-offline --json
 This proof creates no browser, network, provider call or credential read. Real
 execution remains gated until the v2 runner has been wired to the canonical
 fresh search and existing low-level capture/evidence/transport primitives.
+
+`run_fresh_top20_b1` is the single B1 orchestration shape. Its tests inject
+collection, selection, acquisition, evidence and provider boundaries; production
+cannot silently use those fakes and returns a typed readiness blocker until the
+canonical defaults are wired.
