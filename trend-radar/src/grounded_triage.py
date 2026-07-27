@@ -217,6 +217,10 @@ def validate_grounded_result(result: dict[str, Any], packet: dict[str, Any]) -> 
         result["provider_relevance_decision_raw"] = result["NURA_relevance_decision"]
         result["NURA_relevance_decision"] = "IRRELEVANT"
     if result.get("NURA_relevance_decision") not in DECISIONS: errors.append("INVALID_RELEVANCE_DECISION")
+    if isinstance(result.get("confidence"), (int, float)):
+        result["provider_confidence_raw"] = result["confidence"]
+        result["confidence"] = "HIGH" if result["confidence"] >= 0.8 else ("MEDIUM" if result["confidence"] >= 0.5 else "LOW")
+    if result.get("confidence") not in {"HIGH", "MEDIUM", "LOW"}: errors.append("INVALID_CONFIDENCE")
     if any(phrase in canonical_json(result).casefold() for phrase in FORBIDDEN_TEMPLATE_PHRASES): errors.append("TEMPLATE_CONTAMINATION_PHRASE")
     if packet["evidence_sufficiency_status"] not in FINAL_EVIDENCE_STATUSES: errors.append("INVALID_EVIDENCE_STATUS")
     return {"status": "VALID" if not errors else "INVALID", "errors": list(dict.fromkeys(errors)), "supporting_evidence": bridge, "source_hook_type": hook_type}
@@ -241,7 +245,8 @@ def run_grounded_reprocess(*, packets_root: Path, output_root: Path, reuse_only:
             canonical = next(item for item in results if item["rank"] == 13)
             reused = dict(canonical["result"]); results.append({"rank": 18, "duplicate_status": "DUPLICATE_OF_RANK_13", "duplicate_of_rank": 13, "result": reused, "status": "REUSED"}); _write_json(result_path, results[-1]); continue
         if result_path.exists():
-            stored = json.loads(result_path.read_text(encoding="utf-8")); results.append(stored); continue
+            stored = json.loads(result_path.read_text(encoding="utf-8")); validation = validate_grounded_result(stored.get("result") or {}, packet)
+            if validation["status"] == "VALID": _write_json(result_path, stored); results.append(stored); continue
         raw_candidates = sorted(root.glob("raw-response*.json"), key=lambda candidate: candidate.stat().st_mtime)
         preserved_raw = raw_candidates[-1] if raw_candidates else root / "raw-response.json"
         if raw_candidates:

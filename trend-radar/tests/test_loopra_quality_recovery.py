@@ -188,3 +188,11 @@ def test_duplicate_reuse_does_not_trigger_contamination():
     result = _result(_packet())
     rows = [{"rank": 13, "result": result, "duplicate_of_rank": None}, {"rank": 18, "result": result, "duplicate_of_rank": 13}]
     assert grounded_contamination_findings(rows) == []
+
+
+def test_numeric_provider_confidence_is_canonicalized_for_owner_schema():
+    packet, result = _packet(), _result(_packet())
+    result["confidence"] = 0.85
+    assert validate_grounded_result(result, packet)["status"] == "VALID"
+    assert result["confidence"] == "HIGH"
+    assert result["provider_confidence_raw"] == 0.85
