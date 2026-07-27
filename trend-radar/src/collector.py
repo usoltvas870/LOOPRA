@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
+from urllib.parse import urlparse
+import re
 
 from playwright.async_api import async_playwright, Browser
 
@@ -28,6 +30,39 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ]
+
+_VIDEO_PATH_RE = re.compile(r'^/@[^/]+/video/(\d{15,25})/?$')
+_UNAVAILABLE_MARKERS = ('video is unavailable', 'video currently unavailable', 'видео недоступно', "couldn't find this video")
+_PRIVATE_MARKERS = ('this account is private', 'this video is private', 'private video', 'video has been removed', 'video was deleted')
+_REGION_MARKERS = ('unavailable in your region', 'not available in your region', 'not available in your country')
+
+
+def _classify_video_page(expected_video_id: str, final_url: str, text: str, evidence: dict) -> tuple[str, str]:
+    """Classify the user-visible permalink state; a successful navigation is insufficient."""
+    normalized_text = (text or '').lower()
+    parsed = urlparse(final_url)
+    path_match = _VIDEO_PATH_RE.match(parsed.path)
+    final_video_id = path_match.group(1) if path_match else None
+
+    if 'challenge' in final_url.lower() or 'captcha' in normalized_text:
+        return 'CHALLENGE', 'challenge_or_captcha_detected'
+    if 'login' in final_url.lower() or (evidence.get('login_overlay') and not (evidence.get('metadata_video_id') == expected_video_id or evidence.get('item_detail_video_id') == expected_video_id)):
+        return 'LOGIN_REQUIRED', 'login_overlay_or_redirect_detected'
+    if any(marker in normalized_text for marker in _REGION_MARKERS):
+        return 'REGION_RESTRICTED', 'region_restriction_marker_detected'
+    if any(marker in normalized_text for marker in _PRIVATE_MARKERS):
+        return 'PRIVATE_OR_DELETED', 'private_or_deleted_marker_detected'
+    if any(marker in normalized_text for marker in _UNAVAILABLE_MARKERS):
+        return 'NOT_FOUND', 'unavailable_or_not_found_marker_detected'
+    if parsed.hostname not in ('tiktok.com', 'www.tiktok.com') or final_video_id != expected_video_id:
+        return 'REDIRECTED_AWAY', 'final_url_is_not_the_expected_video_permalink'
+
+    has_expected_page_identity = evidence.get('metadata_video_id') == expected_video_id or evidence.get('item_detail_video_id') == expected_video_id
+    if not has_expected_page_identity:
+        return 'GENERIC_SHELL', 'expected_video_id_not_present_in_video_page_state'
+    if not evidence.get('video_playback_ready'):
+        return 'RADAR_CONTEXT_UNCONFIRMED', 'expected_video_identity_present_but_media_not_ready'
+    return 'RADAR_PLAYABLE', 'media_ready_in_radar_context_user_confirmation_required'
 
 
 class TikTokCollector:
@@ -140,21 +175,25 @@ class TikTokCollector:
         logger.info('Browser started')
 
     async def close(self):
-        if not self.diagnostic_mode and self.authentication_state == 'authenticated' and self.owns_browser and self.context and self.cookie_path:
-            try:
-                cookies = await self.context.cookies()
-                storage_data = {'cookies': cookies, 'origins': []}
-                write_state_atomic(self.cookie_path, storage_data)
-                logger.info(f'Saved {len(cookies)} cookies to {self.cookie_path}')
-            except Exception as e:
-                logger.warning(f'Failed to save cookies: {e}')
-        if self.browser:
+        try:
+            if not self.diagnostic_mode and self.authentication_state == 'authenticated' and self.owns_browser and self.context and self.cookie_path:
+                try:
+                    cookies = await self.context.cookies()
+                    write_state_atomic(self.cookie_path, {'cookies': cookies, 'origins': []})
+                    logger.info(f'Saved {len(cookies)} cookies to {self.cookie_path}')
+                except Exception as e:
+                    logger.warning(f'Failed to save cookies: {e}')
             if self.connected_over_cdp:
                 logger.info('Detached from Chrome (keeping browser open)')
-            elif self.owns_browser:
-                await self.browser.close()
-                logger.info('Browser closed')
-        await self._stop_playwright()
+            else:
+                if self.context is not None and hasattr(self.context, 'close'):
+                    await self.context.close()
+                self.context = None
+                if self.owns_browser and self.browser is not None:
+                    await self.browser.close()
+                    logger.info('Browser closed')
+        finally:
+            await self._stop_playwright()
 
     async def _stop_playwright(self):
         if self.playwright:
@@ -480,32 +519,45 @@ class TikTokCollector:
         return videos
 
     async def validate_candidate_links(self, videos: list[dict]) -> list[dict]:
-        """Validate a bounded manual-review set; 200 error pages are not accepted."""
+        """Validate a bounded manual-review set from the user-visible permalink page."""
         for video in videos:
             page = await self.context.new_page()
             try:
                 await page.goto(video['url'], wait_until='domcontentloaded', timeout=20_000)
-                await asyncio.sleep(1)
-                text = (await page.locator('body').inner_text())[:3000].lower()
+                await page.wait_for_timeout(2_000)
+                text = (await page.locator('body').inner_text())[:10_000]
                 final_url = page.url
-                found_id = extract_video_id(final_url)
-                unavailable = any(term in text for term in ('video is unavailable', 'видео недоступно', 'couldn\'t find this video'))
-                if 'challenge' in final_url.lower() or 'captcha' in text:
-                    status = 'CHALLENGE'
-                elif 'login' in final_url.lower():
-                    status = 'LOGIN_REQUIRED'
-                elif unavailable:
-                    status = 'PRIVATE_OR_DELETED'
-                elif found_id == video['video_id']:
-                    status = 'AVAILABLE' if final_url.split('?', 1)[0] == video['url'] else 'REDIRECTED_TO_CANONICAL'
-                else:
-                    status = 'VALIDATION_UNKNOWN'
-                video.update(link_status=status, link_validation_timestamp=utc_iso(), link_final_hostname=final_url.split('/')[2] if '//' in final_url else None)
+                evidence = await page.evaluate("""(expectedId) => {
+                    const meta = [...document.querySelectorAll('meta')];
+                    const value = (name) => meta.find((node) => node.getAttribute('property') === name || node.getAttribute('name') === name)?.getAttribute('content') || '';
+                    const html = document.documentElement.innerHTML;
+                    const itemDetail = /(?:ItemModule|itemDetail)[\\s\\S]{0,2000}?\\\"id\\\"\\s*:\\s*\\\"?(\\d{15,25})/.exec(html);
+                    const ogUrl = value('og:url');
+                    const metadataId = /\\/video\\/(\\d{15,25})/.exec(ogUrl)?.[1] || null;
+                    const videos = [...document.querySelectorAll('video')];
+                    return {
+                        metadata_video_id: metadataId || null,
+                        item_detail_video_id: itemDetail?.[1] || null,
+                        video_playback_ready: videos.some((video) =>
+                            Boolean(video.currentSrc || video.src)
+                            && video.readyState >= 1
+                            && video.videoWidth > 0
+                            && video.videoHeight > 0
+                            && Number.isFinite(video.duration)
+                            && video.duration > 0
+                        ),
+                        login_overlay: Boolean(document.querySelector('[data-e2e*=login], [data-e2e*=Login], input[type=password]')),
+                    };
+                }""", video['video_id'])
+                status, reason = _classify_video_page(video['video_id'], final_url, text, evidence)
+                video.update(link_status=status, link_validation_timestamp=utc_iso(), link_final_hostname=urlparse(final_url).hostname,
+                             link_final_url=final_url, link_validation_reason=reason)
                 video['canonical_url_status'] = status
-                if status not in ('AVAILABLE', 'REDIRECTED_TO_CANONICAL'):
+                if status != 'RADAR_PLAYABLE':
                     video.setdefault('identity_warnings', []).append(f'link_validation={status}')
-            except Exception:
-                video.update(link_status='NETWORK_ERROR', link_validation_timestamp=utc_iso(), canonical_url_status='NETWORK_ERROR')
+            except Exception as error:
+                video.update(link_status='NETWORK_ERROR', link_validation_timestamp=utc_iso(), canonical_url_status='NETWORK_ERROR',
+                             link_validation_reason=f'navigation_or_inspection_failed:{type(error).__name__}')
                 video.setdefault('identity_warnings', []).append('link_validation=NETWORK_ERROR')
             finally:
                 await page.close()
