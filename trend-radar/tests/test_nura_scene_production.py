@@ -2,11 +2,12 @@ import json, sys
 from pathlib import Path
 import pytest
 ROOT = Path(__file__).resolve().parents[1]; sys.path[:0] = [str(ROOT / "src")]
-from nura_scene_production import FakeSceneProvider, NuraSceneProductionError, compose_canonical_prompts, finalize_scene_review, record_operator_rejection, record_owner_scene_decision, reprocess_existing_raw, run_scene_production
+from nura_scene_production import FakeSceneProvider, NuraSceneProductionError, build_simplified_operator_export, compose_canonical_prompts, finalize_scene_review, record_operator_rejection, record_owner_scene_decision, reprocess_existing_raw, run_scene_production
 BRIDGE = ROOT / "data/nura-script-episode-bridge/nura-script-production-bridge-79d69d42079e/script_to_production_bridge.json"
 PROFILE = ROOT / "data/nura-production-asset-handoff/8fc6df087d0aee2b5056e3c79bc4fbd90f1f187fdf168f1f2fb32943f8cc0071/production_reference_profile.json"
 OLD = ROOT / "data/nura-scene-production-real/nura-scene-production-84aa0ff087b1"
 REVIEW = ROOT / "data/nura-scene-production-real/nura-scene-production-offline-e6c0cee822dc"
+FINALIZED = ROOT / "data/nura-scene-production-finalized/nura-scene-production-finalized-2aad84cd2c40"
 def _decision(tmp_path: Path) -> Path:
     path = tmp_path / "decision.json"; record_operator_rejection(rejected_package_path=OLD / "scene_production_package.json", raw_response_path=OLD / "raw_provider_response.json", output_path=path); return path
 def test_corrected_fake_package_has_three_talking_avatar_scenes_and_reuses(tmp_path: Path) -> None:
@@ -105,3 +106,28 @@ def test_conflicting_owner_decision_is_rejected(tmp_path: Path) -> None:
     record_owner_scene_decision(package_path=REVIEW / "scene_production_package.json", output_path=decision, reviewed_at="2026-07-27T00:00:00+00:00")
     with pytest.raises(NuraSceneProductionError, match="CONFLICTING_SCENE_PACKAGE_REUSE"):
         record_owner_scene_decision(package_path=REVIEW / "scene_production_package.json", output_path=decision, reviewed_at="2026-07-27T00:00:01+00:00")
+
+
+def test_one_image_operator_export_is_minimal_integrated_and_reused(tmp_path: Path) -> None:
+    source_before = (FINALIZED / "finalized_scene_production_package.json").read_bytes()
+    kwargs = {"finalized_package_path": FINALIZED / "finalized_scene_production_package.json", "finalized_handoff_path": FINALIZED / "finalized_manual_heygen_handoff.json", "output_root": tmp_path, "visual_generation_strategy": "ONE_IMAGE"}
+    first, second = build_simplified_operator_export(**kwargs), build_simplified_operator_export(**kwargs)
+    assert first["status"] == "COMPLETED" and second["status"] == "REUSED"
+    assert first["visual_generation_strategy"] == "ONE_IMAGE" and first["prompt_count"] == 1
+    assert first["files"] == ["01_TEXT_RU.txt", "02_IMAGE_PROMPT.txt", "03_REFERENCE_INSTRUCTION.txt", "README_RU.txt"]
+    assert not any("NEGATIVE" in name or "SAFE_AREA" in name or "OPERATOR_NOTE" in name for name in first["files"])
+    prompt = first["prompts"][0].lower()
+    assert all(marker in prompt for marker in ("attached canonical nura reference", "2d / 2.5d", "vertical 9:16", "future subtitles", "integrated constraints", "watermarks"))
+    assert first["network_calls"] == 0 and first["credentials_required"] is False and first["provider_called"] is False
+    assert (FINALIZED / "finalized_scene_production_package.json").read_bytes() == source_before
+
+
+def test_multi_image_operator_export_is_supported_and_self_contained(tmp_path: Path) -> None:
+    result = build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, visual_generation_strategy="MULTI_IMAGE")
+    assert result["prompt_count"] == 3 and len([name for name in result["files"] if "IMAGE_PROMPT" in name]) == 3
+    assert all("attached canonical nura reference" in prompt.lower() and "integrated constraints" in prompt.lower() for prompt in result["prompts"])
+
+
+def test_operator_export_rejects_unknown_strategy(tmp_path: Path) -> None:
+    with pytest.raises(NuraSceneProductionError, match="UNSUPPORTED_VISUAL_GENERATION_STRATEGY"):
+        build_simplified_operator_export(finalized_package_path=FINALIZED / "finalized_scene_production_package.json", finalized_handoff_path=FINALIZED / "finalized_manual_heygen_handoff.json", output_root=tmp_path, visual_generation_strategy="AUTO")

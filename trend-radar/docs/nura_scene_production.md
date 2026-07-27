@@ -83,6 +83,33 @@ Run the deterministic owner-finalization acceptance:
 python trend-radar/run_nura_scene_finalization_acceptance.py --json
 ```
 
+## Simplified operator export
+
+LOOPRA 0.5 separates internal canonical JSON artifacts from the material an
+operator actually uses. Internal packages retain provenance, review and
+reproducibility. The derived user-facing export requires no JSON reading and
+contains only the approved Russian text, ChatGPT-ready image prompt(s), a short
+reference instruction and a concise Russian README.
+
+`visual_generation_strategy` is explicit: `ONE_IMAGE` creates one image task
+for a continuous talking-guide video; `MULTI_IMAGE` creates independently usable
+prompts only when distinct visuals are justified. Current Rank 1 uses
+`ONE_IMAGE`: it is a 25–30 second single-speaker TALKING_GUIDE with one identity,
+location, wardrobe and emotional arc, so the previous three internal scenes do
+not justify three near-identical source images.
+
+The ChatGPT-ready prompt integrates identity-reference usage, scene direction,
+style, composition, talking-avatar requirements, safe area, and all negative
+constraints. Separate negative-prompt, safe-area and operator-note files are not
+part of the user-facing export because the owner's manual ChatGPT workflow uses
+one pasted prompt.
+
+Run the offline correction acceptance:
+
+```powershell
+python trend-radar/run_nura_operator_export_acceptance.py --json
+```
+
 Run the deterministic acceptance:
 
 ```powershell
