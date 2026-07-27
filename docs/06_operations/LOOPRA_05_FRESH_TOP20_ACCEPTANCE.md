@@ -50,3 +50,18 @@ resumed without deleting the nineteen completed items. `--b1-real` is typed
 blocked as `REAL_B1_NOT_ENABLED_UNTIL_ADAPTER_FOUNDATION_COMMITTED`; it must not
 start a browser, search, provider call or credential lookup. B1A does not alter
 the v1 five-item limits or its report/review contracts.
+
+## B1B v2 real-pipeline contracts
+
+The approval-only v2 layer is separate from every v1 five-item API. It defines
+`LoopraTop20MediaAcquisitionV2`, `LoopraTop20ContentIntelligenceRequestV2`,
+`LoopraTop20ContentIntelligenceCardV2`, the ordered aggregate and the owner
+review package. Its offline proof is available via:
+
+```powershell
+python scripts/run_loopra_05_fresh_acceptance.py --b1-v2-offline --json
+```
+
+This proof creates no browser, network, provider call or credential read. Real
+execution remains gated until the v2 runner has been wired to the canonical
+fresh search and existing low-level capture/evidence/transport primitives.

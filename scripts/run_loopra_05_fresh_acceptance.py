@@ -11,11 +11,12 @@ def main(argv=None):
  p=argparse.ArgumentParser(description="Stage 5O-B0 offline synthetic TOP-20 acceptance.")
  p.add_argument("--runtime-root",type=Path,default=ROOT/"trend-radar/data/loopra-05-final-top20")
  p.add_argument("--offline-synthetic-acceptance",action="store_true"); p.add_argument("--initialize",action="store_true"); p.add_argument("--collect",action="store_true"); p.add_argument("--editorial-package",action="store_true"); p.add_argument("--finalize-editorial",action="store_true"); p.add_argument("--generate-scripts",action="store_true"); p.add_argument("--script-package",action="store_true"); p.add_argument("--finalize-scripts",action="store_true"); p.add_argument("--build-exports",action="store_true"); p.add_argument("--owner-accept",action="store_true"); p.add_argument("--verify",action="store_true"); p.add_argument("--json",action="store_true")
- p.add_argument("--b1-offline-synthetic",action="store_true"); p.add_argument("--b1-real",action="store_true"); p.add_argument("--b1-initialize",action="store_true"); p.add_argument("--b1-simulate",action="store_true"); p.add_argument("--b1-report",action="store_true"); p.add_argument("--b1-review",action="store_true"); p.add_argument("--b1-verify",action="store_true"); p.add_argument("--b1-fail-rank",type=int)
+ p.add_argument("--b1-offline-synthetic",action="store_true"); p.add_argument("--b1-v2-offline",action="store_true"); p.add_argument("--b1-real",action="store_true"); p.add_argument("--b1-initialize",action="store_true"); p.add_argument("--b1-simulate",action="store_true"); p.add_argument("--b1-report",action="store_true"); p.add_argument("--b1-review",action="store_true"); p.add_argument("--b1-verify",action="store_true"); p.add_argument("--b1-fail-rank",type=int)
  a=p.parse_args(argv)
  try:
   b1=LoopraTop20B1Adapter(runtime_root=a.runtime_root)
   if a.b1_real: result=LoopraTop20B1Adapter.real_b1_not_enabled()
+  elif a.b1_v2_offline: result=b1.run_v2_offline_acceptance(fail_rank=a.b1_fail_rank)
   elif a.b1_offline_synthetic: result=run_synthetic_acceptance(runtime_root=a.runtime_root)
   elif a.b1_initialize: result=b1.initialize()
   elif a.b1_simulate: result=b1.simulate_execution(fail_rank=a.b1_fail_rank)

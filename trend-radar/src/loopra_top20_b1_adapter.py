@@ -191,6 +191,11 @@ class LoopraTop20B1Adapter:
         retryable = sum(item["current_stage"] == "RETRYABLE_FAILURE" for item in items)
         return {"total": TARGET_COUNT, "completed": completed, "retryable_failures": retryable, "resumable": TARGET_COUNT - completed}
 
+    def run_v2_offline_acceptance(self, *, fail_rank: int | None = None) -> dict[str, Any]:
+        """Exercise the approved v2 contracts without a browser or provider."""
+        from loopra_top20_real_pipeline_v2 import run_offline_acceptance
+        return run_offline_acceptance(root=self.root / "v2", batch_id=self.batch_id, fail_rank=fail_rank)
+
     @staticmethod
     def real_b1_not_enabled() -> dict[str, Any]:
         return {"status": "BLOCKED", "reason": REAL_B1_BLOCK, "network_calls": 0, "browser_calls": 0, "provider_calls": 0}
