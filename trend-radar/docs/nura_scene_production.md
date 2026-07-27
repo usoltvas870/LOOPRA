@@ -56,6 +56,33 @@ original provider prompts, writes a validation report and produces a new
 It never auto-generates images, transfers data to HeyGen, or marks production
 execution ready.
 
+## Human finalization
+
+An owner `APPROVE_WITH_EDITS` decision never rewrites the review package. The
+human finalizer creates a separate immutable package that retains both the
+provider creative delta and the original application-composed prompt, alongside
+the final human-approved positive and negative prompts, revision reasons,
+reviewer identity, timestamp and hashes. Repeating the same decision reuses the
+same artifacts; a conflicting decision cannot overwrite them.
+
+Final positive prompts are ordered, deduplicated descriptions of identity,
+scene direction, environment, composition, talking-avatar requirements and
+safe area. Prohibitions live only in the deduplicated negative prompt, including
+the specific `childish cartoon style` constraint rather than a generic cartoon
+ban.
+
+The finalized manual handoff embeds the approved subtitle source, provisional
+timing state, optional music role and empty per-scene image/clip placeholders.
+`READY_FOR_EXTERNAL_IMAGE_GENERATION` authorizes only manual operator work; it
+does not mean that images, voice tracks, HeyGen clips, subtitle timing or video
+production are ready.
+
+Run the deterministic owner-finalization acceptance:
+
+```powershell
+python trend-radar/run_nura_scene_finalization_acceptance.py --json
+```
+
 Run the deterministic acceptance:
 
 ```powershell
