@@ -73,6 +73,12 @@ def run_public_first_workbook(
         access = pool.get("public_access_status") or pool.get("status")
         if access in {"PUBLIC_ACCESS_BLOCKED", "CAPTCHA_OR_ANTI_BOT_CHALLENGE", "RATE_LIMITED"}:
             return {"status": access, "counters": counters, "pool": pool}
+        existing_package = Path(output_root) / f"LOOPRA_05_TREND_WORKBOOK_{_safe_component(pool['search_run_id'])}"
+        if existing_package.is_dir():
+            package = build_package(project_id=project_id, search_run_id=pool["search_run_id"], candidates=[], output_root=output_root)
+            manifest = json.loads((existing_package / "manifest.json").read_text(encoding="utf-8"))
+            status = "READY_FOR_OWNER_WORKBOOK_REVIEW" if package["exported"] >= 20 else "PARTIAL_INSUFFICIENT_VALID_MEDIA"
+            return {"status": status, "package": package, "manifest": manifest, "pool": pool, "counters": counters, "provider_calls": 0, "script_calls": 0}
         entries = production_dependencies["select"](pool)
         if not entries:
             return {"status": "PARTIAL_INSUFFICIENT_RELEVANT_CANDIDATES", "counters": counters, "pool": pool}

@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(ROOT / "trend-radar" / "src"))
 from trend_workbook import TrendWorkbookError, build_package, run_public_first_workbook
 
