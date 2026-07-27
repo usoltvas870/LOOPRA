@@ -178,7 +178,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 def _canonical_services() -> dict[str, Any]:
     """Centralized imports for the production composition boundary."""
     from browser_media_capture import BrowserMediaCaptureRequest, _read_reusable_record, capture_browser_media_in_context
-    from collector import TikTokCollector
+    from collector import RadarOperationalError, TikTokCollector
     from content_intelligence import build_analysis_input, build_card, validate_provider_result
     from content_intelligence_provider import (
         DeepSeekContentIntelligenceProvider, PROMPT_VERSION, build_provider_payload,
@@ -262,6 +262,7 @@ def build_fresh_top20_b1_production_dependencies(
     state: dict[str, Any] = {"acquisition_records": {}, "manifest": None, "manifest_path": None, "acquisition_collector": None}
     canonical_root = root / "canonical"
     collection_path = canonical_root / "collection.json"
+    collection_status_path = canonical_root / "collection-status.json"
 
     def collect() -> dict[str, Any]:
         existing = _read_json(collection_path)
@@ -272,7 +273,12 @@ def build_fresh_top20_b1_production_dependencies(
         values = {name: services["read_source_file"](name) for name in config_names}
         rotational = values["rotational.txt"]
         sources = {"competitors": values["competitors.txt"], "hashtags": values["hashtags.txt"], "keywords": values["keywords.txt"], "rotational": {"hashtags": [item for item in rotational if len(item.split()) == 1], "keywords": [item for item in rotational if len(item.split()) > 1]}}
+        refs = [{"reference": f"trend-radar/config/{name}", "sha256": _file_sha256(config_dir / name)} for name in config_names]
         collector = services["TikTokCollector"](headless=services["get_config_bool"]("HEADLESS", True))
+        resumable = _read_json(collection_status_path)
+        if resumable and resumable.get("status") == "AUTHENTICATION_REQUIRED":
+            collector.run_id = resumable["search_run_id"]
+            collector.collected_at = resumable["search_timestamp"]
 
         async def execute():
             try:
@@ -282,13 +288,19 @@ def build_fresh_top20_b1_production_dependencies(
             finally:
                 await collector.close()
 
-        candidates = _run_async(execute())
+        try:
+            candidates = _run_async(execute())
+        except services["RadarOperationalError"] as error:
+            if error.reason not in {"authentication_required", "authentication_timeout"}:
+                raise
+            status = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection_status","status":"AUTHENTICATION_REQUIRED","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":_hash(refs),"raw_candidate_count":0,"deduplicated_candidate_count":0,"warnings":[error.reason],"authentication_state":getattr(collector,"last_authentication_state",None),"resumable":True,"semantic_hash":""})
+            _atomic(collection_status_path, status)
+            raise LoopraTop20V2Error("AUTHENTICATION_REQUIRED") from error
         raw_count = len(candidates); unique: dict[str, dict[str, Any]] = {}
         for candidate in candidates:
             identity = str(candidate.get("video_id") or candidate.get("url") or "")
             if identity and identity not in unique: unique[identity] = candidate
         ranked = services["compute_scores"](list(unique.values()))
-        refs = [{"reference": f"trend-radar/config/{name}", "sha256": _file_sha256(config_dir / name)} for name in config_names]
         warnings = [str(item.get("error_reason")) for item in getattr(collector, "source_attempts", []) if item.get("error_reason")]
         payload = _sealed({"schema_version":SCHEMA_VERSION,"artifact_kind":"fresh_top20_collection","search_run_id":collector.run_id,"search_timestamp":collector.collected_at,"config_references":refs,"config_sha256":_hash(refs),"raw_candidate_count":raw_count,"deduplicated_candidate_count":len(ranked),"warnings":warnings,"candidates":ranked,"semantic_hash":""})
         _atomic(collection_path, payload)

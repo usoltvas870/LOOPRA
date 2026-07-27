@@ -455,6 +455,8 @@ class TikTokCollector:
 
             return videos[:self.max_results]
 
+        except RadarOperationalError:
+            raise
         except Exception as e:
             logger.error(f'Error at {url}: {e}')
             self.last_collection_reason = 'collection_failed'

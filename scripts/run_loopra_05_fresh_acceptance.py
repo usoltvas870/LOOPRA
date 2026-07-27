@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/"trend-radar/src")]
 from loopra_top20_acceptance_batch import (Top20AcceptanceError, initialize, collect_synthetic, create_editorial_package, finalize_editorial, generate_scripts, create_script_package, finalize_scripts, build_exports, owner_accept, verify, TARGET_COUNT)
 from loopra_top20_b1_adapter import LoopraTop20B1Adapter, LoopraTop20B1Error, run_synthetic_acceptance
-from loopra_top20_real_pipeline_v2 import build_fresh_top20_b1_production_dependencies, run_fresh_top20_b1, validate_fresh_top20_b1_production_readiness
+from loopra_top20_real_pipeline_v2 import LoopraTop20V2Error, build_fresh_top20_b1_production_dependencies, run_fresh_top20_b1, validate_fresh_top20_b1_production_readiness
 def _decisions(name): return [{"rank":rank,"decision":name} for rank in range(1,TARGET_COUNT+1)]
 def main(argv=None):
  p=argparse.ArgumentParser(description="Stage 5O-B0 offline synthetic TOP-20 acceptance.")
@@ -38,7 +38,9 @@ def main(argv=None):
   elif a.build_exports: result=build_exports(runtime_root=a.runtime_root)
   elif a.owner_accept: result=owner_accept(runtime_root=a.runtime_root,decision="ACCEPTED",human_confirmation=True)
   else: result=verify(runtime_root=a.runtime_root)
+ except LoopraTop20V2Error as error:
+  reason=str(error); result={"status":"AUTHENTICATION_REQUIRED" if reason=="AUTHENTICATION_REQUIRED" else "BLOCKED","reason":reason}
  except (Top20AcceptanceError, LoopraTop20B1Error) as error: result={"status":"BLOCKED","reason":str(error)}
  print(json.dumps(result,ensure_ascii=False,sort_keys=True,default=str) if a.json else result["status"])
- return 0 if result["status"] not in {"BLOCKED"} else 1
+ return 0 if result["status"] not in {"BLOCKED","AUTHENTICATION_REQUIRED"} else 1
 if __name__=="__main__": raise SystemExit(main())
