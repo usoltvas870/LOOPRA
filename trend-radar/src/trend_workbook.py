@@ -77,7 +77,7 @@ def run_public_first_workbook(
         if not entries:
             return {"status": "PARTIAL_INSUFFICIENT_RELEVANT_CANDIDATES", "counters": counters, "pool": pool}
         pool_by_id = {str(item.get("video_id")): item for item in pool.get("candidates", [])}
-        candidates: list[dict[str, Any]] = []
+        acquired_candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
         failures: list[dict[str, Any]] = []
         for entry in entries:
             counters["acquisition_calls"] += 1
@@ -88,6 +88,9 @@ def run_public_first_workbook(
             source = runtime_root / str(acquisition["source_media_reference"])
             original = dict(pool_by_id.get(str(entry["video_id"]), {}))
             original.update(video_id=entry["video_id"], candidate_id=entry["candidate_id"], local_media_path=str(source))
+            acquired_candidates.append((entry, original))
+        candidates: list[dict[str, Any]] = []
+        for entry, original in acquired_candidates:
             counters["ocr_calls"] += 1
             ocr = production_dependencies["ocr"](entry)
             counters["transcription_calls"] += 1
