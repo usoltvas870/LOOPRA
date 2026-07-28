@@ -28,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--reuse-only", action="store_true")
     value.add_argument("--dry-run", action="store_true")
     value.add_argument("--refresh", action="store_true", help="Explicitly collect a new immutable snapshot.")
+    value.add_argument("--diagnostic", action="store_true", help="Persist privacy-safe browser diagnostics in ignored runtime output.")
     value.add_argument("--json", action="store_true", dest="json_output")
     return value
 
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
             output_root=args.output_root.resolve(), repository_root=ROOT,
             max_comments=args.max_comments, max_scrolls=args.max_scrolls,
             timeout_seconds=args.timeout, headed=args.headed, reuse_only=args.reuse_only,
-            dry_run=args.dry_run, refresh=args.refresh,
+            dry_run=args.dry_run, refresh=args.refresh, diagnostic=args.diagnostic,
         )
     except (CommentIntelligenceError, OSError, ValueError) as error:
         result = {"status": "BLOCKED", "failure_code": str(error), "browser_calls": 0, "network_calls": 0, "provider_calls": 0}

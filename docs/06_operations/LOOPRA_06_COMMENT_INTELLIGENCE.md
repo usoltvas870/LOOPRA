@@ -27,6 +27,13 @@ bounded plan without opening a browser or calling a provider. `--reuse-only`
 uses only a complete content-identical artifact; it performs zero browser,
 network, or provider calls. A fresh snapshot requires explicit `--refresh`.
 
+Use `--diagnostic` only for a bounded forensic run. It writes ignored
+screenshots plus sanitized page, network, and DOM inventories to the run's
+`diagnostics/` folder. The collector opens the comment panel before attempting
+DOM extraction and scrolls that panel rather than the page. If the public
+surface does not expose a usable panel, it returns a precise status such as
+`COMMENTS_PANEL_NOT_FOUND` rather than treating that as an empty sample.
+
 ## Privacy and evidence
 
 Canonical files contain only run-local `C0001`-style references, comment text,

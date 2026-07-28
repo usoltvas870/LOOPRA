@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 import sys
@@ -18,7 +19,9 @@ from comment_intelligence import (  # noqa: E402
 )
 from tiktok_comment_collector import (  # noqa: E402
     CommentCollectionResult, CollectedComment, DOM, NETWORK_RESPONSE,
-    classify_page_signals, extract_comments_from_dom, extract_comments_from_response,
+    _DiagnosticRecorder, _explicit_zero_comment_evidence, _response_comment_roots,
+    _safe_button_name, classify_page_signals, extract_comments_from_dom,
+    extract_comments_from_response,
 )
 
 
@@ -163,6 +166,61 @@ def test_collection_blockers_are_preserved(tmp_path: Path, stop_reason: str, exp
     assert result["status"] == expected and result["provider_calls"] == 0
 
 
+@pytest.mark.parametrize("stop_reason", ["COMMENTS_PANEL_NOT_FOUND", "COMMENTS_PANEL_NOT_OPENED", "COMMENTS_VISIBLE_BUT_NOT_EXTRACTED", "NETWORK_COMMENT_PAYLOAD_UNRECOGNIZED", "ZERO_COMMENTS_CONFIRMED"])
+def test_zero_comment_forensics_status_is_not_collapsed_to_partial(tmp_path: Path, stop_reason: str) -> None:
+    def blocked(url: str, **kwargs):
+        result = _collected(0)
+        return CommentCollectionResult(result.comments, result.access_mode, result.collection_method, stop_reason, 1, 0, "PASS", False, False, False, 0)
+    input_file = tmp_path / "selected_video.txt"; input_file.write_text("https://www.tiktok.com/@person/video/1234567890123456789", encoding="utf-8")
+    result = run_comment_intelligence(project_id="nura", input_file=input_file, output_root=tmp_path / "out", repository_root=tmp_path, services=CommentIntelligenceServices(collect=blocked))
+    assert result["status"] == stop_reason and result["provider_calls"] == 0
+
+
 def test_manual_intake_is_not_imported_or_changed_by_comment_runner(tmp_path: Path) -> None:
     result = run_comment_intelligence(project_id="nura", input_file=tmp_path / "missing.txt", output_root=tmp_path / "out", repository_root=tmp_path)
     assert result["status"] == "READY_FOR_OWNER_COMMENT_PILOT_INPUT"
+
+
+def test_comment_button_strategy_rejects_like_share_and_login_controls() -> None:
+    assert _safe_button_name("Open comments")
+    assert _safe_button_name("Комментарии 42")
+    assert not _safe_button_name("Like")
+    assert not _safe_button_name("Share comments")
+    assert not _safe_button_name("Login to comment")
+
+
+def test_network_adapter_recognizes_only_explicit_comment_shapes() -> None:
+    roots, recognized = _response_comment_roots({"data": {"comments": [{"cid": "a", "text": "comment"}], "cursor": 1, "has_more": True}})
+    assert recognized and roots and roots[0]["cid"] == "a"
+    roots, recognized = _response_comment_roots({"data": {"title": "caption", "text": "not a comment"}, "cursor": 1})
+    assert roots is None and not recognized
+
+
+@pytest.mark.parametrize(("label", "expected"), [("0 comments", True), ("0 комментариев", True), ("comments 12", False), (None, False)])
+def test_zero_comments_confirmed_only_by_explicit_evidence(label: str | None, expected: bool) -> None:
+    assert _explicit_zero_comment_evidence(label) is expected
+
+
+class _DiagnosticLocator:
+    def __init__(self, value="", count=0): self.value, self._count = value, count
+    async def count(self): return self._count
+    async def get_attribute(self, _): return self.value
+    async def evaluate_all(self, _): return []
+
+
+class _DiagnosticPage:
+    url = "https://www.tiktok.com/@source/video/1234567890123456789?secret=no"
+    async def screenshot(self, path): Path(path).write_bytes(b"png")
+    async def title(self): return "Public video"
+    def locator(self, selector): return _DiagnosticLocator("ru", 1 if selector == "html" else 0)
+
+
+def test_diagnostic_artifacts_are_created_and_sanitized(tmp_path: Path) -> None:
+    recorder = _DiagnosticRecorder(tmp_path / "diagnostics")
+    page = _DiagnosticPage()
+    asyncio.run(recorder.screenshot(page, "01_page_loaded.png"))
+    reference = asyncio.run(recorder.write(page, captured=[], network_inventory=[{"url_path": "/api/comment/list", "url_host": "www.tiktok.com"}], dom_inventory=[], stop_reason="COMMENTS_PANEL_NOT_FOUND", overlay_dismissed=False, panel={"status": "COMMENTS_PANEL_NOT_FOUND"}))
+    assert reference == "diagnostics"
+    assert (tmp_path / "diagnostics" / "01_page_loaded.png").is_file()
+    html = (tmp_path / "diagnostics" / "sanitized_comment_container.html").read_text(encoding="utf-8")
+    assert "href=" not in html and "username" not in html and "profile" not in html

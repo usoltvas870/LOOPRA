@@ -411,6 +411,7 @@ def run_comment_intelligence(*, project_id: str, input_file: Path, output_root: 
                              url: str | None = None, max_comments: int = MAX_COMMENTS, max_scrolls: int = 24,
                              timeout_seconds: int = 45, headed: bool = False, reuse_only: bool = False,
                              dry_run: bool = False, refresh: bool = False,
+                             diagnostic: bool = False,
                              services: CommentIntelligenceServices | None = None) -> dict[str, Any]:
     if project_id != "nura":
         raise CommentIntelligenceError("UNSUPPORTED_PROJECT")
@@ -431,13 +432,13 @@ def run_comment_intelligence(*, project_id: str, input_file: Path, output_root: 
     services = services or CommentIntelligenceServices()
     collector = services.collect or (lambda value, **kwargs: PublicTikTokCommentCollector(**kwargs).collect(value))
     try:
-        collected = collector(selected.normalized_url, headless=not headed, max_comments=max_comments, max_scrolls=max_scrolls, timeout_seconds=timeout_seconds)
+        collected = collector(selected.normalized_url, headless=not headed, max_comments=max_comments, max_scrolls=max_scrolls, timeout_seconds=timeout_seconds, diagnostic_root=(package / "diagnostics") if diagnostic else None)
     except RuntimeError as error:
         return {"status": "BLOCKED", "failure_code": str(error), "sample_id": sample_id, "browser_calls": 1, "network_calls": 0, "provider_calls": 0}
     raw = anonymize_comments(collected.comments)
     clean, metrics = clean_comments(raw)
     limitations = ["Только собранная публично видимая выборка комментариев.", "Комментаторы не равны всем viewers; скрытые и удалённые comments неизвестны.", "Частота в sample не равна позиции всей аудитории."]
-    sample = {"schema_version": SCHEMA_VERSION, "sample_id": sample_id, "project_id": project_id, "source_video_id": selected.video_id, "source_url_reference": selected.normalized_url, "collection_started_at": _utc_now(), "collection_finished_at": _utc_now(), "access_mode": collected.access_mode, "collection_method": collected.collection_method, "max_comments": max_comments, "raw_comment_count": len(raw), "top_level_count": sum(row["thread_depth"] == 0 for row in raw), "reply_count": sum(row["thread_depth"] > 0 for row in raw), "unique_text_count": metrics["unique_text_count"], "cleaned_comment_count": sum(row["duplicate_count"] for row in clean), "duplicate_text_count": metrics["duplicate_text_count"], "excluded_noise_count": metrics["excluded_noise_count"], "comments_with_likes_count": sum(row["like_count"] > 0 for row in raw), "comments_with_replies_count": sum(row["reply_count"] > 0 for row in raw), "stop_reason": collected.stop_reason, "public_sample_limitations": limitations, "raw_artifact_reference": "comments_raw.jsonl", "raw_artifact_hash": "", "clean_artifact_reference": "comments_clean.csv", "clean_artifact_hash": "", "reuse_metadata": {"supported": True, "browser_cleanup": collected.cleanup_status, "scrolls": collected.scrolls, "login_overlay_observed": collected.login_overlay_observed, "captcha_observed": collected.captcha_observed, "rate_limit_observed": collected.rate_limit_observed}}
+    sample = {"schema_version": SCHEMA_VERSION, "sample_id": sample_id, "project_id": project_id, "source_video_id": selected.video_id, "source_url_reference": selected.normalized_url, "collection_started_at": _utc_now(), "collection_finished_at": _utc_now(), "access_mode": collected.access_mode, "collection_method": collected.collection_method, "max_comments": max_comments, "raw_comment_count": len(raw), "top_level_count": sum(row["thread_depth"] == 0 for row in raw), "reply_count": sum(row["thread_depth"] > 0 for row in raw), "unique_text_count": metrics["unique_text_count"], "cleaned_comment_count": sum(row["duplicate_count"] for row in clean), "duplicate_text_count": metrics["duplicate_text_count"], "excluded_noise_count": metrics["excluded_noise_count"], "comments_with_likes_count": sum(row["like_count"] > 0 for row in raw), "comments_with_replies_count": sum(row["reply_count"] > 0 for row in raw), "stop_reason": collected.stop_reason, "public_sample_limitations": limitations, "raw_artifact_reference": "comments_raw.jsonl", "raw_artifact_hash": "", "clean_artifact_reference": "comments_clean.csv", "clean_artifact_hash": "", "diagnostic_reference": collected.diagnostic_reference, "reuse_metadata": {"supported": True, "browser_cleanup": collected.cleanup_status, "scrolls": collected.scrolls, "login_overlay_observed": collected.login_overlay_observed, "captcha_observed": collected.captcha_observed, "rate_limit_observed": collected.rate_limit_observed}}
     package.mkdir(parents=True, exist_ok=True)
     _write_jsonl(package / "comments_raw.jsonl", raw); _write_clean_csv(package / "comments_clean.csv", clean)
     sample["raw_artifact_hash"] = hashlib.sha256((package / "comments_raw.jsonl").read_bytes()).hexdigest(); sample["clean_artifact_hash"] = hashlib.sha256((package / "comments_clean.csv").read_bytes()).hexdigest()
@@ -448,6 +449,8 @@ def run_comment_intelligence(*, project_id: str, input_file: Path, output_root: 
         return _finalize_collection(package, sample, "RATE_LIMITED", collected)
     if collected.stop_reason == "PUBLIC_COMMENTS_BLOCKED":
         return _finalize_collection(package, sample, "PUBLIC_COMMENTS_BLOCKED", collected)
+    if collected.stop_reason in {"COMMENTS_PANEL_NOT_FOUND", "COMMENTS_PANEL_NOT_OPENED", "COMMENTS_VISIBLE_BUT_NOT_EXTRACTED", "NETWORK_COMMENT_PAYLOAD_UNRECOGNIZED", "ZERO_COMMENTS_CONFIRMED"}:
+        return _finalize_collection(package, sample, collected.stop_reason, collected)
     if sample["cleaned_comment_count"] < 50:
         return _finalize_collection(package, sample, "PARTIAL_INSUFFICIENT_COMMENTS", collected)
     provider = services.provider or DeepSeekCommentIntelligenceProvider()
