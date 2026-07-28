@@ -54,6 +54,12 @@ output/
 storage/*
 !storage/.gitkeep
 
+# LOOPRA 0.5 owner-selected manual inputs (keep instructions, never user data)
+input/selected_sources/*
+!input/selected_sources/README_RU.txt
+!input/selected_sources/media/
+input/selected_sources/media/*
+
 # Generated HyperFrames artifacts
 hyperframes/publish/
 hyperframes/frame_check/
