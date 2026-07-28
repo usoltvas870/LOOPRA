@@ -260,3 +260,52 @@ def test_resume_reuses_versioned_package_without_acquisition_or_transcription(tm
     )
     assert result["reuse"] is True
     assert result["search_calls"] == result["browser_calls"] == result["downloads"] == result["transcription_calls"] == 0
+
+
+def test_resume_reports_canonical_transcription_execution_count(tmp_path: Path, monkeypatch):
+    runtime = tmp_path / "runtime"
+    (runtime / "canonical").mkdir(parents=True)
+    items = []
+    for rank in range(1, 21):
+        source = tmp_path / "sources" / f"{rank}.mp4"
+        source.parent.mkdir(exist_ok=True)
+        source.write_bytes(f"media-{rank}".encode())
+        items.append(candidate(str(rank), source))
+    collection = {"search_run_id": "run-count", "candidates": items}
+    (runtime / "canonical" / "collection.json").write_text(json.dumps(collection), encoding="utf-8")
+    monkeypatch.setattr(trend_workbook, "backfill_candidate_media", lambda **_: {
+        "candidates": items, "starting_unique_media": 20, "additional_attempts": 0,
+        "failures": 0, "duplicates": 0, "valid_unique_media": 20,
+        "processed_positions": list(range(1, 21)), "shortlist_exhausted": False,
+    })
+    monkeypatch.setattr(trend_workbook, "_build_transcription_evidence", lambda **_: {
+        "candidates": items, "transcription_calls": 20, "transcription_reused": 0,
+        "status_counts": {"AUTHOR_SPEECH_USABLE": 20}, "manifest_path": "selection.json",
+    })
+    result = trend_workbook.resume_public_first_workbook(
+        project_id="nura", runtime_root=runtime, output_root=tmp_path / "output",
+        target_count=20, build_id="count", acquire_one=lambda *_: None,
+    )
+    assert result["status"] == "READY_FOR_OWNER_WORKBOOK_REVIEW"
+    assert result["transcription_calls"] == 20
+
+
+def test_workbook_preserves_large_video_ids_and_bounds_display_excerpts(tmp_path: Path):
+    source = tmp_path / "source.mp4"; source.write_bytes(b"media")
+    video_id = 7666898189458264686
+    item = candidate(str(video_id), source, caption="длинный caption " * 100)
+    item["video_id"] = video_id
+    item["candidate_id"] = video_id
+    item["transcript_segments"] = [{"start_seconds": 0, "end_seconds": 2, "text": "длинная речь " * 100}]
+    result = trend_workbook.build_package(
+        project_id="nura", search_run_id="large-id", candidates=[item], output_root=tmp_path / "output",
+    )
+    workbook = load_workbook(result["workbook_path"])
+    candidates = workbook["Кандидаты"]
+    transcripts = workbook["Транскрипции"]
+    assert candidates.cell(2, 15).value == str(video_id)
+    assert candidates.cell(2, 15).number_format == "@"
+    assert transcripts.cell(2, 2).value == str(video_id)
+    assert transcripts.cell(2, 2).number_format == "@"
+    assert len(candidates.cell(2, 8).value) <= 300
+    assert len(candidates.cell(2, 38).value) <= 500

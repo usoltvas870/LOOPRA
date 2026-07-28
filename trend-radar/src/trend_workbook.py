@@ -324,7 +324,7 @@ def resume_public_first_workbook(
     manifest["backfill"] = {key: value for key, value in backfill.items() if key != "candidates"}
     manifest["transcription"] = {key: value for key, value in evidence.items() if key != "candidates"}
     (Path(package["package_path"]) / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"status": _acceptance_status(manifest), "package": package, "manifest": manifest, "backfill": backfill, "transcription": evidence, "search_calls": 0, "browser_calls": backfill["additional_attempts"], "downloads": backfill["additional_attempts"], "provider_calls": 0, "script_calls": 0, "reuse": False}
+    return {"status": _acceptance_status(manifest), "package": package, "manifest": manifest, "backfill": backfill, "transcription": evidence, "search_calls": 0, "browser_calls": backfill["additional_attempts"], "downloads": backfill["additional_attempts"], "transcription_calls": evidence["transcription_calls"], "provider_calls": 0, "script_calls": 0, "reuse": False}
 
 
 def _acceptance_status(manifest: dict[str, Any]) -> str:
@@ -515,15 +515,20 @@ def _hook(candidate: dict[str, Any]) -> tuple[str, str]:
         for segment in segments:
             text = str(segment.get("text") or segment.get("normalized_text") or "").strip()
             if text:
-                return text, "TRANSCRIPT_FIRST_CONTENT_SEGMENT"
+                return _display_excerpt(text, 300), "TRANSCRIPT_FIRST_CONTENT_SEGMENT"
     ocr_status = candidate.get("ocr_status")
     ocr_text = str(candidate.get("ocr_text") or "").strip()
     if ocr_status in {"READABLE", "PARTIALLY_READABLE"} and ocr_text:
-        return ocr_text, "OCR_PRIMARY_TEXT"
+        return _display_excerpt(ocr_text, 300), "OCR_PRIMARY_TEXT"
     caption = str(candidate.get("caption") or "").strip()
     if caption:
-        return caption, "CAPTION_MANUAL_REVIEW"
+        return _display_excerpt(caption, 300), "CAPTION_MANUAL_REVIEW"
     return "", "MANUAL_REVIEW_REQUIRED"
+
+
+def _display_excerpt(value: str, limit: int) -> str:
+    normalized = " ".join(str(value).split())
+    return normalized if len(normalized) <= limit else normalized[: limit - 1].rstrip() + "…"
 
 
 def _write_headers(sheet, headers: Iterable[str]) -> None:
@@ -642,23 +647,26 @@ def _write_workbook(path: Path, project_id: str, run_id: str, profile: str, sele
     for item in selected:
         transcript = item.get("transcript_segments") or []
         excerpt = " ".join(str(segment.get("text") or segment.get("normalized_text") or "") for segment in transcript)[:500]
-        row = [None, None, None, item["rank"], item["classification"], "RELEVANCE_ELIGIBLE", item.get("rejection_reason", "LOW"), item["hook"], item["hook_source"], item.get("query_cluster", ""), item.get("author_username", item.get("author", "")), "Открыть MP4", item["local_filename"], item.get("url", ""), item.get("video_id", ""), item.get("candidate_id", item.get("video_id", "")), item.get("published_at", ""), item.get("duration_seconds", ""), item["package_media_path"].stat().st_size, item["media_sha256"], item.get("views", ""), item.get("likes", ""), item.get("comments", ""), item.get("shares", ""), item.get("like_rate", ""), item.get("comment_rate", ""), item.get("share_rate", ""), item.get("total_engagement_rate", ""), item["virality_score"], item["relevance_score"], item["freshness_score"], item["quality_score"], item["final_score"], item["classification"], item.get("query_cluster", ""), item.get("query", item.get("source_value", "")), item.get("source_type", ""), item.get("caption", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), excerpt, len(transcript), "К транскрипции", item.get("ocr_status", "MANUAL_TEXT_CHECK"), item.get("ocr_text", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), item.get("content_modality", "unknown"), "UNIQUE", item.get("evidence_warning", ""), "VALID_MEDIA"]
+        row = [None, None, None, item["rank"], item["classification"], "RELEVANCE_ELIGIBLE", item.get("rejection_reason", "LOW"), item["hook"], item["hook_source"], item.get("query_cluster", ""), item.get("author_username", item.get("author", "")), "Открыть MP4", item["local_filename"], item.get("url", ""), str(item.get("video_id", "")), str(item.get("candidate_id", item.get("video_id", ""))), item.get("published_at", ""), item.get("duration_seconds", ""), item["package_media_path"].stat().st_size, item["media_sha256"], item.get("views", ""), item.get("likes", ""), item.get("comments", ""), item.get("shares", ""), item.get("like_rate", ""), item.get("comment_rate", ""), item.get("share_rate", ""), item.get("total_engagement_rate", ""), item["virality_score"], item["relevance_score"], item["freshness_score"], item["quality_score"], item["final_score"], item["classification"], item.get("query_cluster", ""), item.get("query", item.get("source_value", "")), item.get("source_type", ""), _display_excerpt(item.get("caption", ""), 500), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), excerpt, len(transcript), "К транскрипции", item.get("ocr_status", "MANUAL_TEXT_CHECK"), _display_excerpt(item.get("ocr_text", ""), 500), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), item.get("content_modality", "unknown"), "UNIQUE", item.get("evidence_warning", ""), "VALID_MEDIA"]
         row[47] = item.get("transcript_reason") or item.get("evidence_warning", "")
         candidates.append(row); row_number = candidates.max_row
         select_validation.add(candidates.cell(row_number, 1)); priority_validation.add(candidates.cell(row_number, 2))
         video = candidates.cell(row_number, 12); video.hyperlink = f"videos\\{item['local_filename']}"; video.style = "Hyperlink"
+        candidates.cell(row_number, 15).number_format = "@"; candidates.cell(row_number, 16).number_format = "@"
         if transcript:
             candidates.cell(row_number, 42).hyperlink = f"#'Транскрипции'!A{transcripts.max_row + 1}"
             candidates.cell(row_number, 42).style = "Hyperlink"
         for number, segment in enumerate(transcript, 1):
-            transcripts.append([item["rank"], item.get("video_id", ""), number, segment.get("start_seconds", segment.get("start", "")), segment.get("end_seconds", segment.get("end", "")), segment.get("language", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), segment.get("text") or segment.get("normalized_text") or "", segment.get("quality_status", ""), segment.get("evidence_ref", "")])
+            transcripts.append([item["rank"], str(item.get("video_id", "")), number, segment.get("start_seconds", segment.get("start", "")), segment.get("end_seconds", segment.get("end", "")), segment.get("language", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), segment.get("text") or segment.get("normalized_text") or "", segment.get("quality_status", ""), segment.get("evidence_ref", "")])
+            transcripts.cell(transcripts.max_row, 2).number_format = "@"
     candidates.auto_filter.ref = f"A1:{candidates.cell(candidates.max_row, candidates.max_column).coordinate}"
     candidates.conditional_formatting.add(f"D2:D{candidates.max_row}", CellIsRule(operator="lessThan", formula=["999999"], fill=PatternFill("solid", fgColor="E2F0D9")))
     _style_sheet(candidates)
     transcripts.auto_filter.ref = f"A1:J{max(1, transcripts.max_row)}"; _style_sheet(transcripts)
     _write_headers(rejected_sheet, ("Candidate/Video ID", "Автор", "Source URL", "Query", "Reason code", "Explanation", "Duplicate canonical", "Score before rejection", "Media status"))
     for item in rejected:
-        rejected_sheet.append([item.get("video_id", ""), item.get("author_username", ""), item.get("url", ""), item.get("query", ""), item.get("rejection_reason", "LOW_RELEVANCE"), item.get("rejection_reason", ""), item.get("duplicate_canonical", ""), item.get("final_score", 0), "MISSING" if item.get("rejection_reason") == "MEDIA_NOT_ACQUIRED" else "REJECTED"])
+        rejected_sheet.append([str(item.get("video_id", "")), item.get("author_username", ""), item.get("url", ""), item.get("query", ""), item.get("rejection_reason", "LOW_RELEVANCE"), item.get("rejection_reason", ""), str(item.get("duplicate_canonical", "")), item.get("final_score", 0), "MISSING" if item.get("rejection_reason") == "MEDIA_NOT_ACQUIRED" else "REJECTED"])
+        rejected_sheet.cell(rejected_sheet.max_row, 1).number_format = "@"; rejected_sheet.cell(rejected_sheet.max_row, 7).number_format = "@"
     rejected_sheet.auto_filter.ref = f"A1:I{max(1, rejected_sheet.max_row)}"; _style_sheet(rejected_sheet)
     method.append(["Методика LOOPRA 0.5"])
     for line in ("Сначала применяется relevance eligibility gate; низкая topical relevance не компенсируется engagement.", "Junk-фильтры учитывают query, caption, transcript и OCR; одно слово не является единственным основанием.", "Exact duplicates исключаются по SHA-256 MP4. Каждый основной кандидат имеет локальный MP4.", "Hook берётся только из пригодной речи, читаемого OCR или caption; иначе требуется ручная проверка.", "TikTok URL — provenance, не основной способ доступа. LOOPRA 0.5 не создаёт сценарии автоматически."):
