@@ -60,6 +60,11 @@ input/selected_sources/*
 !input/selected_sources/media/
 input/selected_sources/media/*
 
+# LOOPRA 0.6 owner-selected comment-intelligence input and immutable runtime packages
+input/comment_intelligence/*
+!input/comment_intelligence/README_RU.txt
+output/comment_intelligence/
+
 # Generated HyperFrames artifacts
 hyperframes/publish/
 hyperframes/frame_check/
