@@ -14,6 +14,25 @@ python scripts/run_loopra_05_trend_workbook.py --project nura --search-run-id <i
 python scripts/run_loopra_05_trend_workbook.py --project nura --fresh --target-count 20 --json
 ```
 
+Resume an existing canonical collection without running a new TikTok search:
+
+```powershell
+python scripts/run_loopra_05_trend_workbook.py --project nura --runtime-root <existing-runtime> --resume --build-id <build-id> --target-count 20 --json
+```
+
+`--resume` scans the existing ranked pool, reuses validated acquisition records,
+and performs bounded per-item acquisition until the target number of unique valid
+MP4 files is reached. The independent safety bounds are
+`--maximum-attempts`, `--maximum-shortlist-size`, and
+`--maximum-consecutive-failures`. A stable `--build-id` creates a versioned
+package and makes an identical second invocation reuse-only: no search, browser,
+download, or transcription execution.
+
+For each final MP4, resume runs canonical format inspection before canonical
+transcription. The workbook stores typed audio/transcription status and all
+accepted segments. Music-only, no-speech, no-audio, unreliable, and failed ASR
+results remain explicit and are never converted into invented transcript text.
+
 Every input candidate must point to a local acquired MP4 in `local_media_path`. Missing media and exact SHA-256 duplicates are rejected and never reach `Кандидаты`. The package builder validates byte-for-byte copies and reloads the workbook to validate relative links.
 
 The operator opens `Кандидаты`, clicks `Открыть MP4`, enters `ДА/НЕТ/ПОЗЖЕ`, priority, and comments, then transfers selected local MP4 files to GPT manually. Automatic scenario generation is outside LOOPRA 0.5.

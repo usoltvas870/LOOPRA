@@ -6,6 +6,7 @@ Content Intelligence, a script provider, image generation, or a browser.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterable
 
 from openpyxl import Workbook, load_workbook
@@ -48,6 +50,291 @@ JUNK_TERMS = {
 
 class TrendWorkbookError(ValueError):
     pass
+
+
+def backfill_candidate_media(
+    *, candidates: Iterable[dict[str, Any]], lookup_media, acquire_one,
+    target_count: int = 20, maximum_attempts: int = 30,
+    maximum_shortlist_size: int = 50, maximum_consecutive_failures: int = 5,
+) -> dict[str, Any]:
+    """Resume ranked acquisition until ``target_count`` valid unique media exist."""
+    if not 1 <= target_count <= 30:
+        raise TrendWorkbookError("target_count must be between 1 and 30")
+    if maximum_attempts < 1 or maximum_shortlist_size < target_count or maximum_consecutive_failures < 1:
+        raise TrendWorkbookError("invalid bounded backfill limits")
+    candidate_list = list(candidates)
+    results: list[dict[str, Any]] = []
+    hashes: dict[str, str] = {}
+    attempts = failures = duplicates = consecutive_failures = 0
+    processed_positions: list[int] = []
+    starting_unique = 0
+    for position, raw in enumerate(candidate_list[:maximum_shortlist_size], 1):
+        candidate = dict(raw)
+        candidate.setdefault("candidate_id", candidate.get("video_id"))
+        candidate.setdefault("query", candidate.get("source_value", ""))
+        candidate.setdefault("query_cluster", candidate.get("source_value", ""))
+        _apply_nura_relevance(candidate)
+        existing = lookup_media(candidate)
+        if existing is None:
+            if len(hashes) >= target_count or attempts >= maximum_attempts or consecutive_failures >= maximum_consecutive_failures:
+                break
+            attempts += 1
+            processed_positions.append(position)
+            existing = acquire_one(candidate, position)
+        else:
+            processed_positions.append(position)
+        status = str((existing or {}).get("status") or "FAILED")
+        media_path = Path(existing["local_media_path"]) if existing and existing.get("local_media_path") else None
+        digest = existing.get("media_sha256") if existing else None
+        valid = status in {"COMPLETED", "REUSED"} and media_path is not None and media_path.is_file() and digest == sha256(media_path)
+        if not valid:
+            failures += 1
+            consecutive_failures += 1
+            candidate.update(local_media_path=None, rejection_reason=(existing or {}).get("reason", "MEDIA_NOT_ACQUIRED"), technical_status=status)
+            results.append(candidate)
+            continue
+        consecutive_failures = 0
+        candidate.update(local_media_path=str(media_path), media_sha256=digest, duration_seconds=existing.get("duration_seconds"), technical_status="VALID_MEDIA")
+        assessed = assess_candidate(candidate)
+        if not assessed["eligible"]:
+            candidate["rejection_reason"] = assessed.get("rejection_reason", "LOW_RELEVANCE")
+            results.append(candidate)
+            continue
+        canonical = hashes.get(digest)
+        if canonical:
+            duplicates += 1
+            candidate.update(rejection_reason="EXACT_DUPLICATE", duplicate_canonical=canonical)
+            results.append(candidate)
+            continue
+        hashes[digest] = str(candidate.get("video_id"))
+        if attempts == 0:
+            starting_unique += 1
+        results.append(candidate)
+        if len(hashes) >= target_count:
+            break
+    return {
+        "candidates": results, "starting_unique_media": starting_unique,
+        "additional_attempts": attempts, "failures": failures, "duplicates": duplicates,
+        "valid_unique_media": len(hashes), "processed_positions": processed_positions,
+        "shortlist_exhausted": len(hashes) < target_count and len(processed_positions) >= min(len(candidate_list), maximum_shortlist_size),
+    }
+
+
+class _PublicBackfillAcquirer:
+    """Thin lifecycle owner over the existing per-item browser capture primitive."""
+
+    def __init__(self, runtime_root: Path, collection: dict[str, Any], collection_path: Path) -> None:
+        from browser_media_capture import BrowserMediaCaptureRequest, capture_browser_media_in_context
+        from collector import TikTokCollector
+        from utils import get_cookie_path
+        self.runtime_root = runtime_root
+        self.collection = collection
+        self.collection_path = collection_path
+        self.capture_request = BrowserMediaCaptureRequest
+        self.capture = capture_browser_media_in_context
+        self.collector = TikTokCollector(headless=True)
+        self.cookie_path = get_cookie_path()
+        self.loop = asyncio.new_event_loop()
+        self.started = False
+        self.manifest = SimpleNamespace(
+            radar_run_id=collection["search_run_id"],
+            radar_run_reference="canonical/collection.json",
+            manifest_hash=hashlib.sha256(json.dumps(collection, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
+        )
+
+    def acquire(self, candidate: dict[str, Any], position: int) -> dict[str, Any]:
+        if not self.started:
+            self.loop.run_until_complete(self.collector.start())
+            self.started = True
+        selected = SimpleNamespace(video_id=str(candidate["video_id"]), rank=position, canonical_url=candidate.get("url"))
+        request = self.capture_request(
+            selection_manifest_path=self.collection_path,
+            cookie_state_path=self.cookie_path,
+            output_root=self.runtime_root / "canonical" / "acquisition",
+            candidate_id=selected.video_id,
+        )
+        record = self.loop.run_until_complete(self.capture(request, self.manifest, selected, self.collector.context))
+        return _media_from_record(self.runtime_root, record.to_dict() if hasattr(record, "to_dict") else record)
+
+    def close(self) -> None:
+        try:
+            if self.started:
+                self.loop.run_until_complete(self.collector.close())
+        finally:
+            if not self.loop.is_closed():
+                self.loop.close()
+
+
+def _media_from_record(runtime_root: Path, record: dict[str, Any]) -> dict[str, Any]:
+    run_root = runtime_root / "canonical" / "acquisition" / str(record.get("radar_run_id"))
+    reference = record.get("local_media_path")
+    media = run_root / reference if reference else None
+    probe = record.get("ffprobe_validation") or {}
+    valid = bool(
+        record.get("status") in {"COMPLETED", "REUSED"}
+        and media and media.is_file() and record.get("media_sha256") == sha256(media)
+        and probe.get("valid") and probe.get("video_codec")
+    )
+    return {
+        "status": "REUSED" if valid else "FAILED",
+        "local_media_path": str(media) if valid else None,
+        "media_sha256": record.get("media_sha256") if valid else None,
+        "duration_seconds": probe.get("duration_seconds"),
+        "reason": "INVALID_MEDIA" if reference and not valid else (record.get("errors") or ["MEDIA_NOT_ACQUIRED"])[0],
+    }
+
+
+def _lookup_runtime_media(runtime_root: Path, search_run_id: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
+    path = runtime_root / "canonical" / "acquisition" / search_run_id / str(candidate.get("video_id")) / "acquisition_record.json"
+    if not path.is_file():
+        return None
+    try:
+        return _media_from_record(runtime_root, json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return {"status": "FAILED", "reason": "INVALID_ACQUISITION_RECORD"}
+
+
+def _classify_transcription(payload: dict[str, Any], artifact_reference: str, caption: str) -> dict[str, Any]:
+    status = str(payload.get("status") or "FAILED")
+    segments = []
+    for segment in payload.get("segments") or []:
+        normalized = str(segment.get("normalized_text") or "").strip()
+        segments.append({**segment, "text": normalized, "language": payload.get("language"), "quality_status": "ACCEPTED", "evidence_ref": artifact_reference})
+    if status == "COMPLETED_NO_AUDIO":
+        role, reason = "NO_AUDIO", "inspection confirmed no audio stream"
+    elif status == "COMPLETED_NO_SPEECH":
+        role, reason = "NONSPEECH", "canonical ASR found no reliable speech"
+    elif status == "COMPLETED" and segments:
+        words = sum(len(item["text"].split()) for item in segments)
+        music_signal = any(token in caption.lower() for token in ("#music", "#song", "песня", "lyrics", "музыка"))
+        if music_signal:
+            role, reason = "BACKGROUND_MUSIC_ONLY", "caption identifies music; ASR text is not eligible as author hook"
+        elif words >= 4:
+            role, reason = "AUTHOR_SPEECH_USABLE", "canonical ASR produced meaningful accepted segments"
+        else:
+            role, reason = "UNRELIABLE_ASR", "accepted ASR contains fewer than four words"
+    elif status == "FAILED":
+        role, reason = "TRANSCRIPTION_FAILED", "; ".join(payload.get("errors") or ["canonical transcription failed"])
+    else:
+        role, reason = "MANUAL_REVIEW_REQUIRED", f"unclassified canonical transcription status: {status}"
+    return {"audio_role": role, "transcript_status": role, "transcript_reason": reason, "transcript_segments": segments}
+
+
+def _build_transcription_evidence(
+    *, runtime_root: Path, build_root: Path, search_run_id: str,
+    candidates: list[dict[str, Any]], inspection_callable=None, engine=None,
+) -> dict[str, Any]:
+    from format_inspection import inspect as canonical_inspect
+    from selection_manifest import build_selection_manifest, write_selection_manifest
+    from transcription_evidence import (
+        DEFAULT_OPTIONS, FasterWhisperEngine, TranscriptionRunRequest,
+        _migrate_legacy_result, _no_audio_result, _prepare, _transcribe, _write_atomic,
+    )
+    inspection_callable = inspection_callable or canonical_inspect
+    engine = engine or FasterWhisperEngine()
+    availability = engine.availability()
+    manifest = build_selection_manifest(candidates, radar_run_id=search_run_id, created_at=_utc_now())
+    manifest_path = write_selection_manifest(manifest, root=build_root / "selection")
+    acquisition_root = runtime_root / "canonical" / "acquisition" / search_run_id
+    inspection_root = build_root / "inspection"
+    evidence_root = build_root / "evidence"
+    by_id = {str(item["video_id"]): item for item in candidates}
+    for entry in manifest.candidates:
+        item = by_id[entry.video_id]
+        output = inspection_root / entry.video_id
+        target = output / "inspection.json"
+        if not target.is_file() or json.loads(target.read_text(encoding="utf-8")).get("media_sha256") != sha256(Path(item["local_media_path"])):
+            inspection_callable(Path(item["local_media_path"]), output, entry.video_id, item.get("url"))
+    request = TranscriptionRunRequest(
+        selection_manifest_path=manifest_path, acquisition_root=acquisition_root,
+        inspection_root=inspection_root, output_root=evidence_root, reuse=True,
+        options=dict(DEFAULT_OPTIONS),
+    )
+    calls = reused = 0
+    for entry in manifest.candidates:
+        target_reference = f"evidence/{search_run_id}/candidates/{entry.video_id}/transcription/transcription_result.json"
+        if not availability.get("available"):
+            payload = {"candidate_video_id": entry.video_id, "rank": entry.rank, "status": "FAILED", "errors": [availability.get("reason", "transcription engine unavailable")]}
+        else:
+            prepared = _prepare(entry, manifest, request, availability, dict(DEFAULT_OPTIONS))
+            if prepared.get("reused"):
+                payload = prepared["result"]; reused += 1
+            elif prepared.get("legacy"):
+                payload = _migrate_legacy_result(prepared); _write_atomic(prepared["target"], payload); calls += 1
+            elif prepared.get("no_audio"):
+                payload = _no_audio_result(prepared); _write_atomic(prepared["target"], payload); calls += 1
+            else:
+                payload = _transcribe(prepared, engine, request.language, dict(DEFAULT_OPTIONS)); calls += 1
+        by_id[entry.video_id].update(_classify_transcription(payload, target_reference, str(by_id[entry.video_id].get("caption") or "")))
+    counts = Counter(item.get("audio_role") for item in candidates)
+    return {"candidates": candidates, "transcription_calls": calls, "transcription_reused": reused, "status_counts": dict(counts), "manifest_path": str(manifest_path)}
+
+
+def resume_public_first_workbook(
+    *, project_id: str, runtime_root: Path, output_root: Path, target_count: int = 20,
+    build_id: str, maximum_attempts: int = 30, maximum_shortlist_size: int = 50,
+    maximum_consecutive_failures: int = 5, acquire_one=None, inspection_callable=None, transcription_engine=None,
+) -> dict[str, Any]:
+    """Resume an existing public pool; never invokes metadata collection."""
+    runtime_root, output_root = Path(runtime_root), Path(output_root)
+    collection_path = runtime_root / "canonical" / "collection.json"
+    if not collection_path.is_file():
+        raise TrendWorkbookError("existing canonical collection.json is required for --resume")
+    pool = json.loads(collection_path.read_text(encoding="utf-8"))
+    search_run_id = str(pool.get("search_run_id") or "")
+    if not search_run_id or not isinstance(pool.get("candidates"), list):
+        raise TrendWorkbookError("existing collection artifact is invalid")
+    package_run_id = f"{search_run_id}_{_safe_component(build_id)}"
+    package_dir = output_root / f"LOOPRA_05_TREND_WORKBOOK_{package_run_id}"
+    if package_dir.is_dir():
+        package = build_package(project_id=project_id, search_run_id=search_run_id, package_build_id=build_id, candidates=[], output_root=output_root)
+        manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+        return {"status": _acceptance_status(manifest), "package": package, "manifest": manifest, "search_calls": 0, "browser_calls": 0, "downloads": 0, "transcription_calls": 0, "reuse": True, "provider_calls": 0, "script_calls": 0}
+    acquirer = None
+    try:
+        def lookup(candidate):
+            return _lookup_runtime_media(runtime_root, search_run_id, candidate)
+        if acquire_one is None:
+            acquirer = _PublicBackfillAcquirer(runtime_root, pool, collection_path)
+            acquire_one = acquirer.acquire
+        backfill = backfill_candidate_media(
+            candidates=pool["candidates"], lookup_media=lookup, acquire_one=acquire_one,
+            target_count=target_count, maximum_attempts=maximum_attempts,
+            maximum_shortlist_size=maximum_shortlist_size,
+            maximum_consecutive_failures=maximum_consecutive_failures,
+        )
+    finally:
+        if acquirer is not None:
+            acquirer.close()
+    usable = [assess_candidate(item) for item in backfill["candidates"] if item.get("local_media_path") and not item.get("rejection_reason")]
+    usable = sorted((item for item in usable if item["eligible"]), key=lambda item: (-item["final_score"], str(item.get("video_id"))))[:target_count]
+    if len(usable) < target_count:
+        return {"status": "PARTIAL_INSUFFICIENT_VALID_MEDIA", "backfill": backfill, "search_calls": 0, "provider_calls": 0, "script_calls": 0}
+    build_root = runtime_root / "canonical" / "workbook-builds" / _safe_component(build_id)
+    evidence = _build_transcription_evidence(
+        runtime_root=runtime_root, build_root=build_root, search_run_id=search_run_id,
+        candidates=usable, inspection_callable=inspection_callable, engine=transcription_engine,
+    )
+    package_candidates = evidence["candidates"] + [item for item in backfill["candidates"] if item.get("rejection_reason")]
+    package = build_package(
+        project_id=project_id, search_run_id=search_run_id, package_build_id=build_id,
+        candidates=package_candidates, output_root=output_root,
+    )
+    manifest = json.loads((Path(package["package_path"]) / "manifest.json").read_text(encoding="utf-8"))
+    manifest["backfill"] = {key: value for key, value in backfill.items() if key != "candidates"}
+    manifest["transcription"] = {key: value for key, value in evidence.items() if key != "candidates"}
+    (Path(package["package_path"]) / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"status": _acceptance_status(manifest), "package": package, "manifest": manifest, "backfill": backfill, "transcription": evidence, "search_calls": 0, "browser_calls": backfill["additional_attempts"], "downloads": backfill["additional_attempts"], "provider_calls": 0, "script_calls": 0, "reuse": False}
+
+
+def _acceptance_status(manifest: dict[str, Any]) -> str:
+    if manifest.get("exported_candidate_count", 0) < 20 or manifest.get("video_file_count", 0) < 20:
+        return "PARTIAL_INSUFFICIENT_VALID_MEDIA"
+    transcription = manifest.get("transcription", {})
+    counts = transcription.get("status_counts", {})
+    if not counts or counts.get("MANUAL_REVIEW_REQUIRED", 0) == manifest.get("exported_candidate_count"):
+        return "PARTIAL_TRANSCRIPTION_INTEGRATION"
+    return "READY_FOR_OWNER_WORKBOOK_REVIEW"
 
 
 def run_public_first_workbook(
@@ -286,14 +573,15 @@ def validate_portability(package_dir: Path) -> dict[str, Any]:
     return {"status": "PASS", "workbook": workbooks[0].name, "relative_links": count}
 
 
-def build_package(*, project_id: str, search_run_id: str, candidates: Iterable[dict[str, Any]], output_root: Path, query_profile: str = SCORING_PROFILE) -> dict[str, Any]:
+def build_package(*, project_id: str, search_run_id: str, candidates: Iterable[dict[str, Any]], output_root: Path, query_profile: str = SCORING_PROFILE, package_build_id: str | None = None) -> dict[str, Any]:
     """Build a portable package from locally acquired candidate media.
 
     Each candidate must provide ``local_media_path``.  Invalid/missing media is
     represented on ``Отбраковано`` and can never reach ``Кандидаты``.
     """
     output_root = Path(output_root)
-    package = output_root / f"LOOPRA_05_TREND_WORKBOOK_{_safe_component(search_run_id)}"
+    package_run_id = f"{_safe_component(search_run_id)}_{_safe_component(package_build_id)}" if package_build_id else _safe_component(search_run_id)
+    package = output_root / f"LOOPRA_05_TREND_WORKBOOK_{package_run_id}"
     if package.exists():
         reused = validate_portability(package)
         manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
@@ -328,7 +616,7 @@ def build_package(*, project_id: str, search_run_id: str, candidates: Iterable[d
             item.update(rank=rank, local_filename=filename, package_media_path=target, hook=_hook(item)[0], hook_source=_hook(item)[1])
         workbook_path = stage / f"LOOPRA_{_safe_component(project_id).upper()}_TRENDS_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
         _write_workbook(workbook_path, project_id, search_run_id, query_profile, selected, rejected)
-        manifest = _manifest(project_id, search_run_id, query_profile, selected, rejected, workbook_path, stage)
+        manifest = _manifest(project_id, search_run_id, query_profile, selected, rejected, workbook_path, stage, package_build_id)
         (stage / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (stage / "README_RU.txt").write_text("Откройте Excel, выберите ролики и используйте ссылку «Открыть MP4». TikTok URL сохранён только как provenance.\n", encoding="utf-8")
         shutil.move(str(stage), str(package))
@@ -347,6 +635,7 @@ def _write_workbook(path: Path, project_id: str, run_id: str, profile: str, sele
         summary.append([key, value])
     summary.column_dimensions["A"].width = 28; summary.column_dimensions["B"].width = 90
     _write_headers(candidates, HEADERS)
+    _write_headers(transcripts, ("Ранг", "Video ID", "Segment", "Start", "End", "Language", "Audio role", "Transcript text", "Quality", "Evidence reference"))
     select_validation = DataValidation(type="list", formula1='"ДА,НЕТ,ПОЗЖЕ"', allow_blank=True)
     priority_validation = DataValidation(type="list", formula1='"1,2,3"', allow_blank=True)
     candidates.add_data_validation(select_validation); candidates.add_data_validation(priority_validation)
@@ -354,16 +643,19 @@ def _write_workbook(path: Path, project_id: str, run_id: str, profile: str, sele
         transcript = item.get("transcript_segments") or []
         excerpt = " ".join(str(segment.get("text") or segment.get("normalized_text") or "") for segment in transcript)[:500]
         row = [None, None, None, item["rank"], item["classification"], "RELEVANCE_ELIGIBLE", item.get("rejection_reason", "LOW"), item["hook"], item["hook_source"], item.get("query_cluster", ""), item.get("author_username", item.get("author", "")), "Открыть MP4", item["local_filename"], item.get("url", ""), item.get("video_id", ""), item.get("candidate_id", item.get("video_id", "")), item.get("published_at", ""), item.get("duration_seconds", ""), item["package_media_path"].stat().st_size, item["media_sha256"], item.get("views", ""), item.get("likes", ""), item.get("comments", ""), item.get("shares", ""), item.get("like_rate", ""), item.get("comment_rate", ""), item.get("share_rate", ""), item.get("total_engagement_rate", ""), item["virality_score"], item["relevance_score"], item["freshness_score"], item["quality_score"], item["final_score"], item["classification"], item.get("query_cluster", ""), item.get("query", item.get("source_value", "")), item.get("source_type", ""), item.get("caption", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), excerpt, len(transcript), "К транскрипции", item.get("ocr_status", "MANUAL_TEXT_CHECK"), item.get("ocr_text", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), item.get("content_modality", "unknown"), "UNIQUE", item.get("evidence_warning", ""), "VALID_MEDIA"]
+        row[47] = item.get("transcript_reason") or item.get("evidence_warning", "")
         candidates.append(row); row_number = candidates.max_row
         select_validation.add(candidates.cell(row_number, 1)); priority_validation.add(candidates.cell(row_number, 2))
         video = candidates.cell(row_number, 12); video.hyperlink = f"videos\\{item['local_filename']}"; video.style = "Hyperlink"
-        candidates.cell(row_number, 42).hyperlink = f"#'Транскрипции'!A{transcripts.max_row + 2}"; candidates.cell(row_number, 42).style = "Hyperlink"
+        if transcript:
+            candidates.cell(row_number, 42).hyperlink = f"#'Транскрипции'!A{transcripts.max_row + 1}"
+            candidates.cell(row_number, 42).style = "Hyperlink"
         for number, segment in enumerate(transcript, 1):
             transcripts.append([item["rank"], item.get("video_id", ""), number, segment.get("start_seconds", segment.get("start", "")), segment.get("end_seconds", segment.get("end", "")), segment.get("language", ""), item.get("audio_role", "MANUAL_REVIEW_REQUIRED"), segment.get("text") or segment.get("normalized_text") or "", segment.get("quality_status", ""), segment.get("evidence_ref", "")])
     candidates.auto_filter.ref = f"A1:{candidates.cell(candidates.max_row, candidates.max_column).coordinate}"
     candidates.conditional_formatting.add(f"D2:D{candidates.max_row}", CellIsRule(operator="lessThan", formula=["999999"], fill=PatternFill("solid", fgColor="E2F0D9")))
     _style_sheet(candidates)
-    _write_headers(transcripts, ("Ранг", "Video ID", "Segment", "Start", "End", "Language", "Audio role", "Transcript text", "Quality", "Evidence reference")); transcripts.auto_filter.ref = f"A1:J{max(1, transcripts.max_row)}"; _style_sheet(transcripts)
+    transcripts.auto_filter.ref = f"A1:J{max(1, transcripts.max_row)}"; _style_sheet(transcripts)
     _write_headers(rejected_sheet, ("Candidate/Video ID", "Автор", "Source URL", "Query", "Reason code", "Explanation", "Duplicate canonical", "Score before rejection", "Media status"))
     for item in rejected:
         rejected_sheet.append([item.get("video_id", ""), item.get("author_username", ""), item.get("url", ""), item.get("query", ""), item.get("rejection_reason", "LOW_RELEVANCE"), item.get("rejection_reason", ""), item.get("duplicate_canonical", ""), item.get("final_score", 0), "MISSING" if item.get("rejection_reason") == "MEDIA_NOT_ACQUIRED" else "REJECTED"])
@@ -377,5 +669,5 @@ def _write_workbook(path: Path, project_id: str, run_id: str, profile: str, sele
     workbook.save(path)
 
 
-def _manifest(project_id: str, run_id: str, profile: str, selected: list[dict[str, Any]], rejected: list[dict[str, Any]], workbook: Path, root: Path) -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "package_id": f"loopra-05-{run_id}", "project_id": project_id, "search_run_id": run_id, "search_timestamp": _utc_now(), "query_profile_reference": profile, "raw_candidate_count": len(selected) + len(rejected), "deduplicated_candidate_count": len(selected), "shortlisted_candidate_count": len(selected), "acquired_candidate_count": len(selected), "transcribed_candidate_count": sum(bool(item.get("transcript_segments")) for item in selected), "eligible_candidate_count": len(selected), "exported_candidate_count": len(selected), "rejected_candidate_count": len(rejected), "exact_duplicate_count": sum(item.get("rejection_reason") == "EXACT_DUPLICATE" for item in rejected), "near_duplicate_count": 0, "workbook_relative_path": workbook.name, "workbook_hash": sha256(workbook), "videos_directory_relative_path": "videos", "video_file_count": len(selected), "ordered_video_references": [f"videos/{item['local_filename']}" for item in selected], "ordered_video_sha256": [item["media_sha256"] for item in selected], "workbook_sheet_names": list(REQUIRED_SHEETS), "column_schema_version": SCHEMA_VERSION, "relative_link_validation_status": "PASS", "portability_validation_status": "PASS", "reuse_metadata": {"supported": True}, "package_size": sum(path.stat().st_size for path in root.rglob("*") if path.is_file())}
+def _manifest(project_id: str, run_id: str, profile: str, selected: list[dict[str, Any]], rejected: list[dict[str, Any]], workbook: Path, root: Path, package_build_id: str | None = None) -> dict[str, Any]:
+    return {"schema_version": SCHEMA_VERSION, "package_id": f"loopra-05-{run_id}" + (f"-{_safe_component(package_build_id)}" if package_build_id else ""), "package_build_id": package_build_id, "project_id": project_id, "search_run_id": run_id, "search_timestamp": _utc_now(), "query_profile_reference": profile, "raw_candidate_count": len(selected) + len(rejected), "deduplicated_candidate_count": len(selected), "shortlisted_candidate_count": len(selected), "acquired_candidate_count": len(selected), "transcribed_candidate_count": sum(bool(item.get("transcript_segments")) for item in selected), "eligible_candidate_count": len(selected), "exported_candidate_count": len(selected), "rejected_candidate_count": len(rejected), "exact_duplicate_count": sum(item.get("rejection_reason") == "EXACT_DUPLICATE" for item in rejected), "near_duplicate_count": 0, "workbook_relative_path": workbook.name, "workbook_hash": sha256(workbook), "videos_directory_relative_path": "videos", "video_file_count": len(selected), "ordered_video_references": [f"videos/{item['local_filename']}" for item in selected], "ordered_video_sha256": [item["media_sha256"] for item in selected], "workbook_sheet_names": list(REQUIRED_SHEETS), "column_schema_version": SCHEMA_VERSION, "relative_link_validation_status": "PASS", "portability_validation_status": "PASS", "reuse_metadata": {"supported": True}, "package_size": sum(path.stat().st_size for path in root.rglob("*") if path.is_file())}

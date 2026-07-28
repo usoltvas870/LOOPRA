@@ -49,6 +49,7 @@ jobs/*/output/
 !jobs/.gitkeep
 
 # Local caches and reusable runtime storage
+.runtime/
 output/
 storage/*
 !storage/.gitkeep

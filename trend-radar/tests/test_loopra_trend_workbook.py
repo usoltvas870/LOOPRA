@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -42,6 +43,10 @@ def test_package_has_portable_relative_links_and_operator_workbook(tmp_path: Pat
     assert (package / target.replace("\\", "/")).is_file()
     assert sheet.cell(2, 8).value == "Я долго поддерживала всех и забывала о себе."
     assert sheet.cell(2, 9).value == "TRANSCRIPT_FIRST_CONTENT_SEGMENT"
+    assert sheet.cell(2, 42).hyperlink.target == "#'Транскрипции'!A2"
+    transcript_sheet = workbook["Транскрипции"]
+    assert transcript_sheet.max_row == 2
+    assert transcript_sheet.cell(2, 8).value == "Я долго поддерживала всех и забывала о себе."
 
 
 def test_rejections_keep_missing_media_duplicate_and_low_relevance_out_of_main_sheet(tmp_path: Path):
@@ -109,3 +114,149 @@ def test_public_workflow_continues_after_one_media_failure(tmp_path: Path):
     result = trend_workbook.run_public_first_workbook(project_id="nura", runtime_root=tmp_path, output_root=tmp_path / "output", production_dependencies=deps)
     assert acquired == list(range(1, 21))
     assert result["status"] == "PARTIAL_INSUFFICIENT_VALID_MEDIA"
+
+
+def test_backfill_target_counts_unique_valid_media_not_attempts(tmp_path: Path):
+    items = [candidate(str(rank), None, query="личные границы") for rank in range(1, 31)]
+    paths = {}
+    for rank in range(1, 31):
+        path = tmp_path / f"{rank}.mp4"; path.write_bytes(f"media-{rank}".encode()); paths[rank] = path
+    # Existing positions 10/19 failed and 18 duplicates position 13: 17 unique.
+    def lookup(item):
+        rank = int(item["video_id"])
+        if rank > 20: return None
+        if rank in {10, 19}: return {"status": "FAILED", "reason": "MEDIA_NOT_ACQUIRED"}
+        path = paths[13] if rank == 18 else paths[rank]
+        return {"status": "REUSED", "local_media_path": str(path), "media_sha256": trend_workbook.sha256(path)}
+    acquired = []
+    def acquire(item, position):
+        acquired.append(position); path = paths[position]
+        return {"status": "COMPLETED", "local_media_path": str(path), "media_sha256": trend_workbook.sha256(path)}
+    result = trend_workbook.backfill_candidate_media(candidates=items, lookup_media=lookup, acquire_one=acquire, target_count=20)
+    assert result["starting_unique_media"] == 17
+    assert result["valid_unique_media"] == 20
+    assert result["additional_attempts"] == 3 and acquired == [21, 22, 23]
+    assert result["failures"] == 2 and result["duplicates"] == 1
+    assert result["processed_positions"][-1] == 23
+
+
+def test_backfill_stops_safely_when_shortlist_is_exhausted(tmp_path: Path):
+    items = [candidate(str(rank), None) for rank in range(1, 4)]
+    result = trend_workbook.backfill_candidate_media(
+        candidates=items, lookup_media=lambda _: None,
+        acquire_one=lambda item, position: {"status": "FAILED", "reason": "MEDIA_NOT_ACQUIRED"},
+        target_count=2, maximum_attempts=10, maximum_shortlist_size=3,
+    )
+    assert result["valid_unique_media"] == 0 and result["additional_attempts"] == 3
+    assert result["shortlist_exhausted"] is True
+
+
+def test_backfill_reuses_existing_media_without_redownload(tmp_path: Path):
+    items = [candidate(str(rank), None) for rank in range(1, 4)]
+    paths = []
+    for rank in range(1, 4):
+        path = tmp_path / f"{rank}.mp4"; path.write_bytes(str(rank).encode()); paths.append(path)
+    def lookup(item):
+        path = paths[int(item["video_id"]) - 1]
+        return {"status": "REUSED", "local_media_path": str(path), "media_sha256": trend_workbook.sha256(path)}
+    result = trend_workbook.backfill_candidate_media(
+        candidates=items, lookup_media=lookup,
+        acquire_one=lambda *_: pytest.fail("existing media must not be downloaded"), target_count=3,
+    )
+    assert result["valid_unique_media"] == 3 and result["additional_attempts"] == 0
+
+
+@pytest.mark.parametrize(("payload", "caption", "expected"), [
+    ({"status": "COMPLETED_NO_AUDIO", "segments": []}, "", "NO_AUDIO"),
+    ({"status": "COMPLETED_NO_SPEECH", "segments": []}, "", "NONSPEECH"),
+    ({"status": "FAILED", "errors": ["decoder failed"]}, "", "TRANSCRIPTION_FAILED"),
+    ({"status": "COMPLETED", "language": "ru", "segments": [{"normalized_text": "ла ла ла песня", "start_seconds": 0, "end_seconds": 1}]}, "#music", "BACKGROUND_MUSIC_ONLY"),
+    ({"status": "COMPLETED", "language": "ru", "segments": [{"normalized_text": "Это осмысленная человеческая речь", "start_seconds": 0, "end_seconds": 2}]}, "", "AUTHOR_SPEECH_USABLE"),
+])
+def test_transcription_status_is_truthful_and_typed(payload, caption, expected):
+    result = trend_workbook._classify_transcription(payload, "evidence/result.json", caption)
+    assert result["audio_role"] == expected and result["transcript_reason"]
+    if expected == "BACKGROUND_MUSIC_ONLY":
+        assert trend_workbook._hook({**result, "caption": "", "ocr_status": "EMPTY"})[1] == "MANUAL_REVIEW_REQUIRED"
+
+
+def test_canonical_transcription_is_called_and_segments_are_preserved(tmp_path: Path):
+    media = tmp_path / "canonical/acquisition/run-1/video-1/source.mp4"
+    media.parent.mkdir(parents=True); media.write_bytes(b"media")
+    digest = trend_workbook.sha256(media)
+    (media.parent / "acquisition_record.json").write_text(json.dumps({"local_media_path": "video-1/source.mp4", "media_sha256": digest}), encoding="utf-8")
+    candidate_item = candidate("video-1", media)
+    def inspection(source, output, video_id, url):
+        output.mkdir(parents=True)
+        payload = {"media_sha256": digest, "status": "COMPLETED", "media_facts": {"audio_present": True, "audio_codec": "aac", "duration_seconds": 3, "sample_rate": "44100", "channels": 1}}
+        (output / "inspection.json").write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+    class Engine:
+        calls = 0
+        def availability(self): return {"available": True, "engine_id": "fake", "engine_version": "1", "model_id": "fake", "model_revision": "1"}
+        def transcribe(self, media_path, language, options):
+            self.calls += 1
+            return {"language": "ru", "language_probability": .99, "segments": [{"start_seconds": 0, "end_seconds": 2, "raw_text": " Полная человеческая речь сохранена ", "avg_logprob": -.1, "no_speech_prob": .01, "words": []}]}
+    engine = Engine()
+    evidence = trend_workbook._build_transcription_evidence(
+        runtime_root=tmp_path, build_root=tmp_path / "build", search_run_id="run-1",
+        candidates=[candidate_item], inspection_callable=inspection, engine=engine,
+    )
+    assert engine.calls == 1 and evidence["transcription_calls"] == 1
+    result = evidence["candidates"][0]
+    assert result["audio_role"] == "AUTHOR_SPEECH_USABLE"
+    assert result["transcript_segments"][0]["text"] == "Полная человеческая речь сохранена"
+
+
+def test_versioned_package_does_not_mutate_old_partial(tmp_path: Path):
+    source = tmp_path / "source.mp4"; source.write_bytes(b"media")
+    old = trend_workbook.build_package(project_id="nura", search_run_id="run", candidates=[candidate("1", source)], output_root=tmp_path / "output")
+    old_hash = trend_workbook.sha256(Path(old["workbook_path"]))
+    new = trend_workbook.build_package(project_id="nura", search_run_id="run", package_build_id="recovery", candidates=[candidate("1", source)], output_root=tmp_path / "output")
+    assert Path(old["package_path"]) != Path(new["package_path"])
+    assert trend_workbook.sha256(Path(old["workbook_path"])) == old_hash
+
+
+def test_twenty_candidate_package_remains_portable_after_relocation(tmp_path: Path):
+    items = []
+    for rank in range(1, 21):
+        source = tmp_path / "sources" / f"{rank}.mp4"
+        source.parent.mkdir(exist_ok=True)
+        source.write_bytes(f"media-{rank}".encode())
+        items.append(candidate(str(rank), source))
+    result = trend_workbook.build_package(
+        project_id="nura", search_run_id="run-20", package_build_id="recovery",
+        candidates=items, output_root=tmp_path / "output",
+    )
+    relocated = tmp_path / "relocated" / Path(result["package_path"]).name
+    relocated.parent.mkdir()
+    shutil.copytree(result["package_path"], relocated)
+    validation = trend_workbook.validate_portability(relocated)
+    workbook = load_workbook(next(relocated.glob("*.xlsx")))
+    assert validation == {"status": "PASS", "workbook": next(relocated.glob("*.xlsx")).name, "relative_links": 20}
+    assert workbook["Кандидаты"].max_row == 21
+    assert len(list((relocated / "videos").glob("*.mp4"))) == 20
+
+
+def test_resume_reuses_versioned_package_without_acquisition_or_transcription(tmp_path: Path):
+    runtime = tmp_path / "runtime"
+    collection = {"search_run_id": "run-reuse", "candidates": []}
+    (runtime / "canonical").mkdir(parents=True)
+    (runtime / "canonical" / "collection.json").write_text(json.dumps(collection), encoding="utf-8")
+    source = tmp_path / "source.mp4"; source.write_bytes(b"media")
+    package = trend_workbook.build_package(
+        project_id="nura", search_run_id="run-reuse", package_build_id="stable",
+        candidates=[candidate("1", source)], output_root=tmp_path / "output",
+    )
+    manifest_path = Path(package["package_path"]) / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["transcription"] = {"status_counts": {"AUTHOR_SPEECH_USABLE": 1}}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = trend_workbook.resume_public_first_workbook(
+        project_id="nura", runtime_root=runtime, output_root=tmp_path / "output",
+        target_count=20, build_id="stable",
+        acquire_one=lambda *_: pytest.fail("reuse must not acquire"),
+        transcription_engine=object(),
+    )
+    assert result["reuse"] is True
+    assert result["search_calls"] == result["browser_calls"] == result["downloads"] == result["transcription_calls"] == 0
